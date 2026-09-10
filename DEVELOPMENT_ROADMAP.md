@@ -128,8 +128,11 @@ UI close/reload remains tunnel-neutral. See
 The local implementation, deterministic failure/concurrency coverage and
 installed CLI/Service connected/disconnected exit gates now pass; see
 [Full Quit evidence](docs/testing/R5_NATIVE_FULL_QUIT.md). Human keyboard and
-authorization-rejection checks remain open. Direct plugin-disable/remove entry
-points still need their native lifecycle bridge; the button does not cover them.
+authorization-rejection checks remain open. Direct plugin-disable/remove now
+has a separate local native observer, reusing that verified shutdown sequence;
+see [disable/remove checkpoint](docs/testing/R5_NATIVE_PLUGIN_REMOVAL.md) for
+its exact installed gate and deliberate shell/runtime race boundaries. Legacy
+uninstall/purge refuses Rust-owned state; native package removal is not claimed.
 Neither this checkpoint nor the probe evidence completes R5/R6 or V0;
 Python retirement still requires the full installed Python-unavailable gate.
 

@@ -317,6 +317,17 @@ fn run() -> Result<(), CliError> {
         return Ok(());
     }
     if arguments.first().is_some_and(|arg| arg == "plugin")
+        && arguments.get(1).is_some_and(|arg| arg == "watch-removal")
+    {
+        if arguments.len() != 2 {
+            return Err("Invalid OmaVLESS removal watcher command".into());
+        }
+        let stopped = omavless_runtime::full_quit::removal::run()
+            .map_err(|message| CliError::Message(message.into()))?;
+        println!("{}", json!({"schemaVersion":1,"runtimeStopped":stopped}));
+        return Ok(());
+    }
+    if arguments.first().is_some_and(|arg| arg == "plugin")
         && arguments.get(1).is_some_and(|arg| arg == "quit")
     {
         let [_, _, instance, revision, operation] = arguments.as_slice() else {

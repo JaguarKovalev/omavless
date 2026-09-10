@@ -14,6 +14,22 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 struct ChildGuard(Child);
 
 #[test]
+fn removal_watcher_refuses_all_external_parameters_before_host_effects() {
+    let base = runtime_base();
+    for private in ["private-token", "--force", "$(private)"] {
+        let output = isolated_command(&base)
+            .args(["plugin", "watch-removal", private])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, b"Invalid OmaVLESS removal watcher command\n");
+        assert!(!base.join("omavless").exists());
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
 fn status_without_runtime_reports_unavailable_not_unsafe_and_never_creates_state() {
     let base = runtime_base();
     let paths = omavless_runtime::RuntimePaths::below(&base);

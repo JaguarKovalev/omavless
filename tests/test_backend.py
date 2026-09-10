@@ -4705,7 +4705,8 @@ esac
             startup_unit.write_text("startup unit", encoding="utf-8")
             (data / "profiles.json").write_text("secret", encoding="utf-8")
             env = os.environ.copy()
-            env.update({"HOME": str(home), "PATH": str(fake_bin) + os.pathsep + env["PATH"]})
+            env.update({"HOME": str(home), "XDG_STATE_HOME": str(home / ".local/state"),
+                        "PATH": str(fake_bin) + os.pathsep + env["PATH"]})
 
             result = subprocess.run(
                 ["bash", str(ROOT / "uninstall.sh")], env=env, text=True, capture_output=True,
@@ -4737,7 +4738,8 @@ esac
             unit.parent.mkdir(parents=True)
             unit.write_text("unit", encoding="utf-8")
             env = os.environ.copy()
-            env.update({"HOME": str(home), "PATH": str(fake_bin) + os.pathsep + env["PATH"]})
+            env.update({"HOME": str(home), "XDG_STATE_HOME": str(home / ".local/state"),
+                        "PATH": str(fake_bin) + os.pathsep + env["PATH"]})
 
             result = subprocess.run(
                 ["bash", str(ROOT / "uninstall.sh")], env=env, text=True, capture_output=True,

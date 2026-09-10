@@ -3344,7 +3344,12 @@ Item {
     // Omarchy has no uninstall hook: `plugin remove` first unloads this QML,
     // then deletes the checkout. The detached guard waits through hot reloads
     // but cleans runtime units after an explicit disable or checkout removal.
-    Quickshell.execDetached(["bash", backendPath, "watch-plugin-removal"])
+    // Discovery may not have completed before unload. This fixed OS wrapper
+    // survives checkout removal, is quiet without the optional package, and
+    // the Rust command independently checks committed ownership before effects.
+    Quickshell.execDetached(["/bin/sh", "-c", "if [ -x /usr/bin/omavless ]; then exec /usr/bin/omavless plugin watch-removal; fi"])
+    if (!nativeOwner)
+      Quickshell.execDetached(["bash", backendPath, "watch-plugin-removal"])
   }
   // SIGKILL and a hard shell crash cannot run the destruction handler. The
   // backend identifies PNGs by this shell's parent PID, so startup safely

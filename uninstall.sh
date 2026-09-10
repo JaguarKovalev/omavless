@@ -10,6 +10,48 @@ case "${1:-}" in
   *) echo "Usage: ./uninstall.sh [--purge]" >&2; exit 2 ;;
 esac
 
+# This is the legacy integration remover, not native package removal. Match
+# CutoverPaths::current / backend.sh: even a stopped Rust runtime retains its
+# ownership marker. Do not parse or repair that marker, and refuse every
+# ownership artifact (including transition/invalid states) before any effects.
+# A missing native executable must never make legacy purge safe by default.
+legacy_ownership_proven_absent() {
+  local uninstall_state_base remaining component current
+  [[ ${HOME-} == /* && ${HOME-} != / && ${#HOME} -le 4096 ]] || return 1
+  [[ $HOME != *[[:cntrl:]]* ]] || return 1
+  if [[ ${XDG_STATE_HOME+x} == x ]]; then
+    uninstall_state_base=$XDG_STATE_HOME
+  else
+    uninstall_state_base=$HOME/.local/state
+  fi
+  [[ $uninstall_state_base == /* && ${#uninstall_state_base} -le 4096 ]] || return 1
+  [[ $uninstall_state_base != *[[:cntrl:]]* ]] || return 1
+  # Check all lexical components before accepting an absent ancestor. In
+  # particular, /missing/../existing must not short-circuit the guard.
+  for remaining in "$HOME" "$uninstall_state_base"; do
+    case "/${remaining#/}/" in */./*|*/../*) return 1 ;; esac
+  done
+  remaining=${uninstall_state_base#/}/omavless
+  current=
+  while [[ -n $remaining ]]; do
+    component=${remaining%%/*}
+    case "$remaining" in */*) remaining=${remaining#*/} ;; *) remaining= ;; esac
+    [[ -n $component ]] || continue
+    current=$current/$component
+    [[ ! -L $current ]] || return 1
+    if [[ ! -e $current ]]; then return 0; fi
+    [[ -d $current && -r $current && -x $current ]] || return 1
+  done
+  for component in ownership.json frontend-bridge.target; do
+    [[ ! -e $current/$component && ! -L $current/$component ]] || return 1
+  done
+}
+
+if ! legacy_ownership_proven_absent; then
+  printf '%s\n' 'Legacy uninstall refused: native ownership is present or unavailable. Nothing was removed. This script does not support native package removal or purge.' >&2
+  exit 1
+fi
+
 unit="$HOME/.config/systemd/user/omavless.service"
 startup_unit="$HOME/.config/systemd/user/omavless-autostart.service"
 data="$HOME/.config/omavless"

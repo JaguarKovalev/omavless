@@ -23,6 +23,8 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+pub mod removal;
+
 const SYSTEMCTL: &str = "/usr/bin/systemctl";
 const OMARCHY: &str = "/usr/bin/omarchy";
 const PLUGIN: &str = "kdk.omavless";
@@ -94,15 +96,24 @@ fn run_host(host: &mut impl Host, instance: &str, revision: u64, operation: &str
         return Err(FullQuitError::InvalidArgument);
     }
     host.preflight()?;
+    finish_runtime(host, instance, revision, operation)?;
+    host.disable_plugin()?;
+    host.verify_plugin_disabled()
+}
+
+fn finish_runtime(
+    host: &mut impl Host,
+    instance: &str,
+    revision: u64,
+    operation: &str,
+) -> Result<()> {
     host.request_shutdown(instance, revision, operation)?;
     host.wait_and_lock()?;
     host.verify_stopped()?;
     host.disable_runtime()?;
     host.verify_runtime_disabled()?;
     // Repeat the host proof immediately before the only UI-hiding effect.
-    host.verify_stopped()?;
-    host.disable_plugin()?;
-    host.verify_plugin_disabled()
+    host.verify_stopped()
 }
 
 /// An explicitly confirmed Settings action or fixed semantic CLI invokes this
@@ -196,8 +207,8 @@ fn stopped_unit() -> bool {
     })
 }
 
-impl Host for InstalledHost {
-    fn preflight(&mut self) -> Result<()> {
+impl InstalledHost {
+    fn authenticate(&mut self, require_enabled: bool) -> Result<()> {
         let error = FullQuitError::PreconditionsFailed;
         crate::cutover_activation::packaged_identity().map_err(|_| error)?;
         crate::cutover_activation::environment::with_current(|| ()).map_err(|_| error)?;
@@ -208,10 +219,11 @@ impl Host for InstalledHost {
                     && metadata.mode() & 0o022 == 0
                     && metadata.mode() & 0o111 != 0
             })
-            || omarchy_command(&["plugin", "list", "--json"])
-                .ok()
-                .and_then(|text| plugin_enabled(&text))
-                != Some(true)
+            || (require_enabled
+                && omarchy_command(&["plugin", "list", "--json"])
+                    .ok()
+                    .and_then(|text| plugin_enabled(&text))
+                    != Some(true))
         {
             return Err(error);
         }
@@ -245,6 +257,12 @@ impl Host for InstalledHost {
         // reconnect to a potentially replaced socket after the identity check.
         self.stream = Some(stream);
         Ok(())
+    }
+}
+
+impl Host for InstalledHost {
+    fn preflight(&mut self) -> Result<()> {
+        self.authenticate(true)
     }
 
     fn request_shutdown(&mut self, instance: &str, revision: u64, operation: &str) -> Result<()> {

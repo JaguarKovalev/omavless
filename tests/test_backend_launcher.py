@@ -92,6 +92,19 @@ exit {code}
         service = (LAUNCHER.parent / "plugin/Service.qml").read_text()
         self.assertIn('Component.onCompleted: Quickshell.execDetached(["bash", backendPath, "cleanup-runtime"])', service)
 
+    def test_native_removal_is_fixed_no_argument_and_no_legacy_fallback(self):
+        self.action_native(code=73)
+        result = self.run_launcher("watch-plugin-removal")
+        self.assertEqual(result.returncode, 73)
+        self.assertEqual(self.calls(), ["native:plugin:target", "arg:plugin", "arg:watch-removal"])
+        self.trace.unlink()
+        result = self.run_launcher("watch-plugin-removal", "private-token")
+        self.assertEqual(result.returncode, 71)
+        self.assertEqual(self.calls(), ["native:plugin:target"])
+        self.assertNotIn("private-token", result.stderr)
+        service = (LAUNCHER.parent / "plugin/Service.qml").read_text()
+        self.assertIn('if [ -x /usr/bin/omavless ]; then exec /usr/bin/omavless plugin watch-removal; fi', service)
+
     def test_native_cleanup_refuses_paths_and_never_evaluates_input(self):
         self.action_native()
         marker = self.base / "must-not-exist"

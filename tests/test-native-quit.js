@@ -61,4 +61,17 @@ test('complete English/Russian fixed text, private input not a translation sourc
     }
   }
 });
+test('removal observer survives checkout loss even before QML owner discovery',()=>{
+  const begin=service.indexOf('  Component.onDestruction: {');
+  const end=service.indexOf('\n  // SIGKILL',begin);
+  const body=service.slice(begin,end).replace('  Component.onDestruction:','');
+  for(const discovered of [true,false]) {
+    const calls=[];
+    vm.runInNewContext(body,{nativeOwner:discovered,backendPath:'/removed/backend.sh',
+      closeQr(){},Quickshell:{execDetached(args){calls.push(Array.from(args));}}});
+    assert.deepEqual(calls[0],['/bin/sh','-c','if [ -x /usr/bin/omavless ]; then exec /usr/bin/omavless plugin watch-removal; fi']);
+    assert.equal(calls.length,discovered?1:2);
+    if(!discovered)assert.deepEqual(calls[1],['bash','/removed/backend.sh','watch-plugin-removal']);
+  }
+});
 console.log(`${count} native full Quit tests passed`);

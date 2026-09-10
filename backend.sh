@@ -43,6 +43,10 @@ if command -v omavless >/dev/null 2>&1; then
     legacy) ;;
     rust)
       case "${1-}" in
+        watch-plugin-removal)
+          [ "$#" -eq 1 ] || blocked
+          exec omavless plugin watch-removal
+          ;;
         native-quit)
           [ "$#" -eq 4 ] || blocked
           # Quickshell kills its direct Process child when the plugin unloads.
