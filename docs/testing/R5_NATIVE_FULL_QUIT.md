@@ -60,9 +60,10 @@ from this shutdown checkpoint.
 
 ## Static and deterministic evidence
 
-- Rust runtime suite: 665 passed, six ignored; includes 11 new request,
+- Rust runtime suite: 667 passed, six ignored; includes 11 new request,
   admission, connected exit, stale/invalid refusal, cleanup-proof and fixed
   host-ordering tests. The failure matrix covers all nine host boundaries.
+  Two further regressions cover the procfs cleanup fix described below.
 - Full Python suite: 351 executed, four skipped (347 successful tests).
   Includes fixed Quit launcher arity, no Python fallback and harmless synthetic
   wrapper-destruction survival coverage.
@@ -79,6 +80,24 @@ issue; SettingsActionRow now publishes its content-derived implicit height,
 and all six affected/adjacent states were recaptured without overflow. Captures
 use synthetic metadata and a no-op backend outside Git; they cannot prove live
 shutdown or human keyboard interaction.
+
+### Procfs cleanup follow-up
+
+After the initial successful full suite, a repeat parallel run failed the
+existing auxiliary private-config replacement test during `lease.finish()`.
+Isolated and full sequential reruns passed, but this did not erase the failure.
+Investigation deterministically reproduced Linux returning ESRCH when a task
+exits after `/proc/PID/stat` was opened but before that retained fd is read.
+The existing group inventory accepted only ENOENT, so unrelated process
+turnover could reject otherwise successful owned-core cleanup.
+
+`core_group` now accepts ESRCH only at task `stat` open/read boundaries. Generic
+directory enumeration, permissions, malformed records, completeness bounds and
+all other I/O errors remain strict. A real harmless owned-child regression
+forces the descriptor/reap ordering; a second test proves error-scope limits.
+The full parallel suite after this fix passes (667 tests, six ignored).
+The original aggregate Cleanup error does not prove ESRCH caused that exact
+failure rather than the existing cleanup deadline; no timeout was relaxed.
 
 ## Remaining acceptance at implementation checkpoint
 
