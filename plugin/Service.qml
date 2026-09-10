@@ -73,6 +73,68 @@ Item {
     && nativeSnapshot.lastKnownActual !== "manualRecoveryRequired"
     && !nativeObservation.manualRecoveryRequired
   property int _nativeOperationSerial: 0
+  property bool nativeStartupSettingsVisible: false
+  property var nativeStartupCapability: null
+  property var _nativeStartupCapabilityRead: null
+  readonly property bool nativeStartupAvailable: nativeCanAct && nativeStartupCapability !== null
+    && nativeStartupCapability.available && nativeStartupCapability.instanceId === nativeSnapshot.instanceId
+    && nativeStartupCapability.revision === nativeSnapshot.revision
+  function refreshNativeStartupCapability() {
+    if (!nativeFactsCurrent || !nativeStartupSettingsVisible || _nativeStartupCapabilityRead !== null) return false
+    var context = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
+    _nativeStartupCapabilityRead = nativeStartupCapabilityComponent.createObject(root, {context:context})
+    if (!_nativeStartupCapabilityRead) { nativeStartupCapability = null; return false }
+    _nativeStartupCapabilityRead.running = true
+    return true
+  }
+  function finishNativeStartupCapability(context, code, raw) {
+    if (!nativeFactsCurrent || !nativeStartupSettingsVisible || context.instanceId !== nativeSnapshot.instanceId
+        || context.revision !== nativeSnapshot.revision) { nativeStartupCapability = null; return }
+    nativeStartupCapability = code === 0 ? NativeSnapshot.startupCapability(raw, context) : null
+  }
+  onNativeStartupSettingsVisibleChanged: {
+    nativeStartupCapability = null
+    if (nativeStartupSettingsVisible) refreshNativeStartupCapability()
+  }
+  Timer {
+    interval: 5000
+    running: root.nativeOwner && root.nativeStartupSettingsVisible
+    repeat: true
+    onTriggered: root.refreshNativeStartupCapability()
+  }
+  Component {
+    id: nativeStartupCapabilityComponent
+    Process {
+      id: process
+      property var context
+      command: ["bash", root.backendPath, "native-startup-capabilities"]
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      property Timer watchdog: Timer { interval: 6000; running: process.running; onTriggered: process.signal(9) }
+      onExited: function(code) {
+        root._nativeStartupCapabilityRead = null
+        try { root.finishNativeStartupCapability(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
+
+  function requestNativeStartup(enabled, target, profileId, mode) {
+    if (!nativeStartupAvailable || typeof enabled !== "boolean" || ["last", "profile"].indexOf(target) < 0
+        || ["rule", "global"].indexOf(mode) < 0) return false
+    if (target === "last") profileId = ""
+    else if (!NativeSnapshot.id(profileId, false) || (enabled && !nativeSnapshot.profiles.some(function(p) { return p.id === profileId && !p.missing }))) return false
+    var input = (enabled ? "on" : "off") + "\n" + target + "\n" + profileId + "\n" + mode
+    var operation = "qml-startup-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
+    var args = ["bash", backendPath, "native-startup-configure", nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
+    nativePending = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision,
+      operationId:operation, action:"startup-configure", command:args, input:input}
+    nativeActionCode = ""
+    nativeOutcomeUnknown = false
+    nativeActionProcess.command = args
+    nativeActionProcess.stdinEnabled = true
+    nativeActionProcess.running = true
+    return true
+  }
   // Daemon jobs outlive the panel. They do not occupy nativePending, so an
   // urgent Disconnect remains usable; the owner serializes competing writes.
   property var nativeBatchJob: null
@@ -2294,7 +2356,7 @@ Item {
   }
 
   function configureStartup(enabled, target, profileUuid, mode) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return requestNativeStartup(enabled, target, profileUuid, mode)
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     var wantedTarget = String(target || "")
     var wantedProfile = String(profileUuid || "")

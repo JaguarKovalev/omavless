@@ -661,7 +661,7 @@ Panel {
       if (page === "settings") targets.push(nativeProvidersRefresh.focusTarget)
       if (page === "settings") targets.push(nativeSupportSetting.focusTarget)
       if (page === "settings") targets = targets.concat([nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeHelpersRefresh.focusTarget])
-      if (page === "settings") targets.splice(1, 0, nativeCoreSetupRow.focusTarget)
+      if (page === "settings") targets.splice(1, 0, nativeCoreSetupRow.focusTarget, nativeStartupSummaryRow.focusTarget)
       if (page === "main") targets.push(nativeTestButton)
       if (page === "settings") targets.splice(2, 0, nativeOnboardingSetting.focusTarget)
       if (page === "settings") targets.push(nativeExitIpSetting.focusTarget)
@@ -1419,6 +1419,7 @@ Panel {
     panelVisible: root.opened
     nativeRoutingToolsVisible: root.opened && routingToolsPrompt.visible
     nativeCoreSetupVisible: root.opened && (root.page === "settings" || onboardingWizard.visible) && vless.nativeOwner
+    nativeStartupSettingsVisible: root.opened && (root.page === "settings" || startupPrompt.visible) && vless.nativeOwner
     nativeDetailsProfileId: root.opened && nativeOwner && nativeCanAct && root.nativeExpandedDetailsId === root.nativeSelectedProfile
       && (root.page === "main" || root.page === "subscription") ? root.nativeExpandedDetailsId : ""
     diagnosticsPageVisible: root.opened && root.page === "diagnostics"
@@ -2041,8 +2042,11 @@ Panel {
             Layout.fillWidth: true
             visible: root.page === "settings"
             title: root.textFor("settings.start_at_login")
-            description: root.nativeStartupSummaryText() + "\n" + root.textFor("native.startup.scope")
-            actionVisible: false
+            description: root.nativeStartupSummaryText() + "\n" + root.textFor(vless.nativeStartupAvailable ? "native.startup.configure_scope" : "native.startup.scope")
+            actionVisible: vless.nativeStartupAvailable
+            actionText: root.textFor("common.edit")
+            actionEnabled: vless.nativeStartupAvailable
+            onAction: startupPrompt.openWith(vless.nativeSnapshot.startup)
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.main.modeLabel"); foreground: root.foreground; fontFamily: root.fontFamily }
           ColumnLayout {
@@ -3527,11 +3531,12 @@ Panel {
       StartupPrompt {
         id: startupPrompt
         anchors.fill: parent
-        profiles: vless.profiles
-        startup: vless.startup
-        routingAvailable: vless.routingPresetConfigured
-        coreReady: vless.coreSetup.tunReady
-        busy: vless.busy
+        nativeContext: vless.nativeOwner
+        profiles: vless.nativeOwner ? root.nativeView.profiles.filter(function(p) { return !p.missing }).map(function(p) { return root.nativeRecord(p) }) : vless.profiles
+        startup: vless.nativeOwner ? (vless.nativeSnapshot ? vless.nativeSnapshot.startup : {}) : vless.startup
+        routingAvailable: vless.nativeOwner ? !!(vless.nativeSnapshot && vless.nativeSnapshot.routing.storedPreset !== "") : vless.routingPresetConfigured
+        coreReady: vless.nativeOwner ? vless.nativeStartupAvailable : vless.coreSetup.tunReady
+        busy: vless.nativeOwner ? !vless.nativeStartupAvailable : vless.busy
         locale: root.uiLocale
         foreground: root.foreground
         dim: root.dim

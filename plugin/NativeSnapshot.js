@@ -116,6 +116,25 @@ function parseDiagnosticsSummary(raw) {
 }
 
 // Pure parser: returns a fresh projection or null; never changes UI state.
+function startupCapability(raw, context) {
+  try {
+    if (!context || typeof raw !== "string" || raw.length > 16384) return null
+    var p = envelope(raw), r = p && p.result
+    if (!object(p, ["api", "version", "id", "ok", "revision", "result"]) || p.ok !== true
+        || p.revision !== context.revision || !object(r, ["runtimeOwnership", "mutations", "methods"])
+        || typeof r.runtimeOwnership !== "boolean" || typeof r.mutations !== "boolean"
+        || !Array.isArray(r.methods) || r.methods.length > 128) return null
+    var seen = Object.create(null)
+    for (var i = 0; i < r.methods.length; i++) {
+      var method = r.methods[i]
+      if (typeof method !== "string" || method.length > 80 || !/^[a-z][a-z0-9_.]*$/.test(method) || seen[method]) return null
+      seen[method] = true
+    }
+    return {instanceId:context.instanceId, revision:p.revision,
+      available:r.runtimeOwnership && r.mutations && seen["startup.configure"] === true}
+  } catch (_) { return null }
+}
+
 function parseQrExport(raw, revision) {
   try {
     if (typeof raw !== "string" || raw.length > 262144 || unescape(encodeURIComponent(raw)).length > 262144) return null
@@ -444,7 +463,7 @@ function parseAction(raw, pending) {
   try {
     var p = envelope(raw)
     if (!p || !pending || !id(pending.instanceId, false) || !id(pending.operationId, false)
-        || !number(pending.revision, 9007199254740991) || ["connect", "disconnect", "mode", "profile-rename", "profile-favorite", "profile-delete", "profile-import", "profile-replace", "subscription-add", "subscription-update", "subscription-delete", "subscription-refresh", "routing-preset", "custom-rule-add", "custom-rule-delete"].indexOf(pending.action) < 0) return null
+        || !number(pending.revision, 9007199254740991) || ["connect", "disconnect", "mode", "profile-rename", "profile-favorite", "profile-delete", "profile-import", "profile-replace", "subscription-add", "subscription-update", "subscription-delete", "subscription-refresh", "routing-preset", "custom-rule-add", "custom-rule-delete", "startup-configure"].indexOf(pending.action) < 0) return null
     if (p.ok === true) {
       var r = p.result
       if (!object(p, ["api", "version", "id", "ok", "revision", "result"])
@@ -501,7 +520,7 @@ function parseImportPreview(raw, revision) {
 
 function parseActionExit(raw, pending, exitCode) {
   // Reserved CLI exit proves local rejection before socket dispatch.
-  if (exitCode === 74 && pending && ["profile-replace", "subscription-add", "subscription-update", "subscription-delete", "subscription-refresh", "routing-preset", "custom-rule-add", "custom-rule-delete", "onboarding-complete"].indexOf(pending.action) >= 0)
+  if (exitCode === 74 && pending && ["profile-replace", "subscription-add", "subscription-update", "subscription-delete", "subscription-refresh", "routing-preset", "custom-rule-add", "custom-rule-delete", "onboarding-complete", "startup-configure"].indexOf(pending.action) >= 0)
     return {ok:false, code:"invalid_argument"}
   return parseAction(raw, pending)
 }

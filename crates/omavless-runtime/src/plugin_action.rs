@@ -27,6 +27,16 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
         .and_then(Value::as_str)
         .ok_or(InvalidArgument)?;
     let fields: &[&str] = match action {
+        "startup-configure" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "enabled",
+            "target",
+            "profileId",
+            "mode",
+        ],
         "connect" => &[
             "instanceId",
             "expectedRevision",
@@ -151,6 +161,7 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
         "connect" => "connection.connect",
         "disconnect" => "connection.disconnect",
         "onboarding-complete" => "onboarding.complete",
+        "startup-configure" => "startup.configure",
         "mode" => "routing.set_mode",
         "profile-rename" => "profiles.rename",
         "profile-favorite" => "profiles.favorite",
@@ -173,7 +184,9 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
         let policy = mapped.remove("routeAction").ok_or(InvalidArgument)?;
         mapped.insert("action".into(), policy);
     }
-    if action == "onboarding-complete" {
+    if action == "startup-configure" {
+        crate::startup_protocol::parse_startup_request(&canonical)?;
+    } else if action == "onboarding-complete" {
         crate::onboarding_protocol::parse(&canonical)?;
     } else if action == "routing-preset" {
         crate::routing_preset::parse(&canonical)?;
@@ -208,6 +221,7 @@ pub fn cli_input_limit(arguments: &[OsString]) -> Option<usize> {
         return None;
     }
     match arguments[1].to_str()? {
+        "startup-configure" => Some(64),
         "profile-rename" => {
             Some(36 + 1 + crate::profile_mutation_protocol::MAX_PROFILE_NAME_INPUT_BYTES + 1)
         }
@@ -240,6 +254,7 @@ pub fn cli_params(
                 "connect",
                 "disconnect",
                 "onboarding-complete",
+                "startup-configure",
                 "mode",
                 "profile-rename",
                 "profile-favorite",
@@ -304,7 +319,8 @@ pub fn cli_params(
             | "subscription-refresh"
             | "routing-preset"
             | "custom-rule-add"
-            | "custom-rule-delete"),
+            | "custom-rule-delete"
+            | "startup-configure"),
             instance,
             revision,
             operation,
@@ -322,7 +338,28 @@ pub fn cli_params(
     if let Some(mode) = mode {
         params["mode"] = json!(mode);
     }
-    if matches!(
+    if action == "startup-configure" {
+        let input = private_stdin.ok_or(crate::semantic_cli::SemanticCliError::MissingInput)?;
+        if input.len() > 64 {
+            return Err(crate::semantic_cli::SemanticCliError::InputTooLarge);
+        }
+        let lines: Vec<_> = input
+            .strip_suffix('\n')
+            .unwrap_or(input)
+            .split('\n')
+            .collect();
+        let [enabled, target, profile, mode] = lines.as_slice() else {
+            return Err(InvalidArgument);
+        };
+        params["enabled"] = json!(match *enabled {
+            "on" => true,
+            "off" => false,
+            _ => return Err(InvalidArgument),
+        });
+        params["target"] = json!(target);
+        params["profileId"] = json!(profile);
+        params["mode"] = json!(mode);
+    } else if matches!(
         action,
         "routing-preset" | "custom-rule-add" | "custom-rule-delete"
     ) {
@@ -473,6 +510,48 @@ pub fn cli_params(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_plugin_bridge_reuses_exact_policy_validation_and_private_stdin() {
+        let args: Vec<OsString> = ["plugin", "startup-configure", "instance", "7", "operation"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        assert_eq!(cli_input_limit(&args), Some(64));
+        let record = "00000000-0000-4000-8000-000000000001";
+        for input in [
+            "off\nlast\n\nrule".to_owned(),
+            format!("on\nprofile\n{record}\nglobal\n"),
+        ] {
+            let params = cli_params(&args, Some(&input)).unwrap().unwrap();
+            let request = json!({"api":"omavless.control","version":1,"id":"test","method":"plugin.action","params":params});
+            let parsed = parse(&request).unwrap();
+            assert_eq!(parsed.canonical["method"], "startup.configure");
+            assert_eq!(parsed.canonical["params"]["expectedRevision"], 7);
+            assert_eq!(parsed.canonical["params"]["operationId"], "operation");
+            crate::startup_protocol::parse_startup_request(&parsed.canonical).unwrap();
+            let mut bad = request.clone();
+            bad["params"]["command"] = json!("private-input");
+            assert!(parse(&bad).is_err());
+        }
+        for input in [
+            "",
+            "on\nlast\n\ndirect",
+            "true\nlast\n\nrule",
+            "off\nlast\n\nrule\n\n",
+            "off\nprofile\nprivate-input\nrule",
+            "off\nlast\n\nrule\r",
+            "https://private-input.invalid/key",
+        ] {
+            let error = cli_params(&args, Some(input)).unwrap_err();
+            assert!(!format!("{error:?} {error}").contains("private-input"));
+        }
+        assert!(cli_params(&args, Some(&"x".repeat(65))).is_err());
+        assert!(cli_params(&args, None).is_err());
+        let mut extra = args.clone();
+        extra.push("unexpected".into());
+        assert!(cli_params(&extra, Some("off\nlast\n\nrule")).is_err());
+    }
     fn request(params: Value) -> Value {
         // Invalid cases must reach the parser rather than the checked builder.
         json!({"api":"omavless.control","version":1,"id":"test","method":"plugin.action","params":params})
@@ -524,10 +603,11 @@ mod tests {
         let mut invalid = args.clone();
         invalid[3] = "+7".into();
         assert!(cli_params(&invalid, None).is_err());
-        // Startup configuration remains intentionally unregistered.
+        // Startup configuration has its own bounded stdin, not onboarding's
+        // no-input shape. Daemon capability admission is checked separately.
         let mut startup = args;
         startup[1] = "startup-configure".into();
-        assert_eq!(cli_params(&startup, None).unwrap(), None);
+        assert!(cli_params(&startup, None).is_err());
     }
     #[test]
     fn routing_actions_reuse_canonical_parsers_and_disambiguate_policy_action() {

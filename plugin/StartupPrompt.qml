@@ -16,6 +16,7 @@ Item {
   property var startup: ({ enabled: false, target: "last", profileId: "", mode: "rule" })
   property bool routingAvailable: false
   property bool coreReady: false
+  property bool nativeContext: false
   property bool busy: false
   property color foreground: Color.foreground
   property color dim: Qt.darker(foreground, 1.55)
@@ -114,7 +115,7 @@ Item {
 
           PlainText {
             width: parent.width
-            text: prompt.textFor("startup_prompt.help")
+            text: prompt.textFor(prompt.nativeContext ? "native.startup.prompt_help" : "startup_prompt.help")
             color: prompt.dim
             font.family: prompt.fontFamily
             font.pixelSize: Style.font.caption

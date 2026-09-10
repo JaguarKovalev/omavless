@@ -83,7 +83,7 @@ test('startup stored preference rendering is EN/RU, read-only and identity-free'
  }
  const fn=panel.slice(start,end); assert(!fn.includes('profileId')); assert(!fn.includes('.name')); assert(!fn.includes('requestNativeAction'));
  const row=panel.slice(panel.indexOf('id: nativeStartupSummaryRow'),panel.indexOf('id: nativeStartupSummaryRow')+400);
- assert(row.includes('actionVisible: false')); assert(row.includes('native.startup.scope')); assert(!row.includes('onAction:'));
+ assert(row.includes('actionVisible: vless.nativeStartupAvailable')); assert(row.includes('native.startup.scope'));
  assert(panel.includes('property bool actionVisible: true'));
  assert(panel.includes('focusable: settingRow.actionEnabled && settingRow.actionVisible'));
  assert(panel.includes('text: settingRow.description')); // Existing PlainText sink.

@@ -19,6 +19,8 @@ var CATALOG = {
   "native.batch.progress": {"en":"{completed} / {total}","ru":"{completed} / {total}"},
   "native.batch.check": {"en":"Check operation","ru":"Проверить операцию"},
   "native.startup.scope": {"en":"Stored preference only. Login activation is unverified; editing is not yet available in the native panel.","ru":"Только сохранённая настройка. Автозапуск не проверен; изменение в панели Rust пока недоступно."},
+  "native.startup.configure_scope": {"en":"Saved login preferences. Editing does not change the current VPN connection.","ru":"Сохранённые настройки входа. Изменение не влияет на текущее подключение VPN."},
+  "native.startup.prompt_help": {"en":"Choose the VPN policy for the next login. Saving does not reconnect now; the runtime validates the requested startup configuration.","ru":"Выберите поведение VPN при следующем входе. Сохранение не переподключает VPN; служба проверит выбранную конфигурацию автозапуска."},
   "native.startup.unavailable": {"en":"Stored preference unavailable","ru":"Сохранённая настройка недоступна"},
   "native.startup.unconfigured": {"en":"Preference not configured","ru":"Настройка не задана"},
   "native.startup.specific": {"en":"Specific profile","ru":"Определённый профиль"},

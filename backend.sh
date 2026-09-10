@@ -61,6 +61,15 @@ if command -v omavless >/dev/null 2>&1; then
           [ "$#" -eq 1 ] || blocked
           exec omavless desktop capabilities
           ;;
+        native-startup-capabilities)
+          [ "$#" -eq 1 ] || blocked
+          exec omavless capabilities
+          ;;
+        native-startup-configure)
+          [ "$#" -eq 4 ] || blocked
+          shift
+          exec omavless plugin startup-configure "$@"
+          ;;
         native-support-report)
           [ "$#" -eq 1 ] || blocked
           exec omavless diagnostics export
