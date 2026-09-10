@@ -73,6 +73,10 @@ if command -v omavless >/dev/null 2>&1; then
           [ "$#" -eq 1 ] || blocked
           exec omavless desktop core-readiness
           ;;
+        native-connection-test)
+          [ "$#" -eq 1 ] || blocked
+          exec omavless runtime test
+          ;;
         native-routing-rules)
           [ "$#" -eq 1 ] || blocked
           exec omavless routing rules

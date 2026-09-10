@@ -17,6 +17,48 @@ Item {
   property var settings: ({})
   // Native metadata is deliberately NOT legacy live status.
   property bool nativeOwner: false
+  property var nativeTestResult: null
+  property string nativeTestStatus: ""
+  property var nativeTestProcess: null
+  property var nativeTestFence: null
+  property int nativeTestGeneration: 0
+  function clearNativeTest() {
+    nativeTestGeneration++
+    nativeTestFence = null
+    nativeTestResult = null
+    nativeTestStatus = ""
+  }
+  function startNativeConnectionTest() {
+    if (!nativeCanAct || !panelVisible || !nativeSnapshot.desired.connected || nativeTestProcess !== null) return false
+    clearNativeTest()
+    nativeTestStatus = "loading"
+    nativeTestFence = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision, generation:nativeTestGeneration}
+    nativeTestProcess = nativeConnectionTestComponent.createObject(root, {context:nativeTestFence})
+    if (!nativeTestProcess) { nativeTestStatus = "unavailable"; return false }
+    nativeTestProcess.running = true
+    return true
+  }
+  function finishNativeConnectionTest(context, code, raw) {
+    if (context.generation !== nativeTestGeneration || !panelVisible || !nativeCanAct
+        || context.instanceId !== nativeSnapshot.instanceId || context.revision !== nativeSnapshot.revision) return
+    nativeTestResult = code === 0 ? NativeSnapshot.connectionTest(raw, context) : null
+    nativeTestStatus = nativeTestResult ? nativeTestResult.https ? "ok" : "failed" : "unavailable"
+  }
+  Component {
+    id: nativeConnectionTestComponent
+    Process {
+      id: process
+      property var context
+      command: ["bash", root.backendPath, "native-connection-test"]
+      property Timer watchdog: Timer { interval: 10000; running: process.running; onTriggered: process.signal(9) }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) {
+        root.nativeTestProcess = null
+        try { root.finishNativeConnectionTest(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
   property var nativeSnapshot: null
   property bool nativeSnapshotFailed: false
   property var nativeObservation: null
@@ -754,6 +796,7 @@ Item {
   property bool panelVisible: false
   onPanelVisibleChanged: {
     if (!panelVisible) {
+      clearNativeTest()
       _nativeDesktopGeneration++
       nativeDesktopCapabilities = null
       if (_nativeDesktopRead) _nativeDesktopRead.running = false
@@ -2711,6 +2754,7 @@ Item {
     invalidateNativeDiagnosticsIdentity()
   }
   onNativeSnapshotChanged: {
+    if (nativeTestFence && (!nativeSnapshot || nativeSnapshot.instanceId !== nativeTestFence.instanceId || nativeSnapshot.revision !== nativeTestFence.revision)) clearNativeTest()
     if ((_nativeRulesFence && !nativeRoutingCurrent(_nativeRulesFence)) || (_nativeRouteFence && !nativeRoutingCurrent(_nativeRouteFence))) clearNativeRouting()
     if (nativeOwner && nativeRoutingToolsVisible && nativeFactsCurrent && !_nativeRulesFence && !nativeRoutingBusy) loadCustomRules()
     if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr()
