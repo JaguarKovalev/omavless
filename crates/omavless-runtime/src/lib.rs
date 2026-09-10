@@ -63,6 +63,7 @@ pub mod mutation_protocol;
 pub mod native_coordinator;
 pub mod native_dispatch;
 pub mod native_host;
+pub mod native_probe_resolver;
 mod onboarding_protocol;
 pub mod owner;
 pub mod plugin_action;
