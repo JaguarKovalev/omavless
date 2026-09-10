@@ -5629,7 +5629,7 @@ mod tests {
         );
         assert_eq!(
             call(&paths, "startup.configure", json!({})).unwrap()["error"]["code"],
-            "unknown_method"
+            "capability_unavailable"
         );
         assert_eq!(fs::read(&store).unwrap(), bytes);
         assert_eq!(host_calls.load(Ordering::Relaxed), initial_calls);
@@ -5637,6 +5637,64 @@ mod tests {
         assert_eq!(fs::read(&desired_path).unwrap(), desired_before);
         worker.join().unwrap();
         fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn startup_plugin_action_shares_host_admission_and_exact_retry() {
+        for admitted in [false, true] {
+            let base = temporary_base("startup-plugin");
+            let (mut owner, _, host_calls) = native_owner_fixture(&base);
+            owner.set_test_login_ready(admitted);
+            let calls_before = host_calls.load(Ordering::Relaxed);
+            let store = base.join("config/profiles.json");
+            let store_before = fs::read(&store).unwrap();
+            let desired = DesiredPaths::below(&base.join("state")).file;
+            let desired_before = fs::read(&desired).unwrap();
+            let paths = RuntimePaths::below(&base.join("runtime"));
+            let server =
+                RuntimeServer::bind_with_owner_factory(paths.clone(), move |_| Ok(owner)).unwrap();
+            let worker =
+                thread::spawn(move || server.serve(Some(if admitted { 5 } else { 2 })).unwrap());
+            let hello = call(&paths, "system.hello", json!({"versions":[1]})).unwrap();
+            let params = json!({"instanceId":hello["result"]["instanceId"],"expectedRevision":0,
+                "operationId":"startup-plugin-save","action":"startup-configure",
+                "enabled":false,"target":"last","profileId":"","mode":"global"});
+            let response = call_plugin_action(&paths, params.clone()).unwrap();
+            if admitted {
+                assert_eq!(response["ok"], true);
+                assert_eq!(response["revision"], 1);
+                assert_eq!(
+                    response["result"],
+                    json!({"schemaVersion":1,"instanceId":params["instanceId"],
+                    "operationId":"startup-plugin-save","action":"startup-configure","applied":true})
+                );
+                let saved = fs::read(&store).unwrap();
+                assert_eq!(
+                    call_plugin_action(&paths, params.clone()).unwrap(),
+                    response
+                );
+                let mut stale = params.clone();
+                stale["instanceId"] = json!("old-daemon");
+                assert_eq!(
+                    call_plugin_action(&paths, stale).unwrap()["error"]["code"],
+                    "daemon_restarting"
+                );
+                let mut conflicting = params;
+                conflicting["operationId"] = json!("new-operation");
+                assert_eq!(
+                    call_plugin_action(&paths, conflicting).unwrap()["error"]["code"],
+                    "conflict"
+                );
+                assert_eq!(fs::read(&store).unwrap(), saved);
+            } else {
+                assert_eq!(response["error"]["code"], "capability_unavailable");
+                assert_eq!(fs::read(&store).unwrap(), store_before);
+            }
+            assert_eq!(fs::read(&desired).unwrap(), desired_before);
+            assert_eq!(host_calls.load(Ordering::Relaxed), calls_before);
+            worker.join().unwrap();
+            fs::remove_dir_all(base).unwrap();
+        }
     }
 
     #[test]
