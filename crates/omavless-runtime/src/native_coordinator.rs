@@ -12,9 +12,11 @@
 
 mod batch;
 mod onboarding;
+mod probe;
 mod provider;
 mod startup;
 pub use batch::{NativeBatchTicket, NativeSubscriptionBatch};
+pub use probe::{NativeSubscriptionProbe, ProbeCancellation};
 pub use provider::{NativeProviderRefresh, ProviderRefreshAdmission, ProviderRefreshSnapshot};
 
 use crate::connection_transaction::{
@@ -365,6 +367,8 @@ pub struct OfflineNativeCoordinator<H> {
     transaction: ConnectionTransactionState<H>,
     required_ownership: Option<OwnershipFence>,
     batch: Option<batch::BatchOwnerState>,
+    probe_results: std::collections::VecDeque<probe::RetainedProbeResults>,
+    auxiliary_recovery_required: bool,
 }
 
 impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
@@ -387,6 +391,8 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
             ),
             required_ownership: None,
             batch: None,
+            probe_results: std::collections::VecDeque::new(),
+            auxiliary_recovery_required: false,
         }
     }
 
@@ -440,7 +446,11 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
 
     #[must_use]
     pub const fn actual(&self) -> ActualState {
-        self.transaction.actual()
+        if self.auxiliary_recovery_required {
+            ActualState::ManualRecoveryRequired
+        } else {
+            self.transaction.actual()
+        }
     }
 
     pub(crate) fn desired(
@@ -2744,6 +2754,265 @@ mod tests {
     fn batch_request(method: &str, operation: &str) -> Value {
         json!({"api": "omavless.control", "version": 1, "id": "batch-test", "method": method,
             "params": {"instanceId": "owner-instance", "operationId": operation}})
+    }
+
+    fn probe_owner_fixture(label: &str) -> (PathBuf, PathBuf, OfflineNativeCoordinator<FakeHost>) {
+        let (root, path, owner) = batch_fixture(label);
+        let template = path.parent().unwrap().join("route-template.yaml");
+        fs::write(
+            &template,
+            b"dns:\n  nameserver: [https://dns.example/dns-query]\n",
+        )
+        .unwrap();
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o600)).unwrap();
+        (root, path, owner)
+    }
+
+    fn probe_request(operation: &str) -> Value {
+        let mut request = batch_request("subscriptions.probe", operation);
+        request["params"]["subscriptionId"] = json!(SUBSCRIPTION);
+        request
+    }
+
+    fn probe_rows() -> Vec<omavless_mihomo::probe_plan::ProbeResult> {
+        vec![omavless_mihomo::probe_plan::ProbeResult {
+            resolved: true,
+            reachable: true,
+            latency_ms: 12,
+        }]
+    }
+
+    #[test]
+    fn probe_owner_success_is_volatile_and_exact_retry_has_no_work() {
+        let (root, path, mut owner) = probe_owner_fixture("probe-success");
+        let bytes = fs::read(&path).unwrap();
+        let revision = owner.revision();
+        let job = owner
+            .start_subscription_probe(&probe_request("probe"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.profiles().len(), 1);
+        assert!(owner.mutation_operation_known(&probe_request("probe")));
+        assert!(owner.mutation_operation_known(&probe_request("ordinary-add")));
+        assert!(!owner.mutation_operation_known(&probe_request("unseen")));
+        assert_eq!(job.profiles()[0].0, SUBSCRIPTION_PROFILE);
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .is_none()
+        );
+        owner.publish_subscription_probe_progress(&job, 1).unwrap();
+        owner
+            .complete_subscription_probe(job, Ok(probe_rows()))
+            .unwrap();
+        let result = owner
+            .subscription_probe_results(&batch_request("subscriptions.probe_results", "probe"))
+            .unwrap();
+        assert_eq!(result["version"], 1);
+        assert_eq!(result["results"][0]["latencyMs"], 12);
+        assert!(!result.to_string().contains("192.0.2"));
+        assert!(!result.to_string().contains("Managed"));
+        assert!(!result.to_string().contains("private-token"));
+        assert_eq!(owner.revision(), revision);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .is_none()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn probe_owner_cancel_failure_and_bad_rows_never_publish() {
+        for kind in ["cancel", "failure", "bad-rows"] {
+            let (root, path, mut owner) = probe_owner_fixture(kind);
+            let bytes = fs::read(&path).unwrap();
+            let revision = owner.revision();
+            let job = owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .unwrap();
+            let flag = job.cancellation();
+            if kind == "cancel" {
+                owner
+                    .cancel_subscription_batch(&batch_request("operations.cancel", "probe"))
+                    .unwrap();
+                assert!(flag.requested());
+            }
+            let result = if kind == "bad-rows" {
+                Ok(Vec::new())
+            } else {
+                Err(StableErrorCode::CoreRejected)
+            };
+            assert!(owner.complete_subscription_probe(job, result).is_err());
+            assert!(
+                owner
+                    .subscription_probe_results(&batch_request(
+                        "subscriptions.probe_results",
+                        "probe"
+                    ))
+                    .is_err()
+            );
+            assert_eq!(
+                batch_status(&owner, "probe")["state"],
+                if kind == "cancel" {
+                    "cancelled"
+                } else {
+                    "failed"
+                }
+            );
+            assert_eq!(owner.revision(), revision);
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn probe_owner_store_template_revision_and_shutdown_fence_results() {
+        for kind in ["store", "template", "revision", "desired", "shutdown"] {
+            let (root, path, mut owner) = probe_owner_fixture(kind);
+            let job = owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .unwrap();
+            match kind {
+                "store" => {
+                    let mut bytes = fs::read(&path).unwrap();
+                    bytes.push(b' ');
+                    fs::write(&path, bytes).unwrap();
+                }
+                "template" => {
+                    fs::write(
+                        path.parent().unwrap().join("route-template.yaml"),
+                        b"dns: {}\n",
+                    )
+                    .unwrap();
+                }
+                "revision" => {
+                    owner.execute_profile(&json!({"api":"omavless.control","version":1,"id":"test","method":"profiles.favorite","params":{"operationId":"favorite","profileId":PROFILE,"enabled":true}})).unwrap();
+                }
+                "desired" => {
+                    let mut desired = owner.transaction.desired().unwrap();
+                    desired.generation += 1;
+                    write_desired(
+                        owner.transaction.desired_paths(),
+                        owner.transaction.uid(),
+                        &desired,
+                    )
+                    .unwrap();
+                }
+                _ => owner.stop_batch_operations().unwrap(),
+            }
+            assert!(
+                owner
+                    .complete_subscription_probe(job, Ok(probe_rows()))
+                    .is_err()
+            );
+            assert!(
+                owner
+                    .subscription_probe_results(&batch_request(
+                        "subscriptions.probe_results",
+                        "probe"
+                    ))
+                    .is_err()
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn probe_owner_namespace_stale_results_and_cleanup_failure_are_fenced() {
+        let (root, path, mut owner) = probe_owner_fixture("probe-namespace");
+        let job = owner
+            .start_subscription_probe(&probe_request("probe"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            owner
+                .start_subscription_batch(&batch_request("subscriptions.refresh_all", "probe"))
+                .is_err()
+        );
+        assert!(
+            owner
+                .start_subscription_batch(&batch_request("subscriptions.refresh_all", "different"))
+                .is_err()
+        );
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("ordinary-add"))
+                .is_err()
+        );
+        owner
+            .complete_subscription_probe(job, Ok(probe_rows()))
+            .unwrap();
+        let mut changed = fs::read(&path).unwrap();
+        changed.push(b' ');
+        fs::write(&path, changed).unwrap();
+        assert!(
+            owner
+                .subscription_probe_results(&batch_request("subscriptions.probe_results", "probe"))
+                .is_err()
+        );
+        let job = owner
+            .start_subscription_probe(&probe_request("cleanup-failure"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            owner
+                .complete_subscription_probe(job, Err(StableErrorCode::ManualRecoveryRequired))
+                .is_err()
+        );
+        assert_eq!(owner.actual(), ActualState::ManualRecoveryRequired);
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("blocked"))
+                .is_err()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn probe_owner_cache_is_bounded_and_abort_allows_successor() {
+        let (root, _, mut owner) = probe_owner_fixture("probe-cache");
+        let job = owner
+            .start_subscription_probe(&probe_request("aborted"))
+            .unwrap()
+            .unwrap();
+        let ticket = job.supervisor_ticket();
+        let cancel = job.cancellation();
+        drop(job);
+        owner.abort_subscription_batch(ticket).unwrap();
+        assert!(cancel.requested());
+        for index in 0..17 {
+            let job = owner
+                .start_subscription_probe(&probe_request(&format!("probe-{index}")))
+                .unwrap()
+                .unwrap();
+            owner
+                .complete_subscription_probe(job, Ok(probe_rows()))
+                .unwrap();
+        }
+        assert_eq!(owner.probe_results.len(), 16);
+        assert!(
+            owner
+                .subscription_probe_results(&batch_request(
+                    "subscriptions.probe_results",
+                    "probe-0"
+                ))
+                .is_err()
+        );
+        assert!(
+            owner
+                .subscription_probe_results(&batch_request(
+                    "subscriptions.probe_results",
+                    "probe-16"
+                ))
+                .is_ok()
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn batch_fixture(label: &str) -> (PathBuf, PathBuf, OfflineNativeCoordinator<FakeHost>) {
