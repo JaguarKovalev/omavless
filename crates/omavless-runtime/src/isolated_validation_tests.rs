@@ -287,3 +287,56 @@ fn installed_core_isolated_offline_snapshot_optin() {
     assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
     fs::remove_dir_all(root).unwrap();
 }
+
+/// Real cache bytes, synthetic profile only. No installed configuration is
+/// generated or changed; bwrap keeps every core validation offline.
+fn check_installed_bundle(label: &str, bundle: &str) {
+    let core = std::env::var_os("OMAVLESS_TEST_MIHOMO").expect("installed core opt-in is required");
+    let data = std::env::var_os("OMAVLESS_TEST_RULE_CACHE")
+        .expect("explicit read-only cache opt-in is required");
+    let scratch = root();
+    let uid = nix::unistd::Uid::current().as_raw();
+    let (mut desired, store) = candidate();
+    let mut passed = 0;
+    for mode in [
+        crate::desired::RoutingMode::Rule,
+        crate::desired::RoutingMode::Global,
+        crate::desired::RoutingMode::Direct,
+    ] {
+        desired.mode = mode;
+        let before = ValidationSnapshot::capture(Path::new(&data), uid, &desired, &store, bundle)
+            .unwrap_or_else(|error| panic!("{label} cache capture: {error:?}"));
+        let result = before.validate(Path::new(&core), &scratch, uid);
+        // Check cleanup even when the selected core refuses the bundle.
+        assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0);
+        assert_eq!(result, Ok(()), "{label} / {}", mode.as_str());
+        let after = ValidationSnapshot::capture(Path::new(&data), uid, &desired, &store, bundle)
+            .unwrap_or_else(|error| panic!("{label} cache recheck: {error:?}"));
+        // Never format config/cache bytes in a failing assertion.
+        assert!(
+            before.config == after.config && before.resources == after.resources,
+            "read-only cache changed during isolated validation"
+        );
+        passed += 1;
+    }
+    assert_eq!(passed, 3);
+    fs::remove_dir(&scratch).unwrap();
+}
+
+#[test]
+#[ignore = "requires installed Mihomo, bubblewrap and explicit RU cache directory"]
+fn installed_bundled_ru_resources_isolated_optin() {
+    check_installed_bundle("ru", BUNDLES[0]);
+}
+
+#[test]
+#[ignore = "requires installed Mihomo, bubblewrap and explicit CN cache directory"]
+fn installed_bundled_cn_resources_isolated_optin() {
+    check_installed_bundle("cn", BUNDLES[1]);
+}
+
+#[test]
+#[ignore = "requires installed Mihomo, bubblewrap and explicit IR cache directory"]
+fn installed_bundled_ir_resources_isolated_optin() {
+    check_installed_bundle("ir", BUNDLES[2]);
+}

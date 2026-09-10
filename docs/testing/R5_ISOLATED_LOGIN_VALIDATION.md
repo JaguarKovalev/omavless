@@ -92,6 +92,40 @@ writable (`ETXTBSY`); execution now retains a verified read-only inode anchor.
 No installed configuration, private profile, service, route, DNS or TUN changed.
 The PR records the exact tested commit and additional static checks.
 
+### Resource-bearing local continuation — 2026-09-10
+
+The separate ignored `installed_bundled_{ru,cn,ir}_resources_isolated_optin`
+tests now exercise the public bundle-capture boundary, not hand-constructed
+minimal snapshots. Set `OMAVLESS_TEST_MIHOMO` to the installed core and
+`OMAVLESS_TEST_RULE_CACHE` to an explicitly selected existing private data
+directory. This directory is read only: tests never download or create its
+resources and never read its profile store. The profile remains synthetic.
+Each selected bundle runs Rule, Global and Direct; full resource bytes are
+compared privately before/after each validation and scratch must be empty.
+Public output contains only the bundle/mode and fixed failure classification.
+Missing resources fail that opt-in rather than silently skip or pass it.
+
+Actual Try Omarchy ARM64 with Mihomo 1.19.30: RU had all 23 required caches
+and CN all five. Both passed all three modes (six complete offline validations)
+with unchanged cache bytes and cleaned scratch. IR had none of its seven
+required caches and capture refused `ResourceUnavailable`; IR installed
+bundle acceptance remains unavailable, not passed. The initial all-bundle
+attempt failed at IR after RU/CN; separate named tests make this evidence gap
+explicit. No implicit cache provisioning or OS-security change was made.
+
+The full runtime library gate passed 492 tests with three explicit installed
+bundle opt-ins ignored; `OMAVLESS_TEST_MIHOMO` was set, so the existing minimal
+offline success and GEOSITE/no-host-network negative also executed. Runtime
+all-target strict clippy, formatting and diff checks pass. The first attempt
+inside the agent sandbox was rejected; real host execution retains the mandatory
+inner bwrap sandbox. Neither the agent sandbox nor compilation alone establishes
+the product's namespace evidence.
+
+This test-only continuation is kept locally at the owner's request until a
+larger completed checkpoint is ready. Installed runtime/plugin remain unchanged.
+Passing offline bundles does not activate login, prove future service TUN
+permissions or authorize removing Python.
+
 Before production login activation, compose this with strict empty-host and
 permission checks under owner/migration locks, trusted once-per-manager trigger,
 receipt ordering, input revalidation and legacy enablement conversion. Bind the
