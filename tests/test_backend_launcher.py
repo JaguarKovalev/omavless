@@ -112,6 +112,7 @@ exit {code}
         self.action_native()
         for args, expected in [
             (("native-core-readiness",), ["desktop", "core-readiness"]),
+            (("native-profile-details", "synthetic-record"), ["profile", "details", "synthetic-record"]),
             (("native-routing-rules",), ["routing", "rules"]),
             (("native-support-report",), ["diagnostics", "export"]),
             (("native-clipboard-copy",), ["desktop", "clipboard-copy"]),
@@ -126,7 +127,7 @@ exit {code}
             self.assertEqual(result.returncode, 0)
             self.assertEqual(self.calls(), ["native:plugin:target", *["arg:" + item for item in expected]])
             self.trace.unlink()
-        for args in [("native-core-readiness", "private-token"), ("native-profile-qr",), ("native-profile-qr", "id", "private-token"), ("native-qr-render", "private-token"), ("native-profile-file",), ("native-profile-file", "id", "private-token"), ("native-export-write", "private-token")]:
+        for args in [("native-profile-details",), ("native-profile-details", "id", "private-token"), ("native-core-readiness", "private-token"), ("native-profile-qr",), ("native-profile-qr", "id", "private-token"), ("native-qr-render", "private-token"), ("native-profile-file",), ("native-profile-file", "id", "private-token"), ("native-export-write", "private-token")]:
             result = self.run_launcher(*args)
             self.assertEqual(result.returncode, 71)
             self.assertEqual(self.calls(), ["native:plugin:target"])
