@@ -143,17 +143,26 @@ Item {
   property var _nativeBatchProcess: null
   property int _nativeBatchFailures: 0
   property int _nativeBatchPolls: 0
+  property var _nativeProbeCacheFence: null
   readonly property bool nativeBatchRequestRunning: _nativeBatchProcess !== null
   readonly property bool nativeBatchBusy: nativeBatchJob !== null && !nativeBatchJob.terminal
   readonly property bool nativeBatchAbandonable: nativeBatchUnknown && nativeBatchJob !== null && !nativeBatchJob.terminal
     && !nativeBatchRequestRunning && nativeFactsCurrent && nativeSnapshot.instanceId !== nativeBatchJob.instanceId
 
-  function startNativeBatch(kind) {
-    if (!nativeCanAct || nativeBatchBusy || nativeBatchRequestRunning || ["subscriptions", "providers"].indexOf(kind) < 0) return false
+  function startNativeBatch(kind, subscriptionId) {
+    if (!nativeCanAct || nativeBatchBusy || nativeBatchRequestRunning || ["subscriptions", "providers", "probe"].indexOf(kind) < 0) return false
+    var profileIds = []
+    if (kind === "probe") {
+      if (!NativeSnapshot.id(subscriptionId, false) || !nativeSnapshot.subscriptions.some(function(s) { return s.id === subscriptionId })) return false
+      profileIds = nativeSnapshot.profiles.filter(function(p) { return p.subscriptionId === subscriptionId && !p.missing }).map(function(p) { return p.id })
+      if (profileIds.length === 0 || profileIds.length > 256) return false
+      clearProbeResults(subscriptionId)
+    }
     var operation = "qml-batch-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
     nativeBatchJob = {kind:kind, instanceId:nativeSnapshot.instanceId, operationId:operation,
       revision:nativeSnapshot.revision, state:"starting", completed:0, total:0, cancellable:false,
-      cancelRequested:false, terminal:false, acknowledged:false, errorCode:""}
+      cancelRequested:false, terminal:false, acknowledged:false, errorCode:"",
+      subscriptionId:kind === "probe" ? subscriptionId : "", profileIds:profileIds}
     _nativeBatchFailures = 0; _nativeBatchPolls = 0
     nativeBatchUnknown = false; nativeBatchErrorCode = ""
     return runNativeBatchRequest("start")
@@ -161,14 +170,15 @@ Item {
 
   function runNativeBatchRequest(kind) {
     var job = nativeBatchJob
-    if (!job || job.terminal || nativeBatchRequestRunning || ["start", "get", "cancel"].indexOf(kind) < 0) return false
+    if (!job || nativeBatchRequestRunning || ["start", "get", "cancel", "results"].indexOf(kind) < 0) return false
+    if (kind === "results" ? job.kind !== "probe" || job.state !== "succeeded" || !job.terminal : job.terminal) return false
     if (!nativeOwner || !nativeSnapshot || nativeSnapshot.instanceId !== job.instanceId) {
       nativeBatchUnknown = true; nativeBatchErrorCode = "error.daemon_restarting"; return false
     }
     nativeBatchPoll.stop()
-    var command = ["bash", backendPath, kind === "start" ? (job.kind === "subscriptions" ? "native-subscriptions-refresh-all" : "native-providers-refresh")
-      : kind === "get" ? "native-operation-get" : "native-operation-cancel", job.instanceId, job.operationId]
-    if (kind === "start") command.push(String(job.revision))
+    var command = ["bash", backendPath, kind === "start" ? (job.kind === "subscriptions" ? "native-subscriptions-refresh-all" : job.kind === "probe" ? "native-subscription-probe" : "native-providers-refresh")
+      : kind === "get" ? "native-operation-get" : kind === "results" ? "native-subscription-probe-results" : "native-operation-cancel", job.instanceId, job.operationId]
+    if (kind === "start") { if (job.kind === "probe") command.push(job.subscriptionId); command.push(String(job.revision)) }
     _nativeBatchProcess = nativeBatchComponent.createObject(root, {command:command, requestKind:kind, operation:job.operationId})
     if (!_nativeBatchProcess) { nativeBatchUnknown = true; nativeBatchErrorCode = "error.capability_unavailable"; return false }
     _nativeBatchProcess.running = true
@@ -177,6 +187,7 @@ Item {
 
   function finishNativeBatchRequest(kind, operation, code, output) {
     var job = nativeBatchJob
+    if (kind === "results") { finishNativeProbeResults(operation, code, output); return }
     if (!job || job.operationId !== operation || job.terminal) return
     var result = NativeSnapshot.parseOperation(output, job, kind)
     // Never reinterpret an old instance's completion as current owner state.
@@ -205,16 +216,41 @@ Item {
     nativeBatchJob = Object.assign({}, job, result, {acknowledged:true})
     nativeBatchUnknown = false; nativeBatchErrorCode = result.state === "failed" ? nativeBatchPublicError(result.errorCode) : ""
     _nativeBatchFailures = 0
-    if (result.terminal) { refreshAfterChange(); if (diagnosticsPageVisible) refreshAdvancedDiagnostics(); return }
+    if (result.terminal) {
+      if (job.kind === "probe" && result.state === "succeeded") runNativeBatchRequest("results")
+      else { refreshAfterChange(); if (diagnosticsPageVisible) refreshAdvancedDiagnostics() }
+      return
+    }
     if (_nativeBatchPolls >= 300) { nativeBatchUnknown = true; nativeBatchErrorCode = "error.capability_unavailable"; return }
     nativeBatchPoll.interval = 2000
     nativeBatchPoll.start()
   }
 
   function retryNativeBatch() {
+    if (nativeBatchJob && nativeBatchJob.kind === "probe" && nativeBatchJob.state === "succeeded" && nativeBatchUnknown) return runNativeBatchRequest("results")
     if (!nativeBatchJob || nativeBatchJob.terminal || nativeBatchRequestRunning) return false
     _nativeBatchFailures = 0; _nativeBatchPolls = 0
     return runNativeBatchRequest(nativeBatchJob.acknowledged ? "get" : "start")
+  }
+
+  function finishNativeProbeResults(operation, code, output) {
+    var job = nativeBatchJob
+    if (!job || job.operationId !== operation || job.kind !== "probe" || job.state !== "succeeded") return
+    var rows = code === 0 && nativeFactsCurrent ? NativeSnapshot.parseProbeResults(output, job, nativeSnapshot) : null
+    if (!rows) {
+      var error = NativeSnapshot.parseOperation(output, job, "get")
+      nativeBatchUnknown = true
+      nativeBatchErrorCode = error && !error.ok ? nativeBatchPublicError(error.code) : "error.capability_unavailable"
+      return
+    }
+    var next = Object.assign({}, profileProbes)
+    for (var key in rows) next[key] = rows[key]
+    profileProbes = next
+    var times = Object.assign({}, subscriptionProbeTimes)
+    times[job.subscriptionId] = Date.now()
+    subscriptionProbeTimes = times
+    _nativeProbeCacheFence = {instanceId:job.instanceId, revision:job.revision}
+    nativeBatchUnknown = false; nativeBatchErrorCode = ""
   }
 
   function nativeBatchPublicError(code) {
@@ -2515,11 +2551,13 @@ Item {
       return
     }
     var next = {}
-    for (var i = 0; i < profiles.length; i++) {
-      var profile = profiles[i]
-      if (profile.subscriptionUuid === target) continue
-      var result = profileProbes[profile.uuid]
-      if (result !== undefined) next[profile.uuid] = result
+    var members = nativeOwner && nativeSnapshot ? nativeSnapshot.profiles : profiles
+    for (var i = 0; i < members.length; i++) {
+      var profile = members[i]
+      var profileId = nativeOwner ? profile.id : profile.uuid
+      if ((nativeOwner ? profile.subscriptionId : profile.subscriptionUuid) === target) continue
+      var result = profileProbes[profileId]
+      if (result !== undefined) next[profileId] = result
     }
     profileProbes = next
     var nextTimes = {}
@@ -2530,7 +2568,7 @@ Item {
   }
 
   function probeSubscription(subscription) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return subscription ? startNativeBatch("probe", subscription.id || subscription.uuid) : false
     if (!subscription || !subscription.uuid) {
       subscriptionError = "No such subscription"
       return false
@@ -3049,6 +3087,7 @@ Item {
     invalidateNativeDiagnosticsIdentity()
   }
   onNativeSnapshotChanged: {
+    if (_nativeProbeCacheFence && (!nativeSnapshot || nativeSnapshot.instanceId !== _nativeProbeCacheFence.instanceId || nativeSnapshot.revision !== _nativeProbeCacheFence.revision)) { clearProbeResults(""); _nativeProbeCacheFence = null }
     if (nativeTestFence && (!nativeSnapshot || nativeSnapshot.instanceId !== nativeTestFence.instanceId || nativeSnapshot.revision !== nativeTestFence.revision)) clearNativeTest()
     if (_nativeDetailsContext !== null && !nativeProfileDetailsCurrent(_nativeDetailsContext)) clearNativeProfileDetails()
     if (_nativePingFence && !nativePingCurrent(_nativePingFence)) clearNativePing()

@@ -8,12 +8,12 @@ const standalone={id:'local',name:'Local',protocol:'vless',subscriptionId:'',fav
 const managed={id:'managed',name:'Match',protocol:'vless',subscriptionId:'sub',favorite:true,missing:false};
 function context(){
   const calls=[];
-  const c=vm.createContext({NativePresentation:presentation,profileFilter:'',nativeExpanded:{},nativeSelectedProfile:'local',nativeSubscriptionId:'',pendingSubscriptionDelete:null,
+  const c=vm.createContext({NativePresentation:presentation,subscriptionSortModes:{},profileFilter:'',nativeExpanded:{},nativeSelectedProfile:'local',nativeSubscriptionId:'',pendingSubscriptionDelete:null,
     nativeView:{state:'disconnected',connected:false,mode:'rule',lastProfileId:'local',profiles:[standalone,managed],subscriptions:[{id:'sub',name:'Synthetic'}]},
     vless:{nativeCanAct:true,nativeOwner:true,refreshNativeDesktopCapabilities:()=>calls.push(['desktop-capabilities']),requestNativeAction:(...args)=>calls.push(args),nativeSnapshot:{instanceId:'instance',revision:4}},page:'main',nativeFlick:{contentY:90},
     nativeCursor:-1,nativeProfiles:{itemAt:()=>null},Qt:{callLater:f=>f()}});
   c.root=c;c.calls=calls;
-  for(const name of ['nativeRecord','buildNativeRows','toggleNativeSubscription','nativeToggleConnection','openSettings','openSubscriptions','browseNativeSubscription','moveNativeCursor','activateNativeCursor','requestNativeSubscriptionDelete','editSubscription']){
+  for(const name of ['nativeRecord','buildNativeRows','sortNativeProbeProfiles','sortNativeProbeResults','subscriptionSortMode','toggleNativeSubscription','nativeToggleConnection','openSettings','openSubscriptions','browseNativeSubscription','moveNativeCursor','activateNativeCursor','requestNativeSubscriptionDelete','editSubscription']){
     const start=source.indexOf('  function '+name+'('),end=source.indexOf('\n  }',start)+4;
     assert(start>=0&&end>start);vm.runInContext(source.slice(start,end),c);
   }
@@ -107,7 +107,7 @@ test('overview has only open actions and detail owns one refresh edit delete set
   const overview=source.slice(from,source.indexOf('          PlainText {',from));
   assert(!overview.includes('requestNativeSubscriptionAction'));assert(!overview.includes('nativeSubscriptionEdit'));assert(!overview.includes('nativeSubscriptionDelete'));
   assert(to>from);for(const id of ['nativeSubscriptionRefresh','nativeSubscriptionEdit','nativeSubscriptionDelete'])assert.equal(source.split('id: '+id+';').length-1,1);
-  assert.match(source,/page === "subscription" \? \[nativeSettingsBack, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch\]/);
+  assert.match(source,/page === "subscription" \? \[nativeSettingsBack, nativeSubscriptionTest, nativeSubscriptionSort, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch\]/);
 });
 test('detail Back and both Escape routes return overview rather than closing panel',()=>{
   for(const route of ['control','catcher','back']){
@@ -168,5 +168,16 @@ test('focused native controls route arrows back to the list without stealing sea
   c.nativeSearch.activeFocus=true;const input={key:1,accepted:false};c.handleNativeNavigationKey(input);assert(!input.accepted);assert.equal(calls.length,0);
   c.nativeSearch.activeFocus=false;c.modalInputActive=true;c.handleNativeNavigationKey({key:2});assert.equal(calls.length,0);
   assert.match(source,/id: nativeFlick\s+Keys.onPressed: function\(event\) \{ root.handleNativeNavigationKey\(event\) \}/);
+});
+test('native latency sort is opt-in, preserves active/favorite and puts failed checks last',()=>{
+ const c=context();c.nativeSubscriptionId='sub';c.subscriptionSortModes={sub:'pingAsc'};
+ const values={slow:{reachable:true,latencyMs:90},fast:{reachable:true,latencyMs:10},failed:{reachable:false,latencyMs:-1}};
+ c.vless.probeResult=id=>values[id]||null;
+ const rows=['failed','slow','fast'].map(id=>({id,name:id,favorite:false}));
+ assert.deepEqual(Array.from(c.sortNativeProbeProfiles(rows,'sub'),p=>p.id),['fast','slow','failed']);
+ c.sortNativeProbeResults();assert.deepEqual(Array.from(c.sortNativeProbeProfiles(rows,'sub'),p=>p.id),['slow','fast','failed']);
+ c.nativeView.activeId='failed';assert.equal(c.sortNativeProbeProfiles(rows,'sub')[0].id,'failed');
+ assert(source.includes('id: nativeSubscriptionTest'));assert(source.includes('id: nativeSubscriptionSort'));
+ assert(source.includes('root.nativeProbeLabel(nativeRow.profile.id)'));
 });
 console.log('native main panel: '+count+' passed');

@@ -151,6 +151,8 @@ exec /usr/bin/cat
     def test_native_long_operation_launchers_are_fixed_and_bounded(self):
         self.action_native()
         for command, tail, expected in [
+            ("native-subscription-probe", ["instance", "op", "10000000-0000-4000-8000-000000000001", "4"], ["subscription", "probe"]),
+            ("native-subscription-probe-results", ["instance", "op"], ["subscription", "probe-results"]),
             ("native-subscriptions-refresh-all", ["instance", "op", "4"], ["subscription", "refresh-all"]),
             ("native-providers-refresh", ["instance", "op", "4"], ["routing", "refresh-providers"]),
             ("native-operation-get", ["instance", "op"], ["operation", "get"]),

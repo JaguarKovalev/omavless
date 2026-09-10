@@ -94,6 +94,12 @@ pub fn parse_semantic_read(
         ["operation", "get", instance, operation] => {
             Some(long_request("operations.get", instance, operation, None)?)
         }
+        ["subscription", "probe-results", instance, operation] => Some(long_request(
+            "subscriptions.probe_results",
+            instance,
+            operation,
+            None,
+        )?),
         ["profile", "list"] => Some(SemanticRequest {
             method: "profiles.list",
             params: json!({}),
@@ -249,6 +255,9 @@ fn long_request(
         "routing.refresh_providers" => parse_provider_refresh_start(&request).map(|_| ()),
         "operations.get" => parse_operation_get(&request).map(|_| ()),
         "operations.cancel" => parse_operation_cancel(&request).map(|_| ()),
+        "subscriptions.probe_results" => {
+            crate::long_operation_protocol::parse_subscription_probe_results(&request).map(|_| ())
+        }
         _ => return Err(SemanticCliError::InvalidCommand),
     }
     .map_err(|_| SemanticCliError::InvalidArgument)?;
@@ -352,6 +361,29 @@ pub fn parse_semantic_mutation(
         }),
         ["subscription", "refresh-all", instance, operation] => {
             long_request("subscriptions.refresh_all", instance, operation, None)
+        }
+        [
+            "subscription",
+            "probe",
+            instance,
+            operation,
+            subscription,
+            revision,
+        ] => {
+            let params = json!({"instanceId":instance,"operationId":operation,
+                "subscriptionId":record_id(subscription)?, "expectedRevision":revision.parse::<u64>().map_err(|_|SemanticCliError::InvalidArgument)?});
+            let request = omavless_control_protocol::make_request(
+                "semantic-cli",
+                "subscriptions.probe",
+                params.clone(),
+            )
+            .map_err(|_| SemanticCliError::InvalidArgument)?;
+            crate::long_operation_protocol::parse_subscription_probe_start(&request)
+                .map_err(|_| SemanticCliError::InvalidArgument)?;
+            Ok(SemanticRequest {
+                method: "subscriptions.probe",
+                params,
+            })
         }
         ["routing", "refresh-providers", instance, operation] => {
             long_request("routing.refresh_providers", instance, operation, None)
@@ -935,6 +967,64 @@ mod long_operation_tests {
     use super::*;
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn selected_subscription_probe_commands_are_fixed_and_private() {
+        let id = "10000000-0000-4000-8000-000000000001";
+        let start = parse_semantic_mutation(
+            &args(&["subscription", "probe", "instance", "operation", id, "7"]),
+            None,
+        )
+        .unwrap()
+        .into_parts();
+        assert_eq!(start.0, "subscriptions.probe");
+        assert_eq!(
+            start.1,
+            json!({"instanceId":"instance","operationId":"operation","subscriptionId":id,"expectedRevision":7})
+        );
+        let result = parse_semantic_read(&args(&[
+            "subscription",
+            "probe-results",
+            "instance",
+            "operation",
+        ]))
+        .unwrap()
+        .unwrap()
+        .into_parts();
+        assert_eq!(result.0, "subscriptions.probe_results");
+        assert_eq!(
+            result.1,
+            json!({"instanceId":"instance","operationId":"operation"})
+        );
+        for values in [
+            vec!["subscription", "probe", "instance", "operation", id],
+            vec!["subscription", "probe", "instance", "operation", id, "-1"],
+            vec![
+                "subscription",
+                "probe",
+                "instance",
+                "operation",
+                "https://private.invalid/password",
+                "7",
+            ],
+            vec![
+                "subscription",
+                "probe",
+                "instance",
+                "operation",
+                id,
+                "7",
+                "extra",
+            ],
+        ] {
+            let error = parse_semantic_mutation(&args(&values), None).err().unwrap();
+            assert!(!error.to_string().contains("private.invalid"));
+        }
+        assert!(
+            parse_semantic_read(&args(&["subscription", "probe-results", "", "operation"]))
+                .is_err()
+        );
     }
 
     #[test]

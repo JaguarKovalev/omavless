@@ -169,9 +169,9 @@ Panel {
 
   function buildNativeRows() {
     var profiles = NativePresentation.filtered(nativeView.profiles, profileFilter)
-    if (page === "subscription") return profiles.filter(function(p) {
+    if (page === "subscription") return sortNativeProbeProfiles(profiles.filter(function(p) {
       return p.subscriptionId === nativeSubscriptionId
-    }).map(function(p) { return {kind:"profile", profile:p} })
+    }), nativeSubscriptionId).map(function(p) { return {kind:"profile", profile:p} })
     var rows = []
     profiles.filter(function(p) { return p.subscriptionId === "" }).forEach(function(p) { rows.push({kind:"profile", profile:p}) })
     nativeView.subscriptions.forEach(function(subscription) {
@@ -182,6 +182,34 @@ Panel {
       if (expanded) children.forEach(function(p) { rows.push({kind:"profile", profile:p}) })
     })
     return rows
+  }
+
+  function sortNativeProbeProfiles(profiles, subscriptionId) {
+    var mode = subscriptionSortMode(subscriptionId)
+    if (mode === "default") return profiles
+    return profiles.slice().sort(function(a, b) {
+      if ((a.id === nativeView.activeId) !== (b.id === nativeView.activeId)) return a.id === nativeView.activeId ? -1 : 1
+      if (a.favorite !== b.favorite) return a.favorite ? -1 : 1
+      var ar = vless.probeResult(a.id), br = vless.probeResult(b.id)
+      var aRank = ar && ar.reachable ? 0 : 1, bRank = br && br.reachable ? 0 : 1
+      if (aRank !== bRank) return aRank - bRank
+      if (aRank === 0 && ar.latencyMs !== br.latencyMs) return mode === "pingDesc" ? br.latencyMs - ar.latencyMs : ar.latencyMs - br.latencyMs
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+    })
+  }
+
+  function nativeProbeLabel(profileId) {
+    var result = vless.probeResult(profileId)
+    if (result === null) return ""
+    return result.reachable ? textFor("native.ping.milliseconds", {ms:result.latencyMs})
+      : textFor(result.resolved ? "routing.source.unavailable" : "native.probe.dns_failed")
+  }
+
+  function sortNativeProbeResults() {
+    var next = Object.assign({}, subscriptionSortModes)
+    next[nativeSubscriptionId] = subscriptionSortMode(nativeSubscriptionId) === "pingAsc" ? "pingDesc" : "pingAsc"
+    subscriptionSortModes = next
+    nativeCursor = -1
   }
 
   function toggleNativeSubscription(id) {
@@ -655,7 +683,7 @@ Panel {
     if (vless.nativeOwner) {
       var targets = page === "settings" ? [nativeSettingsBack, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeRule, nativeGlobal, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeRefresh]
         : page === "subscriptions" ? [nativeSettingsBack, nativeRefresh, nativeSubscriptionAdd, nativeSubscriptionRefreshAll]
-        : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
+        : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionTest, nativeSubscriptionSort, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
         : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativePingTest, nativeModeSetting, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
       targets = targets.concat([nativeBatchCheck, nativeBatchCancel, nativeBatchDismiss, nativeBatchAbandon])
       if (page === "settings") targets.push(nativeProvidersRefresh.focusTarget)
@@ -2147,7 +2175,7 @@ Panel {
           ColumnLayout {
             Layout.fillWidth: true
             visible: vless.nativeBatchJob !== null
-            PlainText { Layout.fillWidth: true; text: vless.nativeBatchJob ? root.textFor("native.batch." + vless.nativeBatchJob.kind) + " · " + root.textFor("native.batch." + (vless.nativeBatchUnknown ? "unknown" : vless.nativeBatchJob.state)) : ""; color: root.foreground; font.family: root.fontFamily; wrapMode: Text.Wrap }
+            PlainText { Layout.fillWidth: true; text: vless.nativeBatchJob ? root.textFor(vless.nativeBatchJob.kind === "probe" ? "action.test" : "native.batch." + vless.nativeBatchJob.kind) + " · " + root.textFor("native.batch." + (vless.nativeBatchUnknown ? "unknown" : vless.nativeBatchJob.state)) : ""; color: root.foreground; font.family: root.fontFamily; wrapMode: Text.Wrap }
             PlainText { Layout.fillWidth: true; text: vless.nativeBatchJob ? root.textFor("native.batch.progress", {completed:vless.nativeBatchJob.completed,total:vless.nativeBatchJob.total}) : ""; color: root.dim; font.family: root.fontFamily }
             PlainText { Layout.fillWidth: true; visible: vless.nativeBatchErrorCode !== "" || (vless.nativeBatchJob !== null && vless.nativeBatchJob.errorCode !== ""); text: root.textFor(vless.nativeBatchErrorCode !== "" ? vless.nativeBatchErrorCode : "error." + (vless.nativeBatchJob ? vless.nativeBatchJob.errorCode : "capability_unavailable")); color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
             Flow {
@@ -2184,6 +2212,8 @@ Panel {
             visible: root.page === "subscription" && root.nativeSubscription !== null
             Layout.fillWidth: true
             spacing: Style.space(8)
+            Button { id: nativeSubscriptionTest; text: root.textFor("action.test"); focusable: true; bordered: true; enabled: vless.nativeCanAct && !vless.nativeBatchBusy && !vless.nativeBatchRequestRunning && root.nativeSubscription !== null && root.nativeView.profiles.some(function(p) { return p.subscriptionId === root.nativeSubscriptionId && !p.missing }); onClicked: vless.startNativeBatch("probe", root.nativeSubscriptionId) }
+            Button { id: nativeSubscriptionSort; text: root.textFor("profiles.sort_ping") + (root.subscriptionSortMode(root.nativeSubscriptionId) === "pingDesc" ? " ↓" : " ↑"); focusable: true; bordered: true; enabled: root.nativeView.profiles.some(function(p) { return p.subscriptionId === root.nativeSubscriptionId && vless.probeResult(p.id) !== null }); onClicked: root.sortNativeProbeResults() }
             Button { id: nativeSubscriptionRefresh; text: root.textFor("common.refresh"); focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeSubscription !== null; onClicked: vless.requestNativeSubscriptionAction("subscription-refresh", root.nativeSubscriptionId, "", "") }
             Button { id: nativeSubscriptionEdit; text: root.textFor("common.edit"); focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeSubscription !== null && !vless.nativeSubscriptionLoading && !vless.nativeSubscriptionDraft; onClicked: root.editSubscription(root.nativeSubscription) }
             Button { id: nativeSubscriptionDelete; text: root.textFor("common.delete"); focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeSubscription !== null; onClicked: root.requestNativeSubscriptionDelete(root.nativeSubscription) }
@@ -2273,6 +2303,7 @@ Panel {
                 PanelActionButton { id: rowDetails; size: Style.space(24); iconText: "󰋽"; tooltipText: root.textFor("native.details.open"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: root.nativeExpandedDetailsId = root.nativeExpandedDetailsId === nativeRow.profile.id ? "" : nativeRow.profile.id }
               }
               }
+              PlainText { Layout.fillWidth: true; visible: nativeRow.isProfile && vless.probeResult(nativeRow.profile.id) !== null; text: nativeRow.isProfile ? root.nativeProbeLabel(nativeRow.profile.id) : ""; textFormat: Text.PlainText; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
               ColumnLayout {
                 Layout.fillWidth: true
                 visible: nativeRow.selected && root.nativeExpandedDetailsId === nativeRow.profile.id

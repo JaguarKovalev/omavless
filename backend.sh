@@ -43,6 +43,14 @@ if command -v omavless >/dev/null 2>&1; then
     legacy) ;;
     rust)
       case "${1-}" in
+        native-subscription-probe)
+          [ "$#" -eq 5 ] || blocked
+          exec omavless subscription probe "$2" "$3" "$4" "$5"
+          ;;
+        native-subscription-probe-results)
+          [ "$#" -eq 3 ] || blocked
+          exec omavless subscription probe-results "$2" "$3"
+          ;;
         native-subscriptions-refresh-all|native-providers-refresh)
           [ "$#" -eq 4 ] || blocked
           case "$1" in

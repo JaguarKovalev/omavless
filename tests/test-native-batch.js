@@ -3,9 +3,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const source=fs.readFileSync(path.join(__dirname,'../plugin/Service.qml'),'utf8');
 const parser=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(__dirname,'../plugin/NativeSnapshot.js'),'utf8'),parser);
 const frame=(result,revision=4)=>JSON.stringify({api:'omavless.control',version:1,id:'test',ok:true,revision,result});
-const operation=(job,patch={})=>({instanceId:job.instanceId,operationId:job.operationId,method:job.kind==='subscriptions'?'subscriptions.refresh_all':'routing.refresh_providers',state:'running',baseRevision:4,outcomeRevision:null,progress:{completed:0,total:2},cancelRequested:false,cancellable:true,error:null,...patch});
+const operation=(job,patch={})=>({instanceId:job.instanceId,operationId:job.operationId,method:job.kind==='subscriptions'?'subscriptions.refresh_all':job.kind==='probe'?'subscriptions.probe':'routing.refresh_providers',state:'running',baseRevision:4,outcomeRevision:null,progress:{completed:0,total:2},cancelRequested:false,cancellable:true,error:null,...patch});
+const subscription='10000000-0000-4000-8000-000000000001',profile='20000000-0000-4000-8000-000000000001';
 function context(){
- const c=vm.createContext({NativeSnapshot:parser,nativeOwner:true,nativeCanAct:true,nativeFactsCurrent:true,nativeSnapshot:{instanceId:'instance',revision:4},nativePending:null,
+ const c=vm.createContext({NativeSnapshot:parser,nativeOwner:true,nativeCanAct:true,nativeFactsCurrent:true,nativeSnapshot:{instanceId:'instance',revision:4,subscriptions:[{id:subscription}],profiles:[{id:profile,subscriptionId:subscription,missing:false}]},nativePending:null,
+ profileProbes:{},subscriptionProbeTimes:{},_nativeProbeCacheFence:null,profiles:[],
  nativeBatchJob:null,nativeBatchUnknown:false,nativeBatchErrorCode:'',_nativeBatchProcess:null,_nativeBatchFailures:0,_nativeBatchPolls:0,_nativeOperationSerial:0,
  backendPath:'/synthetic/backend.sh',nativeBatchComponent:{createObject:(_,p)=>({...p,running:false})},nativeBatchPoll:{running:false,interval:2000,start(){this.running=true},stop(){this.running=false}},
  refreshes:0,diagnosticsPageVisible:false});
@@ -13,7 +15,7 @@ function context(){
  Object.defineProperty(c,'nativeBatchRequestRunning',{get(){return c._nativeBatchProcess!==null}});
  Object.defineProperty(c,'nativeBatchAbandonable',{get(){return c.nativeBatchUnknown&&c.nativeBatchJob!==null&&!c.nativeBatchJob.terminal&&!c.nativeBatchRequestRunning&&c.nativeFactsCurrent&&c.nativeSnapshot.instanceId!==c.nativeBatchJob.instanceId}});
  c.refreshAfterChange=()=>c.refreshes++;
- for(const name of ['startNativeBatch','runNativeBatchRequest','finishNativeBatchRequest','nativeBatchPublicError','retryNativeBatch','cancelNativeBatch','dismissNativeBatch','abandonNativeBatch','refreshAllSubscriptions','refreshRuleProviders']){
+ for(const name of ['startNativeBatch','runNativeBatchRequest','finishNativeBatchRequest','finishNativeProbeResults','clearProbeResults','nativeBatchPublicError','retryNativeBatch','cancelNativeBatch','dismissNativeBatch','abandonNativeBatch','refreshAllSubscriptions','refreshRuleProviders']){
   const start=source.indexOf('  function '+name+'('),end=source.indexOf('\n  }',start)+4;assert(start>=0);vm.runInContext(source.slice(start,end),c);
  }c.root=c;return c;
 }
@@ -81,5 +83,36 @@ test('explicit stale epoch acknowledgement requires coherent new facts and no re
  const c=context();c.startNativeBatch('subscriptions');assert.equal(c.abandonNativeBatch(),false);reply(c,'lost',73);assert.equal(c.abandonNativeBatch(),false);
  c.nativeSnapshot.instanceId='new';c.nativeFactsCurrent=false;assert.equal(c.abandonNativeBatch(),false);c.nativeFactsCurrent=true;
  assert(c.abandonNativeBatch());assert.equal(c.nativeBatchJob,null);assert.equal(c.refreshes,0);assert(c.startNativeBatch('providers'));
+});
+test('probe uses selected member fixed argv and unchanged success revision',()=>{
+ const c=context();assert(c.startNativeBatch('probe',subscription));assert.equal(c.nativePending,null);
+ assert.deepEqual(Array.from(c._nativeBatchProcess.command.slice(2)),['native-subscription-probe','instance',c.nativeBatchJob.operationId,subscription,'4']);
+ const succeeded=operation(c.nativeBatchJob,{state:'succeeded',outcomeRevision:4,progress:{completed:1,total:1},cancellable:false});
+ assert.equal(parser.parseOperation(frame({operation:{...succeeded,outcomeRevision:5}},5),c.nativeBatchJob,'get'),null);
+ reply(c,frame({operation:succeeded}));assert.equal(c._nativeBatchProcess.requestKind,'results');
+ assert.equal(c._nativeBatchProcess.command[2],'native-subscription-probe-results');
+ reply(c,frame({version:1,subscriptionId:subscription,results:[{id:profile,resolved:true,reachable:true,latencyMs:15}]}));
+ assert.equal(c.profileProbes[profile].latencyMs,15);assert.equal(c.nativeBatchUnknown,false);assert(c.subscriptionProbeTimes[subscription]>0);assert.equal(c.nativeSnapshot.revision,4);
+});
+test('probe result validator refuses missing duplicate private stale and impossible rows',()=>{
+ const c=context();c.startNativeBatch('probe',subscription);const job={...c.nativeBatchJob,state:'succeeded',total:1};
+ const row={id:profile,resolved:true,reachable:true,latencyMs:15},result={version:1,subscriptionId:subscription,results:[row]};
+ assert(parser.parseProbeResults(frame(result),job,c.nativeSnapshot));
+ for(const results of [[],[row,row],[{...row,id:'other'}],[{...row,latencyMs:60001}],[{...row,latencyMs:1.5}],[{...row,resolved:false}],[{...row,reachable:false}],[{...row,endpoint:'private.invalid'}]])assert.equal(parser.parseProbeResults(frame({...result,results}),job,c.nativeSnapshot),null);
+ assert.equal(parser.parseProbeResults(frame(result,5),job,c.nativeSnapshot),null);
+ assert.equal(parser.parseProbeResults(frame(result),job,{...c.nativeSnapshot,instanceId:'new'}),null);
+ assert.equal(parser.parseProbeResults(frame(result),job,{...c.nativeSnapshot,profiles:[]}),null);
+});
+test('failed probe read never invents unreachable and can retry same result lookup',()=>{
+ const c=context();c.startNativeBatch('probe',subscription);
+ reply(c,frame({operation:operation(c.nativeBatchJob,{state:'succeeded',outcomeRevision:4,progress:{completed:1,total:1},cancellable:false})}));
+ reply(c,'private-secret',1);assert(c.nativeBatchUnknown);assert.equal(Object.keys(c.profileProbes).length,0);assert(!c.nativeBatchErrorCode.includes('private-secret'));
+ assert(c.retryNativeBatch());assert.equal(c._nativeBatchProcess.command[2],'native-subscription-probe-results');
+ c.nativeSnapshot.instanceId='new';reply(c,frame({version:1,subscriptionId:subscription,results:[{id:profile,resolved:false,reachable:false,latencyMs:-1}]}));assert.equal(Object.keys(c.profileProbes).length,0);
+});
+test('maximum complete probe response has bounded private parser separate from tiny projections',()=>{
+ const profiles=Array.from({length:256},(_,i)=>({id:'profile-'+i,subscriptionId:subscription,missing:false}));
+ const snapshot={instanceId:'instance',revision:4,profiles},job={kind:'probe',instanceId:'instance',revision:4,subscriptionId:subscription,state:'succeeded',total:256,profileIds:profiles.map(p=>p.id)};
+ const raw=frame({version:1,subscriptionId:subscription,results:profiles.map(p=>({id:p.id,resolved:true,reachable:false,latencyMs:-1}))});assert(raw.length>8192);assert.equal(Object.keys(parser.parseProbeResults(raw,job,snapshot)).length,256);assert.equal(parser.parseProbeResults('x'.repeat(65537),job,snapshot),null);
 });
 console.log('native batch: '+count+' passed');

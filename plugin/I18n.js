@@ -7,6 +7,7 @@ var MAX_TEXT_LENGTH = 512
 var MAX_VALUE_LENGTH = 160
 
 var CATALOG = {
+  "native.probe.dns_failed": {"en":"DNS failed","ru":"Ошибка DNS"},
   "native.batch.subscriptions": {"en":"Subscription update","ru":"Обновление подписок"},
   "native.batch.providers": {"en":"Remote rules update","ru":"Обновление удалённых правил"},
   "native.batch.queued": {"en":"Queued","ru":"В очереди"},
@@ -74,7 +75,7 @@ var CATALOG = {
   "native.subscriptions.browse": {"en":"Expand or collapse subscription profiles","ru":"Развернуть или свернуть профили подписки"},
   "native.main.qr": {"en":"Show selected profile QR","ru":"QR-код выбранного профиля"},
   "native.main.empty": {"en":"No matching profiles. Import a profile or clear the search.","ru":"Подходящих профилей нет. Импортируйте профиль или очистите поиск."},
-  "native.main.unavailable": {"en":"Native interface migration is in progress. Login activation, subscription latency tests and complete Quit remain pending.","ru":"Перенос интерфейса на Rust продолжается. Автозапуск, тесты задержки подписок и полный выход ещё не готовы."},
+  "native.main.unavailable": {"en":"Native interface migration is in progress. Login activation acceptance and complete Quit remain pending.","ru":"Перенос интерфейса на Rust продолжается. Автозапуск ещё требует финальной проверки; полный выход пока не готов."},
   "native.diagnostics.scope": {"en":"Independent read-only sample from the private controller, not a connection-health check. Refresh to read again. Provider updates are not available here yet.","ru":"Отдельный снимок из приватного контроллера, не проверка работоспособности VPN. Нажмите «Обновить» для повторного чтения. Обновление провайдеров здесь пока недоступно."},
   "native.diagnostics.provider.loaded": {"en":"loaded","ru":"загружен"},
   "native.diagnostics.provider.empty": {"en":"empty","ru":"пусто"},

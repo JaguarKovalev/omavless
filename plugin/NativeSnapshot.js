@@ -198,7 +198,7 @@ function parseOperation(raw, job, kind) {
     if (!object(p, ["api", "version", "id", "ok", "revision", "result"]) || p.ok !== true
         || !object(p.result, kind === "cancel" ? ["accepted", "operation"] : ["operation"])
         || (kind === "cancel" && typeof p.result.accepted !== "boolean")) return null
-    var o = p.result.operation, method = job.kind === "subscriptions" ? "subscriptions.refresh_all" : job.kind === "providers" ? "routing.refresh_providers" : ""
+    var o = p.result.operation, method = job.kind === "subscriptions" ? "subscriptions.refresh_all" : job.kind === "providers" ? "routing.refresh_providers" : job.kind === "probe" ? "subscriptions.probe" : ""
     if (!object(o, ["instanceId", "operationId", "method", "state", "baseRevision", "outcomeRevision", "progress", "cancelRequested", "cancellable", "error"])
         || !text(o.instanceId, 128, false) || !/^[\x21-\x7e]+$/.test(o.instanceId) || !id(o.operationId, false)
         || o.instanceId !== job.instanceId || o.operationId !== job.operationId || o.method !== method || method === ""
@@ -211,7 +211,7 @@ function parseOperation(raw, job, kind) {
         : o.outcomeRevision !== null) return null
     if ((o.state === "failed") !== (o.error !== null) || (o.error !== null && !error(o.error))
         || (o.state === "cancelled" && !o.cancelRequested) || (o.state === "queued" && o.progress.completed !== 0)
-        || (o.state === "succeeded" && (o.progress.completed !== o.progress.total || o.outcomeRevision !== o.baseRevision + (o.progress.total === 0 ? 0 : 1)))) return null
+        || (o.state === "succeeded" && (o.progress.completed !== o.progress.total || o.outcomeRevision !== o.baseRevision + (o.progress.total === 0 || job.kind === "probe" ? 0 : 1)))) return null
     if (p.revision < o.baseRevision || (terminal && p.revision < o.outcomeRevision)) return null
     if (job.acknowledged && (o.progress.completed < job.completed || o.progress.total < job.total
         || (job.state === "running" && o.state === "queued") || (job.cancelRequested && !o.cancelRequested))) return null
@@ -220,6 +220,32 @@ function parseOperation(raw, job, kind) {
       errorCode:o.error === null ? "" : o.error.code, outcomeRevision:o.outcomeRevision}
   } catch (_) { return null }
 }
+// Explicit private probe-result response, never a status/support projection.
+function parseProbeResults(raw, job, snapshot) {
+  try {
+    if (!editorText(raw, 65536) || !job || job.kind !== "probe" || job.state !== "succeeded"
+        || !snapshot || snapshot.instanceId !== job.instanceId || snapshot.revision !== job.revision
+        || !Array.isArray(job.profileIds) || job.profileIds.length > 256) return null
+    var p = JSON.parse(raw), r = p.result
+    if (!object(p, ["api", "version", "id", "ok", "revision", "result"]) || p.api !== "omavless.control"
+        || p.version !== 1 || !id(p.id, false) || p.ok !== true || p.revision !== job.revision
+        || !object(r, ["version", "subscriptionId", "results"]) || r.version !== 1 || r.subscriptionId !== job.subscriptionId
+        || !Array.isArray(r.results) || r.results.length !== job.profileIds.length || r.results.length !== job.total) return null
+    var members = snapshot.profiles.filter(function(p) { return p.subscriptionId === job.subscriptionId && !p.missing }).map(function(p) { return p.id })
+    if (members.length !== job.profileIds.length || !members.every(function(id) { return job.profileIds.indexOf(id) >= 0 })) return null
+    var seen = Object.create(null), rows = Object.create(null)
+    for (var i = 0; i < r.results.length; i++) {
+      var row = r.results[i]
+      if (!object(row, ["id", "resolved", "reachable", "latencyMs"]) || !id(row.id, false)
+          || job.profileIds.indexOf(row.id) < 0 || seen[row.id] || typeof row.resolved !== "boolean" || typeof row.reachable !== "boolean"
+          || (!row.resolved && row.reachable) || (row.reachable ? !number(row.latencyMs, 60000) : row.latencyMs !== -1)) return null
+      seen[row.id] = true
+      rows[row.id] = {resolved:row.resolved, reachable:row.reachable, latencyMs:row.latencyMs}
+    }
+    return rows
+  } catch (_) { return null }
+}
+
 function parsePing(raw, context) {
   try {
     if (typeof raw !== "string" || raw.length > 2048 || !context) return null
