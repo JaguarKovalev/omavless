@@ -43,6 +43,13 @@ if command -v omavless >/dev/null 2>&1; then
     legacy) ;;
     rust)
       case "${1-}" in
+        cleanup-runtime|cleanup-qr)
+          # Service startup precedes QML ownership discovery. Select here,
+          # never by its still-default nativeOwner flag. This only reaps dead
+          # desktop-helper scratch; it must not stop the tunnel or runtime.
+          [ "$#" -eq 1 ] || blocked
+          exec omavless desktop cleanup
+          ;;
         native-subscription-probe)
           [ "$#" -eq 5 ] || blocked
           exec omavless subscription probe "$2" "$3" "$4" "$5"

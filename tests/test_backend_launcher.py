@@ -80,6 +80,51 @@ exit {code}
         self.assertEqual(result.stdout, "")
         self.assertNotIn("private-token", result.stderr)
 
+    def test_startup_cleanup_selects_native_without_qml_owner_discovery(self):
+        self.action_native()
+        for command in ["cleanup-runtime", "cleanup-qr"]:
+            with self.subTest(command=command):
+                result = self.run_launcher(command)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(self.calls(), ["native:plugin:target", "arg:desktop", "arg:cleanup"])
+                self.trace.unlink()
+        service = (LAUNCHER.parent / "plugin/Service.qml").read_text()
+        self.assertIn('Component.onCompleted: Quickshell.execDetached(["bash", backendPath, "cleanup-runtime"])', service)
+
+    def test_native_cleanup_refuses_paths_and_never_evaluates_input(self):
+        self.action_native()
+        marker = self.base / "must-not-exist"
+        payload = '$(touch "' + str(marker) + '"); private-token'
+        for command in ["cleanup-runtime", "cleanup-qr"]:
+            result = self.run_launcher(command, payload)
+            self.assertEqual(result.returncode, 71)
+            self.assertEqual(self.calls(), ["native:plugin:target"])
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn("private-token", result.stderr)
+            self.assertFalse(marker.exists())
+            self.trace.unlink()
+
+    def test_native_cleanup_failure_is_preserved_without_legacy_fallback(self):
+        self.action_native(code=73)
+        result = self.run_launcher("cleanup-runtime")
+        self.assertEqual(result.returncode, 73)
+        self.assertEqual(self.calls(), ["native:plugin:target", "arg:desktop", "arg:cleanup"])
+        self.trace.unlink()
+        self.native(target="rust", target_exit=1)
+        self.assertEqual(self.run_launcher("cleanup-runtime").returncode, 71)
+        self.assertEqual(self.calls(), ["native:plugin:target"])
+
+    def test_legacy_cleanup_still_uses_reference_with_or_without_native_binary(self):
+        for with_binary in [False, True]:
+            if with_binary:
+                self.native("legacy")
+            for command in ["cleanup-runtime", "cleanup-qr"]:
+                result = self.run_launcher(command)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stdout.splitlines(), [str(LAUNCHER.parent / "backend.py"), command])
+                self.assertEqual(self.calls(), (["native:plugin:target"] if with_binary else []) + ["python"])
+                self.trace.unlink()
+
     def test_native_onboarding_completion_has_fixed_fenced_arguments(self):
         self.action_native()
         result = self.run_launcher("native-onboarding-complete", "instance", "7", "operation")
