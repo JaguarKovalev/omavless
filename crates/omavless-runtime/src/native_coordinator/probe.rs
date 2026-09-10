@@ -33,6 +33,7 @@ struct Snapshot {
     desired: crate::desired::DesiredState,
     store: [u8; 32],
     template: [u8; 32],
+    active_config: Option<[u8; 32]>,
 }
 
 /// Non-cloneable private worker capability. Keep its ticket before spawning;
@@ -45,6 +46,7 @@ pub struct NativeSubscriptionProbe {
     snapshot: Snapshot,
     profiles: Vec<(String, CanonicalProfile)>,
     template: String,
+    active_config: Option<String>,
     cancellation: ProbeCancellation,
 }
 impl NativeSubscriptionProbe {
@@ -62,6 +64,10 @@ impl NativeSubscriptionProbe {
     #[must_use]
     pub fn private_template(&self) -> &str {
         &self.template
+    }
+    #[must_use]
+    pub fn private_active_config(&self) -> Option<&str> {
+        self.active_config.as_deref()
     }
     #[must_use]
     pub fn cancellation(&self) -> ProbeCancellation {
@@ -102,7 +108,9 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
         self.auxiliary_recovery_required = true;
         self.transaction.block();
     }
-    fn probe_inputs_locked(&self) -> Result<(Snapshot, String, String), NativeOwnerError> {
+    fn probe_inputs_locked(
+        &self,
+    ) -> Result<(Snapshot, String, String, Option<String>), NativeOwnerError> {
         let path = self.transaction.store_path();
         crate::private_store_transaction::validate_store_path(path, self.transaction.uid())
             .map_err(|_| NativeOwnerError::Invariant)?;
@@ -117,6 +125,22 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
         if template.len() > omavless_domain::config::MAX_TEMPLATE_BYTES {
             return Err(NativeOwnerError::Invariant);
         }
+        let active_path = path
+            .parent()
+            .ok_or(NativeOwnerError::Invariant)?
+            .join("config.yaml");
+        let active_config = match std::fs::symlink_metadata(&active_path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return Err(NativeOwnerError::Invariant),
+            Ok(_) => {
+                let text = omavless_store::read_private_utf8(&active_path, self.transaction.uid())
+                    .map_err(|_| NativeOwnerError::Invariant)?;
+                if text.len() > omavless_domain::config::MAX_TEMPLATE_BYTES {
+                    return Err(NativeOwnerError::Invariant);
+                }
+                Some(text)
+            }
+        };
         Ok((
             Snapshot {
                 revision: self.revision(),
@@ -126,19 +150,24 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
                     .map_err(|_| NativeOwnerError::Invariant)?,
                 store: Sha256::digest(store.as_bytes()).into(),
                 template: Sha256::digest(template.as_bytes()).into(),
+                active_config: active_config
+                    .as_ref()
+                    .map(|text| Sha256::digest(text.as_bytes()).into()),
             },
             store,
             template,
+            active_config,
         ))
     }
     fn probe_snapshot_matches(&self, expected: &Snapshot) -> Result<(), NativeOwnerError> {
         if self.revision() != expected.revision {
             return Err(conflict());
         }
-        let (actual, _, _) = self.probe_inputs_locked()?;
+        let (actual, _, _, _) = self.probe_inputs_locked()?;
         if actual.store != expected.store
             || actual.template != expected.template
             || actual.desired != expected.desired
+            || actual.active_config != expected.active_config
         {
             return Err(conflict());
         }
@@ -197,7 +226,7 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
         if state.active.is_some() {
             return Err(NativeOwnerError::LongOperation(LongOperationError::Busy));
         }
-        let (snapshot, store, template) = self.probe_inputs_locked()?;
+        let (snapshot, store, template, active_config) = self.probe_inputs_locked()?;
         let store = omavless_domain::private_store::parse_private_store(&store)
             .map_err(|_| NativeOwnerError::Invariant)?;
         let profiles = store
@@ -241,6 +270,7 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
             snapshot,
             profiles,
             template,
+            active_config,
             cancellation,
         }))
     }
@@ -291,9 +321,7 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
             let checked = (|| {
                 let _lock = self.batch_lock()?;
                 self.probe_snapshot_matches(&job.snapshot)?;
-                let rows = result.map_err(|_| {
-                    NativeOwnerError::Subscription(SubscriptionTransactionError::Transport)
-                })?;
+                let rows = result.map_err(NativeOwnerError::Probe)?;
                 if rows.len() != job.profiles.len()
                     || rows.iter().any(|row| {
                         (!row.resolved && row.reachable)

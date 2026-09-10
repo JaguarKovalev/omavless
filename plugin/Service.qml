@@ -2608,6 +2608,7 @@ Item {
   }
 
   function applyProbeEvent(raw, expectedSubscriptionUuid) {
+    if (nativeOwner) return false
     var payload
     try {
       payload = JSON.parse(String(raw || ""))
@@ -2686,6 +2687,7 @@ Item {
   }
 
   function applyProbeResults(raw, expectedSubscriptionUuid) {
+    if (nativeOwner) return null
     var payload
     try {
       payload = JSON.parse(String(raw || ""))
@@ -3082,6 +3084,8 @@ Item {
   property var nativeQrExportProcess: null
   property var nativeQrRenderProcess: null
   onNativeOwnerChanged: {
+    clearProbeResults("")
+    _nativeProbeCacheFence = null
     clearNativeRouting()
     if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr()
     invalidateNativeDiagnosticsIdentity()
@@ -4437,6 +4441,7 @@ Item {
       root._probeStartedAt = 0
       root._probeCancelRequested = false
       root._probeName = ""
+      if (root.nativeOwner) return
       if (cancelled) {
         root.subscriptionError = ""
         root.subscriptionStatus = "Server test cancelled"

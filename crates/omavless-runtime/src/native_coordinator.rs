@@ -217,6 +217,7 @@ pub enum NativeOwnerExecution {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeOwnerError {
+    Probe(StableErrorCode),
     Provider(crate::provider_refresh::ProviderRefreshError),
     Protocol(MutationProtocolError),
     LongOperation(crate::long_operation::LongOperationError),
@@ -233,6 +234,7 @@ impl NativeOwnerError {
     #[must_use]
     pub const fn stable_code(self) -> StableErrorCode {
         match self {
+            Self::Probe(code) => code,
             Self::Provider(error) => match error {
                 crate::provider_refresh::ProviderRefreshError::Unavailable
                 | crate::provider_refresh::ProviderRefreshError::NoRemoteProviders => {
@@ -259,6 +261,7 @@ impl NativeOwnerError {
 impl fmt::Display for NativeOwnerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::Probe(_) => "Native subscription probe failed",
             Self::Provider(_) => "Native rule provider refresh failed",
             Self::Protocol(_) => "Native mutation request is invalid",
             Self::LongOperation(_) => "Native batch operation failed",
@@ -2872,7 +2875,14 @@ mod tests {
 
     #[test]
     fn probe_owner_store_template_revision_and_shutdown_fence_results() {
-        for kind in ["store", "template", "revision", "desired", "shutdown"] {
+        for kind in [
+            "store",
+            "template",
+            "active-config",
+            "revision",
+            "desired",
+            "shutdown",
+        ] {
             let (root, path, mut owner) = probe_owner_fixture(kind);
             let job = owner
                 .start_subscription_probe(&probe_request("probe"))
@@ -2890,6 +2900,11 @@ mod tests {
                         b"dns: {}\n",
                     )
                     .unwrap();
+                }
+                "active-config" => {
+                    let config = path.parent().unwrap().join("config.yaml");
+                    fs::write(&config, b"mode: global\n").unwrap();
+                    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
                 }
                 "revision" => {
                     owner.execute_profile(&json!({"api":"omavless.control","version":1,"id":"test","method":"profiles.favorite","params":{"operationId":"favorite","profileId":PROFILE,"enabled":true}})).unwrap();
@@ -2966,6 +2981,10 @@ mod tests {
                 .is_err()
         );
         assert_eq!(owner.actual(), ActualState::ManualRecoveryRequired);
+        assert_eq!(
+            batch_status(&owner, "cleanup-failure")["error"]["code"],
+            "manual_recovery_required"
+        );
         assert!(
             owner
                 .start_subscription_probe(&probe_request("blocked"))

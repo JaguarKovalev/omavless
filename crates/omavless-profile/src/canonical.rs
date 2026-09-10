@@ -80,6 +80,16 @@ pub fn parse_canonical(input: &str) -> Result<CanonicalProfile, CanonicalError> 
 }
 
 impl CanonicalProfile {
+    /// Exact private DNS input, not a truncated UI preview or diagnostic.
+    #[must_use]
+    pub fn private_endpoint(&self) -> &str {
+        match self {
+            Self::Vless(profile) => profile.private_endpoint(),
+            Self::Trojan(profile) => profile.private_endpoint(),
+            Self::Hysteria2(profile) => profile.private_endpoint(),
+            Self::Tuic(profile) => profile.private_endpoint(),
+        }
+    }
     /// Credential-bearing internal redaction source. Not a public diagnostic.
     pub fn private_diagnostic_model(&self) -> serde_json::Value {
         match self {

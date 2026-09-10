@@ -21,6 +21,18 @@ function context(){
 }
 function reply(c,result,code=0,kind){const req=c._nativeBatchProcess;c._nativeBatchProcess=null;c.finishNativeBatchRequest(kind||req.requestKind,req.operation,code,result)}
 let count=0;function test(name,f){try{f();count++}catch(e){e.message=name+': '+e.message;throw e}}
+test('legacy measurements cannot enter native cache across ownership changes',()=>{
+ const c=context(); c.profileProbes={sentinel:{reachable:true,latencyMs:1}};
+ for(const name of ['applyProbeEvent','applyProbeResults']){
+  const start=source.indexOf('  function '+name+'('),end=source.indexOf('\n  }',start)+4;
+  vm.runInContext(source.slice(start,end),c);
+ }
+ const before=JSON.stringify(c.profileProbes);
+ assert.equal(c.applyProbeEvent('{}',subscription),false);assert.equal(c.applyProbeResults('{}',subscription),null);
+ assert.equal(JSON.stringify(c.profileProbes),before);
+ assert(source.includes('onNativeOwnerChanged: {\n    clearProbeResults("")\n    _nativeProbeCacheFence = null'));
+ assert(source.includes('root._probeName = ""\n      if (root.nativeOwner) return'));
+});
 test('exact start/get/cancel projection schema with method bounds',()=>{
  for(const kind of ['subscriptions','providers']){
   const c=context();c.startNativeBatch(kind);const o=operation(c.nativeBatchJob);assert(parser.parseOperation(frame({operation:o}),c.nativeBatchJob,'start'));

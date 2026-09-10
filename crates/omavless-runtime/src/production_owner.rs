@@ -519,6 +519,8 @@ impl ProductionNativeOwner<NativeLifecycleHost> {
         let store_path = host_paths.store.clone();
         let host = NativeLifecycleHost::new(host_paths, uid)
             .map_err(|_| ProductionOwnerError::HostUnavailable)?;
+        host.cleanup_probe_orphans()
+            .map_err(|_| ProductionOwnerError::ManualRecoveryRequired)?;
         let mut owner =
             Self::initialize_locked(host, desired_paths, &store_path, cutover_paths, uid, lock)?;
         owner.login_ready = crate::login_activation::startup_configuration_available();

@@ -236,6 +236,20 @@ impl NativeLifecycleHost {
         self.core.as_ref().and_then(OwnedCore::pid)
     }
 
+    /// Startup only, while canonical runtime and migration ownership are held.
+    /// No directory is removed unless the whole host is proven core/TUN-empty.
+    pub(crate) fn cleanup_probe_orphans(&self) -> Result<(), HostStepError> {
+        crate::probe_executor::cleanup_orphans(&self.paths.runtime_directory, || {
+            self.core.is_none()
+                && processes_named_strict(&self.paths.proc_root, "mihomo")
+                    .is_ok_and(|pids| pids.is_empty())
+                && tun_interface_count_strict(&self.paths.sys_class_net)
+                    .is_ok_and(|count| count == 0)
+        })
+        .map(|_| ())
+        .map_err(|_| HostStepError::Cleanup)
+    }
+
     fn remove_controller(&self) -> Result<(), HostStepError> {
         remove_owned_file(&self.paths.controller_socket, self.uid, true)
     }
@@ -725,6 +739,34 @@ mod tests {
         );
         let host = NativeLifecycleHost::new(paths, uid).unwrap();
         (root, host)
+    }
+
+    #[test]
+    fn orphan_probe_cleanup_requires_strict_empty_host() {
+        let (root, host) = observation_fixture();
+        let orphan = host.paths.runtime_directory.join("probe-2147483647-0");
+        assert!(!Path::new("/proc/2147483647").exists());
+        fs::create_dir(&orphan).unwrap();
+        fs::set_permissions(&orphan, fs::Permissions::from_mode(0o700)).unwrap();
+        let marker = orphan.join(".omavless-probe-owner");
+        fs::write(&marker, b"omavless-probe-scratch-v1\n2147483647\n").unwrap();
+        fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
+        let process = host.paths.proc_root.join("4242");
+        fs::create_dir(&process).unwrap();
+        fs::write(process.join("comm"), b"mihomo\n").unwrap();
+        assert_eq!(host.cleanup_probe_orphans(), Err(HostStepError::Cleanup));
+        assert!(marker.exists());
+        fs::remove_dir_all(process).unwrap();
+        let tun = host.paths.sys_class_net.join("tun-test");
+        fs::create_dir(&tun).unwrap();
+        fs::write(tun.join("tun_flags"), b"0x1001\n").unwrap();
+        assert_eq!(host.cleanup_probe_orphans(), Err(HostStepError::Cleanup));
+        assert!(marker.exists());
+        fs::remove_dir_all(tun).unwrap();
+        host.cleanup_probe_orphans().unwrap();
+        assert!(!orphan.exists());
+        drop(host);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

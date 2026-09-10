@@ -303,6 +303,9 @@ pub fn parse_vless_canonical_bytes(
 }
 
 impl VlessCanonicalProfile {
+    pub(crate) fn private_endpoint(&self) -> &str {
+        &self.server
+    }
     #[must_use]
     pub fn facts(&self) -> VlessCanonicalFacts {
         let xhttp_field_count = self
