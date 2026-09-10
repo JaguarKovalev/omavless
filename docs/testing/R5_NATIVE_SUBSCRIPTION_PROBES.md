@@ -70,11 +70,86 @@ Final local runtime command: 654 passed across 14 result groups, six opt-in
 tests ignored, no failures (600 library tests). Strict all-target clippy passes.
 Python reference command: 345 tests, four skipped; all invoked JS suites and
 QML/localization contracts pass. Focused native batch/main-panel tests: 15/20.
-Actual Mihomo 1.19.30 linux/arm64 opt-in renderer/private-controller tests: two
-passed. Actual Quickshell import-graph compilation passes for Panel and Service;
+Actual Mihomo 1.19.30 linux/arm64 opt-in tests: four passed (two renderer/private
+controller tests, native host validation and supervisor validation).
+Actual Quickshell import-graph compilation passes for Panel and Service;
 qmllint is unavailable. Shell syntax, manifest and plugin validation pass.
 
-Still pending for this exact combined candidate: package identity,
-installed real subscription measurement/cancel/disconnect,
-Unix-only controller/process/TUN invariants, scoped crash cleanup, privacy audit
-and actual EN/RU visual states. Do not infer these from deterministic tests.
+## Installed Try Omarchy ARM64 evidence — 2026-09-10
+
+Tested code: `9bf5781c6c2ef20168cb25a25e8a6ae8ec427065`, local branch
+`codex/local-native-probe-execution`. Package
+`omavless 0.0.0.r441.g9bf5781c6c2e-1` was installed through normal polkit
+authorization. The executable hash matches its package build-identity record;
+21 installed frontend files match the checkout byte-for-byte. No remote writes
+or marketplace/main changes were performed.
+
+The native daemon and frontend were installed from this candidate. An explicit
+Omarchy shell restart was needed to clear cached frontend JavaScript; it did
+not kill either the active requested tunnel core or the owned probe child.
+Fresh frontend diagnostics reported coherent native facts and no uncertain
+mutation. This is ordinary shell-restart evidence, not fresh-login acceptance.
+
+Only aggregate facts from private fixtures were retained:
+
+| Installed case | Result | Ownership / cleanup / privacy |
+| --- | --- | --- |
+| Disconnected subscription probe | Completed: 21 rows, 19 DNS-resolved and 19 reachable; two DNS failures | One daemon-owned auxiliary core, zero TUN, no new TCP listeners, exact desired/store preservation, no scratch left |
+| Connected cancellation, Routing | Cancelled after auxiliary ownership was observed | Requested core/TUN remained 1/1; auxiliary removed; desired/store preserved |
+| Connected subscription probe, Routing | Completed but no positive measurements: one resolved row, zero reachable; remaining 20 DNS-unresolved | Primary/auxiliary attribution, TUN preservation, listener bounds, cleanup and state/store preservation passed; **positive connected measurement remains unproved** |
+| Disconnect during connected probe | Explicit disconnect succeeded; invalidated job ended `failed/conflict` | Auxiliary drained, requested core/TUN removed, Routing/disconnected restored; no manual recovery |
+| Daemon SIGKILL during disconnected probe | Exact user-unit main process killed while its auxiliary child existed; automatic restart healthy | Old child gone, marked scratch cleaned, desired/store unchanged, zero core/TUN, no new TCP listeners |
+| Old operation after daemon restart | `not_found`, as specified by the instance-scoped operation contract | No replay/adoption of the old job |
+| Actual installed QML Service → launcher → native job → result parser | Completed: 21 rows, 19 resolved/reachable, `unknown=false`, controls actionable, no pending mutation | Uses the real private fixture internally; output contains only aggregate counts |
+
+The SIGKILL test targeted only `omavless-runtime.service`'s main process, not
+the shell, user manager or unrelated processes. Its `KillMode=control-group`
+removed the child before successor startup reconciliation. This does not prove
+connected crash/reconnect, suspend, physical network transitions or a new login.
+
+### Connected DNS finding
+
+The ordinary installed native HTTPS connection test passed through the existing
+VLESS tunnel. A separate fresh-cache comparison used the same private hostname
+and the configured DoH policy, without printing either. With VPN disconnected,
+both Rust and Python's DoH-only reference returned one address, with and without
+resolver health filtering. Connected in Routing, both returned zero addresses
+in both variants. Thus this observation is **not evidence of a Rust-only DNS
+regression** or a general tunnel failure. The precise connected DoH network/path
+cause remains unisolated. No protocol code, host firewall, DNS policy, fallback
+resolver or timeout was changed to manufacture a passing result.
+
+Python's unrestricted libc fallback was deliberately excluded from that
+comparison; the native resolver's documented bounded/private policy remains in
+force. This is DoH-path parity evidence, not a claim that every historical
+Python fallback is reproduced. The UI distinguishes unresolved DNS from a
+measured unreachable server. Positive connected subscription measurement is
+still an explicit acceptance gap under this environment/policy.
+
+### EN/RU rendering and privacy
+
+Six complete affected views were rendered and inspected on the real installed
+Quickshell stack: EN/RU running, completed and conflict-failure states. Exact
+installed frontend files were copied byte-for-byte to an isolated render
+harness with a no-op backend and synthetic profile/subscription metadata; it
+could not access the private store, daemon or network. The harness adjusted only
+its host anchor, not the product QML. Both locales showed progress, Cancel/Close,
+Test, ping sorting, selected-subscription management and result labels. Russian
+actions wrap to a second row without overlapping adjacent content; DNS failure,
+unavailable and millisecond labels are localized, while synthetic names remain
+untranslated. Captures cover all three representative rows without hidden
+scrolled content. They are local-only evidence, not a full keyboard/pointer
+acceptance of every existing panel state.
+
+Live CLI/QML reports were restricted to public case slugs, states, stable error
+codes, counts and booleans; no private IDs, names, endpoints, URI, provider data,
+controller path/secret or raw backend errors are included here. Private fixtures
+and actual job results were never committed. No manual-recovery-required result
+occurred. Final network state was Routing/disconnected, native daemon running,
+zero requested/auxiliary Mihomo and zero TUN; plugin enabled.
+
+Remaining: positive connected measurement under a usable configured DoH path,
+full human keyboard/pointer acceptance, connected crash/reconciliation, fresh
+login and broader package/rollback/R6 retirement gates. This checkpoint restores
+a useful native subscription test; it does **not** declare full Python parity,
+R5/R6 completion, V0 completion or permission to merge.
