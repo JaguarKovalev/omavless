@@ -32,6 +32,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+pub mod auxiliary_core;
 mod batch_scheduler;
 mod connection_test;
 pub mod connection_transaction;
