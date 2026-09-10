@@ -109,14 +109,16 @@ connected crash/reconnect, suspend, physical network transitions or a new login.
 
 ### Connected DNS finding
 
-The ordinary installed native HTTPS connection test passed through the existing
-VLESS tunnel. A separate fresh-cache comparison used the same private hostname
+The ordinary installed native HTTPS connection test passed under Routing. This
+is `scope=current_route_https`, **not proof of proxy/tunnel egress**; the follow-up
+below corrects the earlier interpretation. A separate fresh-cache comparison used the same private hostname
 and the configured DoH policy, without printing either. With VPN disconnected,
 both Rust and Python's DoH-only reference returned one address, with and without
 resolver health filtering. Connected in Routing, both returned zero addresses
 in both variants. Thus this observation is **not evidence of a Rust-only DNS
-regression** or a general tunnel failure. The precise connected DoH network/path
-cause remains unisolated. No protocol code, host firewall, DNS policy, fallback
+regression**. The Routing HTTPS result cannot exclude a proxy-path failure.
+At this stage the connected DoH network/path cause remained unisolated.
+No protocol code, host firewall, DNS policy, fallback
 resolver or timeout was changed to manufacture a passing result.
 
 Python's unrestricted libc fallback was deliberately excluded from that
@@ -153,3 +155,58 @@ full human keyboard/pointer acceptance, connected crash/reconciliation, fresh
 login and broader package/rollback/R6 retirement gates. This checkpoint restores
 a useful native subscription test; it does **not** declare full Python parity,
 R5/R6 completion, V0 completion or permission to merge.
+
+## DNS follow-up: transport/fixture isolation
+
+Same installed runtime code `9bf5781c6c2ef20168cb25a25e8a6ae8ec427065`, frontend
+`de3b8c88215d31318430cb02078bac4151336684`; no runtime/DNS implementation or
+host network configuration changed during this investigation. Remote main was
+refreshed and remained `27e2e793f0e14f19f41dce947e06667ca9bf5ec3`.
+
+1. Direct DoH diagnostics distinguished TLS/connect failure from malformed DNS
+   replies. The second configured resolver answered public and private A queries
+   without VPN, but timed out through the previously selected VPN. A diagnostic
+   six-second timeout ended in TLS EOF; changing SNI while retaining the same
+   public resolver IP did not recover it. Neither experiment changed production
+   timeout/TLS configuration.
+2. The owned core's read-only DNS query also failed (HTTP 500 after about five
+   seconds). Moving resolution to that API is not an established solution.
+   Its behavior was checked against the pinned
+   [Mihomo v1.19.30 DNS route implementation](https://github.com/MetaCubeX/mihomo/blob/v1.19.30/hub/route/dns.go).
+3. Full VPN/global with the previously selected profile failed the ordinary
+   native HTTPS check. Therefore the earlier Routing success was insufficient
+   to declare that proxy path healthy.
+4. A fresh disconnected batch found 18 reachable candidates. An already-imported
+   alternative selected internally from those results passed Full VPN HTTPS
+   and public/private configured DoH queries in **the same VM**, with one
+   core/TUN. This is positive connected DNS evidence, not a completed connected
+   subscription-latency batch. It argues against a VM-wide or universal Rust DNS
+   failure; it does not rule out destination-specific VM/host/network behavior.
+5. The owner explicitly selected a standalone VLESS fixture for further tests.
+   It failed Full VPN HTTPS and the exact core proxy's fixed public HTTPS delay
+   test (HTTP 504/timeout). It also failed an isolated no-TUN auxiliary probe
+   after its endpoint had been resolved through DoH and pinned to a public IP.
+   All three fixed probe rounds ran with normal cleanup. This excludes primary
+   TUN routing and lookup of that endpoint as necessary causes of this failure.
+6. That requested fixture's Rust/Python rendered proxy mappings were compared
+   structurally in private memory and matched. Its server hostname resolved to
+   one public address, but a direct TCP connection to that address and the
+   configured port timed out after five seconds while VPN was disconnected.
+
+The actionable finding is **requested server/port transport unavailable from
+the current network**, not an established DNS parser/config-generation defect.
+Server outage, provider/ISP filtering, stale fixture or destination-specific
+host/VM network behavior remain possible; RKN blocking is **not proven**.
+No resolver substitution, security relaxation, protocol workaround or ceremonial
+implementation commit was made. A usable requested endpoint or independent
+provider/network check is needed before claiming that fixture works.
+
+The first alternative-profile comparison did not fully restore its original
+selection in its `finally` block; observation confirmed disconnected/global,
+zero core/TUN and no manual recovery. Before further testing, the owner's newly
+specified fixture was selected through the semantic CLI and final restoration
+completed: requested fixture selected, Routing/disconnected, core/auxiliary/TUN
+0/0/0, native daemon running and plugin enabled. No private store was edited
+directly. Local scripts kept real values in memory and printed only booleans,
+counts, status/error classes and timings. No private fixture, result, rendered
+configuration or screenshot was committed.
