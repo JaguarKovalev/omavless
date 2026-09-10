@@ -43,6 +43,15 @@ if command -v omavless >/dev/null 2>&1; then
     legacy) ;;
     rust)
       case "${1-}" in
+        native-quit)
+          [ "$#" -eq 4 ] || blocked
+          # Quickshell kills its direct Process child when the plugin unloads.
+          # Keep that child a waiting wrapper, so the explicitly confirmed
+          # bounded Rust exit can finish final verification after hiding UI.
+          omavless plugin quit "$2" "$3" "$4" &
+          wait "$!"
+          exit "$?"
+          ;;
         cleanup-runtime|cleanup-qr)
           # Service startup precedes QML ownership discovery. Select here,
           # never by its still-default nativeOwner flag. This only reaps dead

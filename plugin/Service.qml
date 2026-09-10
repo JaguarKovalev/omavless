@@ -17,6 +17,28 @@ Item {
   property var settings: ({})
   // Native metadata is deliberately NOT legacy live status.
   property bool nativeOwner: false
+  readonly property bool nativeQuitting: nativeQuitProcess.running
+  property bool nativeQuitFailed: false
+  function quitNativeApplication() {
+    if (!nativeCanAct || nativeEditorRunning || nativeImportBusy) return false
+    var operation = "quit-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36)
+    nativeQuitFailed = false
+    nativeQuitProcess.command = ["bash", backendPath, "native-quit",
+      nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
+    nativeQuitProcess.running = true
+    return true
+  }
+  Process {
+    id: nativeQuitProcess
+    // No short watchdog: normal host authorization can require human input.
+    // The native command disables the frontend only after verified shutdown.
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { waitForEnd: true }
+    onExited: function(code) {
+      root.nativeQuitFailed = code !== 0
+      if (code !== 0) root.refreshNativeObservation()
+    }
+  }
   property var nativeTestResult: null
   property string nativeTestStatus: ""
   property var nativeTestProcess: null
@@ -69,7 +91,7 @@ Item {
   readonly property bool nativeFactsCurrent: nativeOwner && !nativeSnapshotFailed
     && NativeSnapshot.coherent(nativeSnapshot, nativeObservation)
     && nativeObservation.availability === "observed"
-  readonly property bool nativeCanAct: nativeFactsCurrent && !nativePending
+  readonly property bool nativeCanAct: nativeFactsCurrent && !nativePending && !nativeQuitting
     && nativeSnapshot.lastKnownActual !== "manualRecoveryRequired"
     && !nativeObservation.manualRecoveryRequired
   property int _nativeOperationSerial: 0

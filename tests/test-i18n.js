@@ -6,8 +6,8 @@ assert.strictEqual(I18n.translate("native.probe.dns_failed", "ru"), "Ошибк�
 // Do not keep claiming already-restored routing/traffic controls are absent.
 assert(!I18n.translate("native.main.unavailable", "en").includes("routing tools"))
 assert(!I18n.translate("native.main.unavailable", "ru").includes("инструменты маршрутизации"))
-assert(I18n.translate("native.main.unavailable", "en").includes("Login activation"))
-assert(I18n.translate("native.main.unavailable", "ru").includes("Автозапуск"))
+assert(I18n.translate("native.main.unavailable", "en").includes("Fresh-login"))
+assert(I18n.translate("native.main.unavailable", "ru").includes("нового входа"))
 assert(!I18n.translate("native.main.unavailable", "en").includes("subscription latency tests"))
 
 assert.strictEqual(I18n.normalizeLocale("ru_RU.UTF-8"), "ru")

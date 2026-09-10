@@ -1014,19 +1014,64 @@ has unknown outcome; reconnect, read status and retry only with operation ID.
 
 ## 9. Close, quit, disable, remove and stop
 
+Owner-directed local contract amendment, 2026-09-10: **Full Quit is an explicit
+shutdown action, not UI close**. Implementation and exact-head installed
+acceptance remain pending; this amendment does not claim a shipped capability.
+
 - **Close panel** — UI only.
 - **Close TUI/terminal** — client only.
 - **Disconnect** — persist desired disconnected and stop/verify owned core.
-- **Quit OmaVLESS UI** — close selected UI only.
+- **Close UI** — close selected UI only, including ordinary client exit.
+- **Quit OmaVLESS / Turn off OmaVLESS** — explicitly confirmed full shutdown
+  from Settings: disconnect and verify owned core/TUN cleanup, stop the native
+  runtime, then disable the Omarchy plugin. Preserve installed packages, private
+  profiles/subscriptions, routing preferences and other settings.
 - **Disable plugin** — explicit Omarchy frontend cleanup; after runtime cutover
   it performs documented disconnect/disable transition but does not uninstall
   standalone package.
 - **Remove plugin** — same tunnel-cleanup intent, then remove Omarchy frontend
   and legacy generated integration only.
-- **Stop runtime** — administrative, not normal Quit; semantic CLI refuses while
+- **Stop runtime** — administrative or the verified final runtime step of Full
+  Quit; semantic CLI refuses while
   desired state is connected unless disconnect is explicitly requested first.
 
-Closing UI never substitutes for disconnect/disable/remove.
+Closing UI never substitutes for disconnect/Full Quit/disable/remove. Panel
+close, shell reload, terminal exit and lost clients must not invoke Full Quit.
+
+### Full Quit ordering and failure boundary
+
+1. Show confirmation explaining that VPN, runtime and plugin will stop, while
+   installation and private settings remain. Cancelling has no lifecycle effect.
+2. Use the one native owner to persist disconnected intent and drain/revoke its
+   background work. Serialize against reconnect/mode/profile mutations; an
+   earlier disconnected observation is not permission to stop a newly connected
+   successor. Retain ownership/instance/revision fences through the shutdown
+   boundary, with no competing client-side VPN state machine.
+3. Verify owned primary and auxiliary Mihomo children, TUN and live controller
+   cleanup. Unknown facts, foreign ownership, failed authentication, denied
+   authorization and `manual_recovery_required` are not successful shutdown.
+4. Stop and verify the fixed native runtime through the bounded host integration.
+   Verify that its service/login integration cannot immediately respawn or
+   reconnect as a side effect of this action. Do not delete package-owned units,
+   reset private startup preferences or hand ownership back to Python.
+5. Only after the preceding checks succeed, disable the fixed OmaVLESS plugin
+   through supported Omarchy integration. This is not package removal or an
+   operation on other plugins. Re-enabling the plugin is a separate explicit
+   user action, not an automatic retry of the old connection request.
+
+Keep the initiating UI visible with a bounded safe error if disconnect, cleanup
+or runtime stop fails or is uncertain. A failed final plugin-disable step also
+remains visible where the shell permits it; do not report success without
+verification. Already completed disconnect must not be undone by reconnecting
+merely to conceal a later failure. Socket disappearance alone never proves
+runtime/core cleanup. Return stage-specific facts for safe retry/recovery,
+without credential-bearing raw host errors.
+
+This is a fixed-purpose native shutdown contract. It authorizes no arbitrary
+shell command, caller-selected service/plugin/path/PID, privileged IPC or generic
+`systemctl` passthrough. The Settings action is enabled only for an implementation
+which can prove the native-owner and cleanup requirements; legacy/preparing or
+unsupported states show an explicit unavailable/remediation outcome.
 
 ## 10. Python -> Rust migration and ownership cutover
 
@@ -1198,7 +1243,14 @@ and exact-head host integration cover at least:
 17. connection loss during in-flight mutation + operation-ID retry without a
     second transition;
 18. production plugin bridge proven against Rust owner before Python fallback is
-    disabled.
+    disabled;
+19. confirmed Full Quit from connected and already-disconnected states leaves
+    disconnected intent, no owned core/auxiliary/TUN/live controller, stopped
+    runtime and disabled plugin; packages/private settings survive;
+20. Full Quit cancellation, rejected authorization, concurrent reconnect, failed
+    cleanup/runtime stop and failed plugin disable never silently hide uncertain
+    VPN state or kill foreign processes; explicit plugin re-enable recovers the
+    UI without replaying a stale connection request.
 
 Arch and NixOS packaging/generation gates remain separate host evidence.
 

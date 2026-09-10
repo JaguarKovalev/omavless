@@ -95,6 +95,9 @@ fn run() -> Result<(), CliError> {
         println!("  plugin connect INSTANCE REVISION OPERATION PROFILE rule|global|direct");
         println!("  plugin disconnect INSTANCE REVISION OPERATION");
         println!(
+            "  plugin quit INSTANCE REVISION OPERATION  confirmed full exit; disables runtime and Omarchy plugin"
+        );
+        println!(
             "  plugin onboarding-complete INSTANCE REVISION OPERATION  save completion only; no host setup or login activation"
         );
         println!("  plugin mode INSTANCE REVISION OPERATION rule|global|direct");
@@ -310,6 +313,27 @@ fn run() -> Result<(), CliError> {
         println!(
             "{}",
             json!({"version": 1, "outcome": "rust_committed", "generation": outcome.marker.generation()})
+        );
+        return Ok(());
+    }
+    if arguments.first().is_some_and(|arg| arg == "plugin")
+        && arguments.get(1).is_some_and(|arg| arg == "quit")
+    {
+        let [_, _, instance, revision, operation] = arguments.as_slice() else {
+            return Err("Invalid OmaVLESS quit command".into());
+        };
+        let instance = instance.to_str().ok_or("Invalid OmaVLESS quit command")?;
+        let operation = operation.to_str().ok_or("Invalid OmaVLESS quit command")?;
+        let revision = revision
+            .to_str()
+            .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|value| value.parse::<u64>().ok())
+            .ok_or("Invalid OmaVLESS quit command")?;
+        omavless_runtime::full_quit::run(instance, revision, operation)
+            .map_err(|error| CliError::Message(error.to_string()))?;
+        println!(
+            "{}",
+            json!({"schemaVersion":1,"shutdown":true,"pluginDisabled":true})
         );
         return Ok(());
     }

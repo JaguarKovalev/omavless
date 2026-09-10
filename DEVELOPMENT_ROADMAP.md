@@ -97,6 +97,38 @@ WireGuard/AmneziaWG now has its own private-fixture, installed-core, security
 and host acceptance ledger. P4 remains unavailable to users until that ledger
 and the Rust compatibility/runtime bridge are complete.
 
+### Local-only continuation — pending acceptance, 2026-09-10
+
+The local Rust candidate has advanced beyond the historical checkpoints below;
+it is not merged or a new marketplace release. Native subscription probes and
+their exact installed evidence are recorded in
+[`R5_NATIVE_SUBSCRIPTION_PROBES.md`](docs/testing/R5_NATIVE_SUBSCRIPTION_PROBES.md).
+The owner explicitly allows other migration work to continue while the following
+DNS/network investigation remains open:
+
+- [ ] Check the affected existing fixture through an independent client/network
+  or verify its server/port with the owner/provider, keeping all private data
+  out of shareable output. Current evidence does not distinguish outage, stale
+  fixture, ISP/provider filtering or destination-specific VM/host behavior.
+- [ ] Repeat a complete connected subscription-latency batch with a usable
+  fixture and configured DoH path, retaining exact-head, cleanup and privacy
+  evidence. A different imported fixture already passed Full VPN HTTPS and
+  configured DoH in the same VM, but that is not a completed connected batch.
+- [ ] Record the classified outcome in the linked report before closing this
+  DNS acceptance gap. Routing's `current_route_https` result alone does not
+  prove proxy/TUN egress. No universal VM failure, generic Rust DNS defect or
+  RKN blocking has been established; do not change DNS/TLS policy to manufacture
+  a passing result.
+
+The Settings **Full Quit** contract is also newly authorized for local work:
+confirmed disconnect with verified owned core/TUN cleanup, then native runtime
+stop and plugin disable, preserving installation and private settings. Ordinary
+UI close/reload remains tunnel-neutral. See
+[CONTROL_PLANE.md section 9](docs/roadmap/CONTROL_PLANE.md#9-close-quit-disable-remove-and-stop).
+Implementation, failure/concurrency coverage and exact-head installed acceptance
+are pending. Neither this contract nor the probe evidence completes R5/R6 or V0;
+Python retirement still requires the full installed Python-unavailable gate.
+
 ## 3. The new global sequence
 
 Development now has two active lanes which intentionally converge.

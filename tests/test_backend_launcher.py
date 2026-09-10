@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -136,6 +137,46 @@ exit {code}
             self.assertEqual(result.returncode, 71)
             self.assertEqual(self.calls(), ["native:plugin:target"])
             self.assertNotIn("private-token", result.stderr)
+
+    def test_native_quit_has_fixed_arity_and_no_legacy_fallback(self):
+        self.action_native()
+        result = self.run_launcher("native-quit", "instance", "7", "operation")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), ["native:plugin:target", "arg:plugin", "arg:quit", "arg:instance", "arg:7", "arg:operation"])
+        for args in [("native-quit",), ("native-quit", "instance", "7", "operation", "private-token")]:
+            self.trace.unlink()
+            result = self.run_launcher(*args)
+            self.assertEqual(result.returncode, 71)
+            self.assertNotIn("private-token", result.stderr)
+            self.assertEqual(self.calls(), ["native:plugin:target"])
+        self.trace.unlink()
+        self.native(target="legacy")
+        self.assertEqual(self.run_launcher("native-quit", "instance", "7", "operation").returncode, 71)
+        self.assertNotIn("python", self.calls())
+
+    def test_confirmed_quit_survives_only_its_waiting_ui_wrapper_destruction(self):
+        self.script("omavless", '''
+if [ "$1" = plugin ] && [ "$2" = target ]; then printf 'rust\\n'; exit 0; fi
+printf 'started\\n' > "$BRIDGE_TEST_TRACE"
+/usr/bin/sleep 0.3
+printf 'finished\\n' >> "$BRIDGE_TEST_TRACE"
+''')
+        worker = subprocess.Popen(["/bin/sh", str(LAUNCHER), "native-quit", "instance", "0", "operation"],
+                                  env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            deadline = time.monotonic() + 3
+            while "started" not in self.calls() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertIn("started", self.calls())
+            worker.kill()  # exact synthetic wrapper, never a live plugin process
+            worker.wait(timeout=3)
+            while "finished" not in self.calls() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertIn("finished", self.calls())
+        finally:
+            if worker.poll() is None:
+                worker.kill()
+                worker.wait(timeout=3)
 
     def test_native_diagnostics_is_fixed_read_without_extra_arguments_or_legacy_fallback(self):
         self.action_native()

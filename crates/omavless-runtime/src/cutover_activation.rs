@@ -43,7 +43,7 @@ pub(crate) fn check_service_installation(text: &str, native: bool) -> Result<(),
     Ok(())
 }
 
-fn packaged_identity() -> Result<(), ()> {
+pub(crate) fn packaged_identity() -> Result<(), ()> {
     // Test-only home overrides are never an installed activation input.
     if std::env::var_os("OMAVLESS_HOME").is_some() {
         return Err(());

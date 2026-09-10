@@ -21,7 +21,7 @@ function harness() {
       desired:{connected:false,mode:'rule',generation:3},profiles:[{id:'existing-id',name:'Existing',missing:false,subscriptionId:''}]},
     nativeObservation:{instanceId:'instance-one',revision:4,lastKnownActual:'disconnected',
       desired:{connected:false,mode:'rule',generation:3},availability:'observed',manualRecoveryRequired:false},
-    nativePending:null,nativeOutcomeUnknown:false,nativeActionCode:'',nativeImportCode:'',
+    nativePending:null,nativeQuitting:false,nativeOutcomeUnknown:false,nativeActionCode:'',nativeImportCode:'',
     _nativeOperationSerial:0,_nativeImportContext:null,_nativeSourceContext:null,_nativePreviewContext:null,
     importPreview:{},nativeImportSource:{running:false},nativeImportPreview:{running:false},
     nativeActionProcess:{running:false},backendPath:'/synthetic/backend.sh',ready:[],subscriptionReady:[]});

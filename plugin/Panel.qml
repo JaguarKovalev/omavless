@@ -41,6 +41,7 @@ Panel {
   // Profile ({uuid, name}) awaiting delete confirmation; non-null opens the
   // dialog. A profile object, not a name — names are not unique.
   property var pendingDelete: null
+  property bool quitConfirmation: false
   property var pendingSubscriptionDelete: null
   property var editingSubscription: null
   // Incoming config already parsed into a redacted preview and awaiting a
@@ -80,7 +81,7 @@ Panel {
     || startupPrompt.visible || routingToolsPrompt.visible
     || routingPresetPrompt.visible || importDialog.visible
     || subscriptionPrompt.visible || pendingEdit !== null
-    || pendingDelete !== null || pendingSubscriptionDelete !== null
+    || pendingDelete !== null || pendingSubscriptionDelete !== null || quitConfirmation
 
   // A refresh can shrink the store below the discovery threshold. Keep an
   // active query editable, and let keyboard users request search at any size.
@@ -694,6 +695,7 @@ Panel {
       if (page === "settings") targets.splice(2, 0, nativeOnboardingSetting.focusTarget)
       if (page === "settings") targets.push(nativeExitIpSetting.focusTarget)
       if (page === "settings") targets.push(nativeSupportExportSetting.focusTarget)
+      if (page === "settings") targets.push(nativeQuitSetting.focusTarget)
       for (var s = 0; s < nativeSubscriptions.count; s++) {
         var subscriptionRow = nativeSubscriptions.itemAt(s)
         if (subscriptionRow) targets = targets.concat(subscriptionRow.focusTargets)
@@ -1391,6 +1393,7 @@ Panel {
   // or a `pickConfigFile` landing) would be invisible, unclickable and
   // unfocused until it went away.
   onOpenedChanged: {
+    quitConfirmation = false
     nativeExpandedDetailsId = ""
     if (!opened && vless.nativeOwner) vless.cancelNativeSubscription()
     pendingDelete = null
@@ -1484,6 +1487,7 @@ Panel {
         return
       }
       root.page = "main"
+      root.quitConfirmation = false
       root.pendingDelete = null
       root.pendingSubscriptionDelete = null
       root.pendingEdit = null
@@ -1717,7 +1721,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.pendingDelete !== null || root.pendingSubscriptionDelete !== null
+      blocked: root.quitConfirmation || root.pendingDelete !== null || root.pendingSubscriptionDelete !== null
         || root.pendingEdit !== null || importDialog.visible || subscriptionPrompt.visible
         || routingPresetPrompt.visible || startupPrompt.visible || onboardingWizard.visible
         || routingToolsPrompt.visible || profileSearch.activeFocus || nativeSearch.activeFocus
@@ -2167,6 +2171,16 @@ Panel {
             description: root.textFor("settings.exit_ip_description")
             actionText: root.textFor(vless.showExitIp ? "common.on" : "common.off")
             onAction: root.setWidgetSetting("showExitIp", !vless.showExitIp, true)
+          }
+          SettingsActionRow {
+            id: nativeQuitSetting
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("native.quit.title")
+            description: root.textFor(vless.nativeQuitFailed ? "native.quit.failed" : "native.quit.description")
+            actionText: root.textFor(vless.nativeQuitting ? "native.quit.running" : "native.quit.action")
+            actionEnabled: vless.nativeCanAct && !vless.nativeEditorRunning && !vless.nativeImportBusy
+            onAction: root.quitConfirmation = true
           }
           PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.main.unavailable"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           PlainText { Layout.fillWidth: true; visible: root.page === "subscriptions"; text: root.textFor("native.subscription.help"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
@@ -3800,6 +3814,27 @@ Panel {
       }
 
       ConfirmDialog {
+        id: quitDialog
+        anchors.fill: parent
+        opened: root.quitConfirmation
+        message: root.safeTooltip(root.textFor("native.quit.confirmation"), 512)
+        cancelText: root.textFor("common.cancel")
+        confirmText: root.textFor("native.quit.action")
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        Keys.onPressed: function(event) { event.accepted = quitDialog.handleKey(event) }
+        onOpenedChanged: {
+          if (opened) { selectedIndex = 0; forceActiveFocus() }
+          else keyCatcher.forceActiveFocus()
+        }
+        onCanceled: root.quitConfirmation = false
+        onConfirmed: {
+          root.quitConfirmation = false
+          vless.quitNativeApplication()
+        }
+      }
+
+      ConfirmDialog {
         id: deleteDialog
         anchors.fill: parent
         opened: root.pendingDelete !== null
@@ -3974,7 +4009,8 @@ Panel {
     signal action()
 
     width: settingsColumn.width
-    height: settingContent.implicitHeight + Style.space(16)
+    implicitHeight: settingContent.implicitHeight + Style.space(16)
+    height: implicitHeight
     color: "transparent"
     borderSpec: Border.flat(Util.alpha(root.foreground, 0.28), Style.normalBorderWidth)
     radius: Style.cornerRadius

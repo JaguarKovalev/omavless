@@ -28,7 +28,7 @@ use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt,
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -49,6 +49,7 @@ pub mod desired;
 pub mod desktop_helpers;
 mod diagnostic_read;
 pub mod frontend_bridge;
+pub mod full_quit;
 pub mod import_read_protocol;
 pub mod isolated_validation;
 pub mod lifecycle;
@@ -85,6 +86,7 @@ mod route_probe;
 mod routing_preset;
 pub mod routing_read_protocol;
 mod runtime_observation;
+mod runtime_quit;
 pub mod semantic_cli;
 pub mod startup_protocol;
 mod startup_validation;
@@ -251,6 +253,10 @@ pub struct RuntimeServer {
     batch_scheduler: batch_scheduler::BatchScheduler,
     remote_fetches: remote_fetch::RemoteFetchPool,
     ping_read: Mutex<()>,
+    // Full Quit excludes every admitted unary handler, including detached
+    // remote completion, before disconnecting and sealing new admission.
+    quit_gate: RwLock<bool>,
+    quit_requested: AtomicBool,
     _owner: OwnerLock,
 }
 
@@ -279,6 +285,7 @@ const NATIVE_READ_METHODS: &[&str] = &[
 // reservation-free preflight. Its final decode/commit re-enters this one
 // serialized owner and rechecks revision plus exact durable ownership.
 const NATIVE_MUTATION_METHODS: &[&str] = &[
+    "runtime.quit",
     "plugin.action",
     "onboarding.complete",
     "startup.configure",
@@ -1127,6 +1134,8 @@ impl RuntimeServer {
             batch_scheduler: batch_scheduler::BatchScheduler::default(),
             remote_fetches: remote_fetch::RemoteFetchPool::default(),
             ping_read: Mutex::new(()),
+            quit_gate: RwLock::new(false),
+            quit_requested: AtomicBool::new(false),
             _owner: owner,
         })
     }
@@ -1217,7 +1226,7 @@ impl RuntimeServer {
         let active = AtomicUsize::new(0);
         let server = &self;
         thread::scope(|scope| {
-            while !stop.load(Ordering::Relaxed) {
+            while !stop.load(Ordering::Relaxed) && !self.quit_requested.load(Ordering::Acquire) {
                 match self.listener.accept() {
                     Ok((mut stream, _address)) => {
                         if let Some(slot) = claim_slot(&active, MAX_CONCURRENT_CLIENTS) {
@@ -1272,6 +1281,34 @@ impl RuntimeServer {
     }
 
     fn dispatch(
+        &self,
+        request: &Value,
+    ) -> std::result::Result<Value, omavless_control_protocol::ProtocolError> {
+        if request["method"] == "runtime.quit" {
+            return self.dispatch_quit(request);
+        }
+        let Ok(gate) = self.quit_gate.try_read() else {
+            return error_response(
+                request["id"].as_str().unwrap_or("invalid"),
+                0,
+                StableErrorCode::Busy,
+                true,
+                None,
+            );
+        };
+        if *gate {
+            return error_response(
+                request["id"].as_str().unwrap_or("invalid"),
+                0,
+                StableErrorCode::DaemonRestarting,
+                false,
+                None,
+            );
+        }
+        self.dispatch_admitted(request)
+    }
+
+    fn dispatch_admitted(
         &self,
         request: &Value,
     ) -> std::result::Result<Value, omavless_control_protocol::ProtocolError> {
@@ -2725,6 +2762,121 @@ mod tests {
             owned_controller_config_verified: false,
             desired_profile_matches_owned: false,
         }
+    }
+
+    #[test]
+    fn full_quit_seals_mutations_only_after_fenced_disconnect_and_fresh_cleanup() {
+        let base = temporary_base("full-quit");
+        let (mut owner, _, calls) = native_owner_fixture(&base);
+        owner.batch_coordinator().host_mut().fresh_result = Ok(fresh_empty_facts());
+        let paths = RuntimePaths::below(&base.join("runtime"));
+        let server = RuntimeServer::bind_with_owner_factory(paths, move |_| Ok(owner)).unwrap();
+        let request = make_request(
+            "exit",
+            "runtime.quit",
+            json!({
+                "instanceId":server.instance_id,"expectedRevision":0,"operationId":"quit-op"
+            }),
+        )
+        .unwrap();
+        let baseline = calls.load(Ordering::Relaxed);
+        {
+            let _admitted = server.quit_gate.read().unwrap();
+            assert_eq!(server.dispatch(&request).unwrap()["error"]["code"], "busy");
+        }
+        for (field, value, code) in [
+            ("instanceId", json!("previous"), "daemon_restarting"),
+            ("expectedRevision", json!(99), "conflict"),
+            ("command", json!("private"), "invalid_argument"),
+        ] {
+            let mut stale = request.clone();
+            stale["params"][field] = value;
+            assert_eq!(server.dispatch(&stale).unwrap()["error"]["code"], code);
+            assert!(!server.quit_requested.load(Ordering::Acquire));
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), baseline);
+        let response = server.dispatch(&request).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["result"]["runtimeStopping"], true);
+        assert!(server.quit_requested.load(Ordering::Acquire));
+        let after = calls.load(Ordering::Relaxed);
+        for method in [
+            "connection.connect",
+            "subscriptions.refresh",
+            "subscriptions.probe",
+            "status.get",
+        ] {
+            assert_eq!(
+                server
+                    .dispatch(&make_request("after", method, json!({})).unwrap())
+                    .unwrap()["error"]["code"],
+                "daemon_restarting"
+            );
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), after);
+        drop(server);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn full_quit_uncertain_cleanup_keeps_runtime_and_ui_recovery_path_alive() {
+        let base = temporary_base("full-quit-uncertain");
+        let (owner, _, _) = native_owner_fixture(&base);
+        // Fixture defaults to unavailable fresh facts: never interpret as zero.
+        let server = RuntimeServer::bind_with_owner_factory(
+            RuntimePaths::below(&base.join("runtime")),
+            move |_| Ok(owner),
+        )
+        .unwrap();
+        let response = server
+            .dispatch(
+                &make_request(
+                    "quit",
+                    "runtime.quit",
+                    json!({
+                        "instanceId":server.instance_id,"expectedRevision":0,"operationId":"quit-op"
+                    }),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(response["error"]["code"], "manual_recovery_required");
+        assert!(!server.quit_requested.load(Ordering::Acquire));
+        assert_eq!(
+            server
+                .dispatch(&make_request("status", "status.get", json!({})).unwrap())
+                .unwrap()["ok"],
+            true
+        );
+        drop(server);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn full_quit_connected_socket_exits_successfully_and_releases_owner_without_external_signal() {
+        let base = temporary_base("full-quit-socket");
+        let (mut owner, _, _) = native_owner_fixture(&base);
+        owner.batch_coordinator().host_mut().fresh_result = Ok(fresh_empty_facts());
+        let paths = RuntimePaths::below(&base.join("runtime"));
+        let server =
+            RuntimeServer::bind_with_owner_factory(paths.clone(), move |_| Ok(owner)).unwrap();
+        let worker = thread::spawn(move || server.serve_until(&AtomicBool::new(false)).unwrap());
+        let connected = call(&paths,"connection.connect",json!({"profileId":PROFILE_ID,"mode":"rule","operationId":"connect-op","expectedRevision":0})).unwrap();
+        assert_eq!(connected["ok"], true, "{connected}");
+        let hello = call(&paths, "system.hello", json!({"versions":[1]})).unwrap();
+        let response = call(
+            &paths,
+            "runtime.quit",
+            json!({"instanceId":hello["result"]["instanceId"],
+            "expectedRevision":hello["revision"],"operationId":"quit-op"}),
+        )
+        .unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        worker.join().unwrap();
+        assert!(!paths.socket.exists());
+        let replacement = RuntimeServer::bind(paths).unwrap();
+        drop(replacement);
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
