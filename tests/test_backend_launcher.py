@@ -113,6 +113,7 @@ exit {code}
         for args, expected in [
             (("native-core-readiness",), ["desktop", "core-readiness"]),
             (("native-profile-details", "synthetic-record"), ["profile", "details", "synthetic-record"]),
+            (("native-traffic",), ["runtime", "traffic"]),
             (("native-routing-rules",), ["routing", "rules"]),
             (("native-support-report",), ["diagnostics", "export"]),
             (("native-clipboard-copy",), ["desktop", "clipboard-copy"]),

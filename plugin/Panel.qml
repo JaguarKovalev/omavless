@@ -653,7 +653,7 @@ Panel {
   function panelTabTargets() {
     if (page === "diagnostics") return advancedDiagnosticsPage.focusTargets
     if (vless.nativeOwner) {
-      var targets = page === "settings" ? [nativeSettingsBack, nativeLanguageRow.focusTarget, nativeRule, nativeGlobal, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeRefresh]
+      var targets = page === "settings" ? [nativeSettingsBack, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeRule, nativeGlobal, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeRefresh]
         : page === "subscriptions" ? [nativeSettingsBack, nativeRefresh, nativeSubscriptionAdd, nativeSubscriptionRefreshAll]
         : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
         : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativeModeSetting, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
@@ -1423,6 +1423,7 @@ Panel {
       && (root.page === "main" || root.page === "subscription") ? root.nativeExpandedDetailsId : ""
     diagnosticsPageVisible: root.opened && root.page === "diagnostics"
     trafficMonitoring: !vless.nativeOwner && ((root.opened && root.page === "main") || vless.showBarThroughput)
+    nativeTrafficMonitoring: vless.nativeOwner && ((root.opened && root.page === "main") || vless.showBarThroughput)
     pingMonitoring: !vless.nativeOwner && root.opened && root.page === "main"
   }
 
@@ -1639,10 +1640,10 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: vless.showBarThroughput && vless.active && vless.barThroughput !== ""
+    text: vless.showBarThroughput && (vless.nativeOwner ? root.nativeView.connected : vless.active) && vless.barThroughput !== ""
       ? root.barStatusIcon + " " + vless.barThroughput
       : root.barStatusIcon
-    slotSize: vless.showBarThroughput && vless.active && vless.barThroughput !== "" && !vertical
+    slotSize: vless.showBarThroughput && (vless.nativeOwner ? root.nativeView.connected : vless.active) && vless.barThroughput !== "" && !vertical
       ? Style.bar.iconSlot * 4 : Style.bar.iconSlot
     tooltipText: root.safeTooltip(root.barTooltip, 220)
     foreground: root.barIconColor
@@ -1970,6 +1971,15 @@ Panel {
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.appearance"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow { id: nativeLanguageRow; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.language"); description: root.textFor("settings.language_description"); actionText: root.languageSettingLabel(); onAction: root.cycleLanguageSetting() }
+          SettingsActionRow {
+            id: nativeThroughputSetting
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("settings.bar_throughput")
+            description: root.textFor("traffic.native_note")
+            actionText: root.textFor(vless.showBarThroughput ? "common.on" : "common.off")
+            onAction: root.setWidgetSetting("showBarThroughput", !vless.showBarThroughput, true)
+          }
           PlainText { Layout.fillWidth: true; visible: vless.nativeSnapshotFailed; text: root.textFor("native.refreshFailed"); textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
           PlainText { Layout.fillWidth: true; visible: vless.nativeActionRunning; text: root.textFor("native.pending"); textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; wrapMode: Text.Wrap }
           PlainText { Layout.fillWidth: true; visible: vless.nativeOutcomeUnknown; text: root.textFor("native.unknownOutcome"); textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
@@ -2034,6 +2044,36 @@ Panel {
             actionVisible: false
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.main.modeLabel"); foreground: root.foreground; fontFamily: root.fontFamily }
+          ColumnLayout {
+            id: nativeTrafficSection
+            Layout.fillWidth: true
+            visible: root.page === "main" && vless.nativeSnapshot !== null && vless.nativeSnapshot.desired.connected
+            spacing: Style.space(8)
+            PanelSectionHeader { Layout.fillWidth: true; text: root.textFor("traffic.native_title"); foreground: root.foreground; fontFamily: root.fontFamily }
+            PlainText { Layout.fillWidth: true; visible: !vless.nativeTrafficFresh; text: root.textFor("traffic.native_unavailable"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+            GridLayout {
+              Layout.fillWidth: true
+              visible: vless.nativeTrafficFresh
+              columns: 2
+              columnSpacing: Style.space(12)
+              rowSpacing: Style.space(8)
+              DetailPair { Layout.fillWidth: true; label: root.textFor("metric.receiving"); value: vless.nativeTrafficValue("rxRate", true) }
+              DetailPair { Layout.fillWidth: true; label: root.textFor("metric.sending"); value: vless.nativeTrafficValue("txRate", true) }
+              DetailPair { Layout.fillWidth: true; label: root.textFor("metric.downloaded"); value: vless.nativeTrafficValue("rx", false) }
+              DetailPair { Layout.fillWidth: true; label: root.textFor("metric.uploaded"); value: vless.nativeTrafficValue("tx", false) }
+            }
+            Sparkline {
+              Layout.fillWidth: true
+              Layout.preferredHeight: Style.space(42)
+              visible: vless.nativeTrafficFresh && vless.nativeRxHistory.length > 1
+              rxValues: vless.nativeRxHistory
+              txValues: vless.nativeTxHistory
+              rxColor: root.trafficRxColor
+              txColor: root.trafficTxColor
+              guideColor: Util.alpha(root.foreground, 0.16)
+            }
+            PlainText { Layout.fillWidth: true; visible: vless.nativeTrafficFresh; text: root.textFor("traffic.native_note"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+          }
           RowLayout {
             visible: root.page === "settings"
             Layout.fillWidth: true

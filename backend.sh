@@ -86,6 +86,10 @@ if command -v omavless >/dev/null 2>&1; then
           [ "$#" -eq 2 ] || blocked
           exec omavless profile details "$2"
           ;;
+        native-traffic)
+          [ "$#" -eq 1 ] || blocked
+          exec omavless runtime traffic
+          ;;
         native-routing-rules)
           [ "$#" -eq 1 ] || blocked
           exec omavless routing rules
