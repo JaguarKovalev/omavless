@@ -133,6 +133,10 @@ has a separate local native observer, reusing that verified shutdown sequence;
 see [disable/remove checkpoint](docs/testing/R5_NATIVE_PLUGIN_REMOVAL.md) for
 its exact installed gate and deliberate shell/runtime race boundaries. Legacy
 uninstall/purge refuses Rust-owned state; native package removal is not claimed.
+- [ ] Resolve the intermittent ordinary-Disconnect cleanup failure recorded in
+  that checkpoint: desired disconnected and zero core/TUN were observed, but
+  the coordinator remained in manual recovery until explicit reconciliation.
+  Capture the failing cleanup phase before changing lifecycle/security policy.
 Neither this checkpoint nor the probe evidence completes R5/R6 or V0;
 Python retirement still requires the full installed Python-unavailable gate.
 

@@ -148,8 +148,11 @@ zero Mihomo/auxiliary/TUN, no manual recovery and an enabled plugin.
 - [ ] Human pointer/Tab/Shift+Tab/Enter/Escape/cancel review of the new button.
 - [ ] Explicit authorization rejection where reproducible; UI must stay visible.
 
-Direct Omarchy disable/remove lifecycle watchers remain a separate gap: this
-explicit button does not claim that those entry points are now ported. Final
+Direct Omarchy disable/remove is now covered by the separate local
+[native removal observer checkpoint](R5_NATIVE_PLUGIN_REMOVAL.md), including
+installed connected/disconnected/removal gates and a newly recorded intermittent
+ordinary-Disconnect recovery follow-up. This button's historical evidence alone
+did not prove those entry points. Final
 fresh-login, upgrade/rollback, all-surface Python-unavailable R6 acceptance and
 the [documented DNS/provider follow-up](R5_NATIVE_SUBSCRIPTION_PROBES.md) remain
 open. This checkpoint does not declare R5/R6 or V0 complete.

@@ -82,12 +82,70 @@ Russian translation of this new out-of-process fallback is not yet claimed.
 - Seven Quit/QML JS tests include destructor execution before/after owner
   discovery. Full invoked JS/QML contracts pass.
 
-These are deterministic/source results, not installed acceptance. Exact-head
-installed disable/remove/reload/restore evidence must be appended below before
-calling this lifecycle gap closed. DNS/provider and fresh-login/Python-unavailable
-acceptance remain independent and open.
+Strict clippy all targets, fmt, compile, shell syntax, manifest, plugin validate
+and diff checks pass. Four installed-Mihomo opt-ins also pass (1.19.30 ARM64).
+DNS/provider and fresh-login/Python-unavailable acceptance remain independent.
 
 ## Installed acceptance
 
-Pending candidate packaging and live smoke. No successful removal, lost-auth
-recovery, translated notification or fresh-login gate is claimed here yet.
+Try Omarchy ARM64, exact Rust/frontend source:
+`4d6ddd3168f639448b807afd353f2adf8cfc0b33`.
+Installed package `omavless 0.0.0.r450.g4d6ddd3168f6-1` matches its binary build
+identity; 25 installed QML/catalog/template/manifest/launcher/uninstall files
+match the checkout. Later evidence-only commits do not change these bytes.
+
+| Public case | Result | Runtime/core/TUN outcome | Restoration |
+| --- | --- | --- | --- |
+| Disconnected plugin disable | PASS | runtime stopped/disabled; core0/TUN0 | enabled, Routing/disconnected |
+| Connected plugin disable | PASS | one core/TUN to zero; runtime stopped/disabled | enabled, Routing/disconnected |
+| Connected plugin remove | PASS | checkout removed; installed watcher still stops runtime/core/TUN | original checkout recovered, enabled, disconnected |
+| Connected shell reload | PASS | same daemon PID, same core PID, one TUN | disconnected, no manual recovery |
+| Disable then immediately re-enable | PASS | grace cancels shutdown; same daemon/core, one TUN | disconnected, no manual recovery |
+
+The actual ordinary-directory install was checked to be current-user owned,
+non-symlink and not a Git checkout before `omarchy plugin remove --yes`. Omarchy
+made its recoverable hidden backup. Only that newly created exact backup was
+moved back, followed by the supported rescan/enable flow. No private profile,
+subscription, ownership marker, login receipt or package was removed.
+
+All successful shutdown cases independently verify inactive/disabled native
+unit, zero daemon/watchers/core/TUN, hidden plugin and preserved private-store
+bytes. Final restored state requires fresh non-null facts **and**
+`manualRecoveryRequired=false`, not just a disconnected desired flag. No
+provider/network reachability is claimed by a local lifecycle test. Re-enable
+after final admission, lost-auth recovery, translated notification and fresh
+login were not tested and are not implied by this table.
+
+### Acceptance tooling corrections and real follow-up
+
+Initial reload/re-enable wrappers wrongly compared a disconnected store hash
+with its connected compatibility-pointer state and compared unsorted systemctl
+property strings. Later wrappers compare like-for-like states/individual PID
+facts. A further immediate post-connect observation was temporarily unavailable;
+the wrapper now waits boundedly for fresh read-only facts, without retrying any
+mutation. These premature runs are not successful end-to-end evidence.
+
+Separately, one ordinary restoration Disconnect left desired disconnected and
+core0/aux0/TUN0 but **sticky manual recovery**. The early wrapper missed that
+flag; subsequent connect and disconnect returned `manual_recovery_required`.
+This was a real runtime outcome, not repaired by weakening the acceptance test.
+After observed disconnected/empty facts, one explicit native-unit restart used
+existing startup reconciliation; it restored actual disconnected and cleared
+the in-memory failure. Markers, receipts and private data were untouched.
+Subsequent strict connected disable/remove/re-enable/reload cases pass.
+
+Source explains the stickiness: `lifecycle.disconnect` persists disconnected
+intent before stop/discard/empty verification, and a later failure blocks the
+transaction coordinator for that daemon instance. Later zero counts do not
+clear that block. Evidence does not identify the original failing boundary
+(core/group stop, controller/staged-file cleanup, final ownership observation).
+Those paths predate this watcher, but that does not prove the event unrelated.
+
+- [ ] Add bounded credential-free failure-phase evidence, reproduce the normal
+  Disconnect cleanup failure and fix its owning boundary before R6 completion.
+  Do not replace cleanup proof with zero counts, lengthen timeouts blindly,
+  clear ownership/receipt files, or silently restart on every error.
+
+Final state: plugin enabled, native unit enabled/active, one daemon,
+Routing/disconnected, core0/aux0/TUN0, manual recovery false. This checkpoint
+closes the tested native plugin disable/remove path, not all R5/R6 acceptance.
