@@ -431,6 +431,134 @@ fn working_filter_retains_order_or_all_configured_when_none_work() {
     assert_eq!(all_failed.policy.resolver_count(), 2);
 }
 
+struct TimedTransport {
+    clock: std::rc::Rc<std::cell::Cell<Instant>>,
+    cancelled: std::rc::Rc<std::cell::Cell<bool>>,
+    expire_kind: Option<u16>,
+    cancel_kind: Option<u16>,
+    calls: Vec<u16>,
+}
+impl DohTransport for TimedTransport {
+    fn query(
+        &mut self,
+        _endpoint: &DohEndpoint,
+        question: &DnsQuestion,
+        deadline: Instant,
+        _cancelled: &dyn Fn() -> bool,
+    ) -> Result<Vec<u8>, ResolveError> {
+        self.calls.push(question.kind);
+        if self.expire_kind == Some(question.kind) {
+            self.clock.set(deadline);
+        }
+        if self.cancel_kind == Some(question.kind) {
+            self.cancelled.set(true);
+        }
+        Ok(answer(
+            question,
+            &[if question.kind == 1 {
+                ip("1.1.1.1")
+            } else {
+                ip("2606:4700:4700::1111")
+            }],
+        ))
+    }
+}
+
+#[test]
+fn preserves_timely_a_when_aaaa_deadline_expires_without_new_endpoint() {
+    let clock = std::rc::Rc::new(std::cell::Cell::new(Instant::now()));
+    let cancelled = std::rc::Rc::new(std::cell::Cell::new(false));
+    let mut resolver = ProbeResolver::new(
+        policy(),
+        TimedTransport {
+            clock: clock.clone(),
+            cancelled: cancelled.clone(),
+            expire_kind: Some(28),
+            cancel_kind: None,
+            calls: Vec::new(),
+        },
+    );
+    assert_eq!(
+        resolver
+            .resolve_with_clock("example.com", HOST_BUDGET, &|| cancelled.get(), &|| clock
+                .get())
+            .unwrap(),
+        [ip("1.1.1.1")]
+    );
+    assert_eq!(resolver.transport.calls, [1, 28]);
+}
+
+#[test]
+fn rejects_first_late_answer_and_never_queries_another_family_or_endpoint() {
+    let clock = std::rc::Rc::new(std::cell::Cell::new(Instant::now()));
+    let cancelled = std::rc::Rc::new(std::cell::Cell::new(false));
+    let mut resolver = ProbeResolver::new(
+        policy(),
+        TimedTransport {
+            clock: clock.clone(),
+            cancelled: cancelled.clone(),
+            expire_kind: Some(1),
+            cancel_kind: None,
+            calls: Vec::new(),
+        },
+    );
+    assert_eq!(
+        resolver.resolve_with_clock("example.com", HOST_BUDGET, &|| cancelled.get(), &|| clock
+            .get()),
+        Err(ResolveError::Timeout)
+    );
+    assert_eq!(resolver.transport.calls, [1]);
+}
+
+#[test]
+fn post_io_cancellation_wins_over_timely_pins_and_deadline() {
+    for kind in [1, 28] {
+        let clock = std::rc::Rc::new(std::cell::Cell::new(Instant::now()));
+        let cancelled = std::rc::Rc::new(std::cell::Cell::new(false));
+        let mut resolver = ProbeResolver::new(
+            policy(),
+            TimedTransport {
+                clock: clock.clone(),
+                cancelled: cancelled.clone(),
+                expire_kind: Some(kind),
+                cancel_kind: Some(kind),
+                calls: Vec::new(),
+            },
+        );
+        assert_eq!(
+            resolver.resolve_with_clock("example.com", HOST_BUDGET, &|| cancelled.get(), &|| clock
+                .get()),
+            Err(ResolveError::Cancelled)
+        );
+        assert_eq!(
+            resolver.transport.calls.len(),
+            if kind == 1 { 1 } else { 2 }
+        );
+    }
+}
+
+#[test]
+fn health_filter_post_io_cancellation_keeps_policy_without_next_query() {
+    let clock = std::rc::Rc::new(std::cell::Cell::new(Instant::now()));
+    let cancelled = std::rc::Rc::new(std::cell::Cell::new(false));
+    let mut resolver = ProbeResolver::new(
+        policy(),
+        TimedTransport {
+            clock,
+            cancelled: cancelled.clone(),
+            expire_kind: None,
+            cancel_kind: Some(1),
+            calls: Vec::new(),
+        },
+    );
+    assert_eq!(
+        resolver.filter_working(HOST_BUDGET, &|| cancelled.get()),
+        Err(ResolveError::Cancelled)
+    );
+    assert_eq!(resolver.transport.calls, [1]);
+    assert_eq!(resolver.policy.resolver_count(), 2);
+}
+
 #[test]
 fn errors_and_pinned_debug_never_contain_private_input() {
     let error = DnsQuestion::new("https://private.invalid/password?key=secret", 1, 1)

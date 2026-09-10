@@ -21,7 +21,10 @@ Construct `HttpsDohTransport::for_policy(&policy)` and then
 the configured list if all checks fail within the budget. Call `resolve` with
 the private profile host, remaining job duration and a cancellation predicate.
 Both A and AAAA are requested in order; the first resolver with useful answers
-wins. Empty output means unresolved, not measured provider unreachability.
+wins. A timely public A result survives a later AAAA per-host timeout;
+cancellation always wins, late new answers are not accepted, and budget
+exhaustion cannot start another endpoint. Empty output means unresolved, not
+measured provider unreachability.
 Resolver errors contain only fixed English classifications. Endpoint policy,
 DNS questions, transport caches and resolver objects cannot be debug-formatted.
 
@@ -71,12 +74,15 @@ this internet-server latency helper. This does not change connection DNS.
 
 ## Evidence
 
-18 deterministic tests pass, including a four-packet differential against actual
+22 deterministic tests pass, including a four-packet differential against actual
 Python `dns_question`/`parse_dns_addresses` and effect-isolated checks of actual
 resolver-policy selection, health-filter fallback and address-query order.
 Synthetic packets cover direct A/AAAA, IDNA, CNAME/additional owner binding,
 compression cycles, reserved/forward pointers, mismatched IDs/questions,
 truncation, oversized packets/counts, fake-IP/private exclusions and dedup/caps.
+An injected monotonic clock tests partial A success, expired AAAA, first-answer
+expiration and post-I/O cancellation without sleeps or network; cancellation
+also preserves the configured health-filter policy without another query.
 
 The fixed public HTTPS DoH opt-in passed once on Try Omarchy ARM64, using only
 example.com and generic public DoH endpoints, without accessing private

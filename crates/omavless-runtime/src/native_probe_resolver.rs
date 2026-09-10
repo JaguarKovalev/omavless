@@ -407,11 +407,19 @@ fn read_name(packet: &[u8], mut at: usize) -> Result<(String, usize), ResolveErr
 }
 
 fn remaining(deadline: Instant, cancelled: &dyn Fn() -> bool) -> Result<Duration, ResolveError> {
+    remaining_with_clock(deadline, cancelled, &Instant::now)
+}
+
+fn remaining_with_clock(
+    deadline: Instant,
+    cancelled: &dyn Fn() -> bool,
+    now: &dyn Fn() -> Instant,
+) -> Result<Duration, ResolveError> {
     if cancelled() {
         return Err(ResolveError::Cancelled);
     }
     deadline
-        .checked_duration_since(Instant::now())
+        .checked_duration_since(now())
         .filter(|d| !d.is_zero())
         .ok_or(ResolveError::Timeout)
 }
@@ -483,8 +491,18 @@ impl<T: DohTransport> ProbeResolver<T> {
         budget: Duration,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Vec<IpAddr>, ResolveError> {
-        let deadline = Instant::now() + budget.min(HOST_BUDGET);
-        remaining(deadline, cancelled)?;
+        self.resolve_with_clock(host, budget, cancelled, &Instant::now)
+    }
+
+    fn resolve_with_clock(
+        &mut self,
+        host: &str,
+        budget: Duration,
+        cancelled: &dyn Fn() -> bool,
+        now: &dyn Fn() -> Instant,
+    ) -> Result<Vec<IpAddr>, ResolveError> {
+        let deadline = now() + budget.min(HOST_BUDGET);
+        remaining_with_clock(deadline, cancelled, now)?;
         if let Ok(ip) = host.parse::<IpAddr>() {
             return Ok(if public_address(ip) {
                 vec![ip]
@@ -496,13 +514,25 @@ impl<T: DohTransport> ProbeResolver<T> {
         for endpoint in &self.policy.endpoints {
             let mut result = Vec::new();
             for kind in [1, 28] {
-                remaining(deadline, cancelled)?;
+                match remaining_with_clock(deadline, cancelled, now) {
+                    Err(ResolveError::Timeout) if !result.is_empty() => return Ok(result),
+                    Err(error) => return Err(error),
+                    Ok(_) => {}
+                }
                 let q = question(host, kind)?;
-                match self
-                    .transport
-                    .query(endpoint, &q, deadline, cancelled)
-                    .and_then(|raw| q.addresses(&raw))
-                {
+                let reply = self.transport.query(endpoint, &q, deadline, cancelled);
+                if matches!(reply, Err(ResolveError::Cancelled)) {
+                    return Err(ResolveError::Cancelled);
+                }
+                // Preserve A pins obtained within the budget when a later AAAA
+                // attempt exhausts it. Never accept late new data, continue to
+                // another endpoint or override cancellation with partial success.
+                match remaining_with_clock(deadline, cancelled, now) {
+                    Err(ResolveError::Timeout) if !result.is_empty() => return Ok(result),
+                    Err(error) => return Err(error),
+                    Ok(_) => {}
+                }
+                match reply.and_then(|raw| q.addresses(&raw)) {
                     Ok(addresses) => {
                         for ip in addresses {
                             if result.len() < MAX_ADDRESSES && !result.contains(&ip) {
@@ -514,7 +544,9 @@ impl<T: DohTransport> ProbeResolver<T> {
                     _ => {}
                 }
             }
-            remaining(deadline, cancelled)?;
+            if cancelled() {
+                return Err(ResolveError::Cancelled);
+            }
             if !result.is_empty() {
                 return Ok(result);
             }
