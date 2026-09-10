@@ -29,8 +29,10 @@ older daemon, Settings remains read-only instead of exposing a dead button.
 
 ## Local checks, 2026-09-10
 
-- 14 focused Rust plugin-action tests passed; strict all-target runtime clippy
-  and workspace formatting passed.
+- Full native runtime suite: 580 passed, 1 ignored, 0 failed across 14 result
+  groups, including 14 focused Rust plugin-action tests. Strict all-target
+  runtime clippy and workspace formatting passed. This ordinary run does not
+  claim that environment-gated installed-core probes executed.
 - 7 new native startup UI checks passed, including stdin bounds, canonical
   parser reuse, stale/failed capability reads, exact retry, missing selections,
   action-result fencing and shared-dialog wiring.
