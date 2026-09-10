@@ -37,6 +37,8 @@ var CATALOG = {
   "native.test.failed": {"en":"HTTPS request failed or timed out","ru":"Ошибка HTTPS-запроса или истекло время ожидания"},
   "native.test.unavailable": {"en":"Check unavailable; refresh and try again","ru":"Проверка недоступна; обновите состояние и повторите"},
   "native.test.scope": {"en":"This request follows current routing. It does not verify every route or rule out leaks.","ru":"Запрос использует текущую маршрутизацию. Это не проверка всех маршрутов или отсутствия утечек."},
+  "native.onboarding.scope": {"en":"Review core installation, choose routing and import a profile. Finish saves acknowledgement only; it does not grant permissions or enable login autoconnect.","ru":"Проверьте установку ядра, выберите маршрутизацию и импортируйте профиль. «Готово» сохраняет только подтверждение: права и автозапуск не включаются."},
+  "native.onboarding.profiles": {"en":"Imported: {count}. Connectivity has not been tested by this setup guide.","ru":"Импортировано: {count}. Этот мастер не проверяет соединение."},
   "common.edit": {"en":"Edit","ru":"Изменить"},
   "native.subscription.edit": {"en":"Edit subscription","ru":"Редактировать подписку"},
   "native.subscription.file": {"en":"Add subscription from file","ru":"Добавить подписку из файла"},

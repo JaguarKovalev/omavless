@@ -69,6 +69,11 @@ if command -v omavless >/dev/null 2>&1; then
           [ "$#" -eq 1 ] || blocked
           exec omavless desktop clipboard-copy
           ;;
+        native-onboarding-complete)
+          [ "$#" -eq 4 ] || blocked
+          shift
+          exec omavless plugin onboarding-complete "$@"
+          ;;
         native-core-readiness)
           [ "$#" -eq 1 ] || blocked
           exec omavless desktop core-readiness
