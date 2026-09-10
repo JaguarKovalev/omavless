@@ -4,12 +4,18 @@
 //! This module must never run while that owner's mutex is held.
 
 use crate::auxiliary_core::{AuxiliaryError, AuxiliaryLease};
+use nix::fcntl::{OFlag, open, openat};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, connect, socket};
+use nix::sys::stat::Mode;
 use nix::unistd::Uid;
+use nix::unistd::{UnlinkatFlags, unlinkat};
 use omavless_mihomo::probe_controller::{MAX_ROUND_TIME, ProbeController, ProbeControllerError};
 use omavless_mihomo::probe_plan::{PROBE_URLS, ProbeChunk, ProbePlan, ProbeResult};
 use omavless_store::atomic_replace_private;
-use std::fs;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+use std::fs::{self, File, Metadata};
+use std::io::Read;
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -17,6 +23,9 @@ use std::time::{Duration, Instant};
 static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
 const READY_BUDGET: Duration = Duration::from_secs(10);
 pub const MAX_JOB_TIME: Duration = Duration::from_secs(30 * 60);
+const OWNER_MARKER: &str = ".omavless-probe-owner";
+const OWNER_MAGIC: &str = "omavless-probe-scratch-v1";
+const MAX_ORPHANS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProbeExecutionError {
@@ -216,6 +225,13 @@ impl Scratch {
                 identity: (metadata.dev(), metadata.ino()),
                 uid,
             };
+            let marker = format!("{OWNER_MAGIC}\n{}\n", std::process::id());
+            if atomic_replace_private(&scratch.path.join(OWNER_MARKER), marker.as_bytes(), uid)
+                .is_err()
+            {
+                scratch.cleanup()?;
+                return Err(ProbeExecutionError::Unavailable);
+            }
             if atomic_replace_private(&scratch.config(), config.as_bytes(), uid).is_err() {
                 scratch.cleanup()?;
                 return Err(ProbeExecutionError::Unavailable);
@@ -242,6 +258,279 @@ impl Scratch {
         }
         fs::remove_dir_all(&self.path).map_err(|_| ProbeExecutionError::CleanupRequired)
     }
+}
+
+/// Startup-only bounded crash cleanup. The caller holds the canonical owner
+/// lock and committed ownership/migration lease, before starting a successor
+/// core. `no_live_core` must prove complete process/TUN absence, not a tolerant
+/// diagnostic count. There is no name-only recursive deletion or PID adoption.
+/// Unknown members, live/reused owner PIDs, responsive sockets or changed inodes
+/// refuse cleanup. Nothing is read from a profile/store file.
+pub fn cleanup_orphans(parent: &Path, no_live_core: impl Fn() -> bool) -> Result<usize> {
+    let uid = Uid::current().as_raw();
+    let failure = || ProbeExecutionError::CleanupRequired;
+    if !parent.is_absolute() {
+        return Err(failure());
+    }
+    let directory = File::from(
+        open(
+            parent,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|_| failure())?,
+    );
+    let parent_metadata = directory.metadata().map_err(|_| failure())?;
+    if !private_directory_metadata(&parent_metadata, uid) {
+        return Err(failure());
+    }
+    let mut candidates = Vec::new();
+    for (index, entry) in fs::read_dir(fd_path(&directory))
+        .map_err(|_| failure())?
+        .enumerate()
+    {
+        if index >= 512 {
+            return Err(failure());
+        }
+        let entry = entry.map_err(|_| failure())?;
+        let name = entry.file_name();
+        if !name.as_encoded_bytes().starts_with(b"probe-") {
+            continue;
+        }
+        let pid = orphan_name_pid(&name).ok_or_else(failure)?;
+        if candidates.len() >= MAX_ORPHANS {
+            return Err(failure());
+        }
+        candidates.push((name, pid));
+    }
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+    if !no_live_core() {
+        return Err(failure());
+    }
+    // Validate the complete set first. One unsafe candidate prevents deletion
+    // of every other candidate; a safe prefix is not partial acceptance.
+    let mut prepared = Vec::new();
+    for (name, pid) in candidates {
+        match fs::symlink_metadata(format!("/proc/{pid}")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(failure()),
+        }
+        let held = File::from(
+            openat(
+                &directory,
+                Path::new(&name),
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|_| failure())?,
+        );
+        let metadata = held.metadata().map_err(|_| failure())?;
+        if !private_directory_metadata(&metadata, uid) {
+            return Err(failure());
+        }
+        let mut members = Vec::new();
+        let mut marker_present = false;
+        for (index, entry) in fs::read_dir(fd_path(&held))
+            .map_err(|_| failure())?
+            .enumerate()
+        {
+            if index >= 4 {
+                return Err(failure());
+            }
+            let entry = entry.map_err(|_| failure())?;
+            let member = entry.file_name();
+            let file = File::from(
+                openat(
+                    &held,
+                    Path::new(&member),
+                    OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                )
+                .map_err(|_| failure())?,
+            );
+            let facts = file.metadata().map_err(|_| failure())?;
+            let regular = facts.is_file() && facts.nlink() == 1 && facts.uid() == uid;
+            let valid = match member.to_str() {
+                Some(OWNER_MARKER) => {
+                    marker_present = true;
+                    if !regular || facts.mode() & 0o7777 != 0o600 || facts.len() > 128 {
+                        return Err(failure());
+                    }
+                    let input = File::from(
+                        openat(
+                            &held,
+                            Path::new(OWNER_MARKER),
+                            OFlag::O_RDONLY
+                                | OFlag::O_NONBLOCK
+                                | OFlag::O_NOFOLLOW
+                                | OFlag::O_CLOEXEC,
+                            Mode::empty(),
+                        )
+                        .map_err(|_| failure())?,
+                    );
+                    if !input.metadata().is_ok_and(|now| same_file(&now, &facts)) {
+                        return Err(failure());
+                    }
+                    let mut bytes = Vec::new();
+                    input
+                        .take(129)
+                        .read_to_end(&mut bytes)
+                        .map_err(|_| failure())?;
+                    regular
+                        && facts.mode() & 0o7777 == 0o600
+                        && facts.len() <= 128
+                        && bytes == format!("{OWNER_MAGIC}\n{pid}\n").as_bytes()
+                }
+                Some("config.yaml") => {
+                    regular
+                        && facts.mode() & 0o7777 == 0o600
+                        && facts.len() <= omavless_mihomo::probe_plan::MAX_CONFIG_BYTES as u64
+                }
+                Some("cache.db") => {
+                    regular
+                        && matches!(facts.mode() & 0o7777, 0o600 | 0o644)
+                        && facts.len() <= 32 * 1024 * 1024
+                }
+                Some("controller.sock") => {
+                    if !facts.file_type().is_socket()
+                        || facts.uid() != uid
+                        || !matches!(facts.mode() & 0o7777, 0o600 | 0o666)
+                    {
+                        return Err(failure());
+                    }
+                    let descriptor = socket(
+                        AddressFamily::Unix,
+                        SockType::Stream,
+                        SockFlag::SOCK_CLOEXEC | SockFlag::SOCK_NONBLOCK,
+                        None,
+                    )
+                    .map_err(|_| failure())?;
+                    let address = UnixAddr::new(&fd_path(&held).join("controller.sock"))
+                        .map_err(|_| failure())?;
+                    matches!(
+                        connect(descriptor.as_raw_fd(), &address),
+                        Err(nix::errno::Errno::ECONNREFUSED)
+                    )
+                }
+                _ => false,
+            };
+            if !valid {
+                return Err(failure());
+            }
+            members.push((member, facts));
+        }
+        if !marker_present {
+            return Err(failure());
+        }
+        // Keep ownership proof until credential-bearing members are gone. A
+        // crash during cleanup can then retry the remaining fixed members.
+        members.sort_by_key(|(name, _)| name == OWNER_MARKER);
+        prepared.push((name, held, metadata, members));
+    }
+    if !no_live_core()
+        || !fs::symlink_metadata(parent).is_ok_and(|now| same_file(&now, &parent_metadata))
+    {
+        return Err(failure());
+    }
+    // First revalidate every member, then unlink only fixed names via held
+    // directory descriptors. A replaced directory entry cannot redirect writes.
+    for (name, held, metadata, members) in &prepared {
+        let current = File::from(
+            openat(
+                &directory,
+                Path::new(name),
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|_| failure())?,
+        );
+        if !current
+            .metadata()
+            .is_ok_and(|now| same_file(&now, metadata))
+        {
+            return Err(failure());
+        }
+        for (member, expected) in members {
+            let current = File::from(
+                openat(
+                    held,
+                    Path::new(member),
+                    OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                )
+                .map_err(|_| failure())?,
+            );
+            if !current
+                .metadata()
+                .is_ok_and(|now| same_file(&now, expected))
+            {
+                return Err(failure());
+            }
+        }
+    }
+    let count = prepared.len();
+    for (name, held, metadata, members) in prepared {
+        for (member, expected) in members {
+            let current = File::from(
+                openat(
+                    &held,
+                    Path::new(&member),
+                    OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                )
+                .map_err(|_| failure())?,
+            );
+            if !current
+                .metadata()
+                .is_ok_and(|now| same_file(&now, &expected))
+            {
+                return Err(failure());
+            }
+            unlinkat(&held, Path::new(&member), UnlinkatFlags::NoRemoveDir)
+                .map_err(|_| failure())?;
+        }
+        let current = File::from(
+            openat(
+                &directory,
+                Path::new(&name),
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|_| failure())?,
+        );
+        if !current
+            .metadata()
+            .is_ok_and(|now| same_file(&now, &metadata))
+        {
+            return Err(failure());
+        }
+        unlinkat(&directory, Path::new(&name), UnlinkatFlags::RemoveDir).map_err(|_| failure())?;
+    }
+    Ok(count)
+}
+
+fn fd_path(file: &File) -> PathBuf {
+    PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()))
+}
+fn private_directory_metadata(metadata: &Metadata, uid: u32) -> bool {
+    metadata.is_dir() && metadata.uid() == uid && metadata.mode() & 0o7777 == 0o700
+}
+fn same_file(a: &Metadata, b: &Metadata) -> bool {
+    (a.dev(), a.ino(), a.uid(), a.mode(), a.nlink())
+        == (b.dev(), b.ino(), b.uid(), b.mode(), b.nlink())
+        && ((a.is_dir() && b.is_dir()) || a.len() == b.len())
+}
+fn orphan_name_pid(name: &std::ffi::OsStr) -> Option<u32> {
+    let (pid, sequence) = name.to_str()?.strip_prefix("probe-")?.split_once('-')?;
+    let number = pid.parse::<u32>().ok()?;
+    let serial = u64::from_str_radix(sequence, 16).ok()?;
+    (number > 1
+        && number <= i32::MAX as u32
+        && pid == number.to_string()
+        && sequence == format!("{serial:x}"))
+    .then_some(number)
 }
 
 struct ChunkRun<'a> {
@@ -654,5 +943,142 @@ mod tests {
             drop(guard);
             assert!(slot.reserve().is_ok());
         });
+    }
+
+    fn orphan_fixture(parent: &Path, sequence: u64) -> PathBuf {
+        // Beyond Linux pid_max, but within the accepted signed PID domain.
+        let pid = i32::MAX as u32;
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        let path = parent.join(format!("probe-{pid}-{sequence:x}"));
+        fs::DirBuilder::new().mode(0o700).create(&path).unwrap();
+        for (name, data, mode) in [
+            (OWNER_MARKER, format!("{OWNER_MAGIC}\n{pid}\n"), 0o600),
+            ("config.yaml", "synthetic-private-config".to_owned(), 0o600),
+            ("cache.db", "synthetic-cache".to_owned(), 0o644),
+        ] {
+            fs::write(path.join(name), data).unwrap();
+            fs::set_permissions(path.join(name), fs::Permissions::from_mode(mode)).unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn orphan_cleanup_removes_only_marked_dead_private_fixed_members() {
+        let fixture = Fixture::new("success");
+        let orphan = orphan_fixture(&fixture.scratch, 0);
+        let socket = UnixListener::bind(orphan.join("controller.sock")).unwrap();
+        fs::set_permissions(
+            orphan.join("controller.sock"),
+            fs::Permissions::from_mode(0o666),
+        )
+        .unwrap();
+        drop(socket);
+        fs::write(fixture.scratch.join("owner.lock"), "unrelated").unwrap();
+        assert_eq!(cleanup_orphans(&fixture.scratch, || true).unwrap(), 1);
+        assert!(!orphan.exists());
+        assert_eq!(
+            fs::read(fixture.scratch.join("owner.lock")).unwrap(),
+            b"unrelated"
+        );
+        assert_eq!(
+            cleanup_orphans(&fixture.scratch, || panic!(
+                "no orphan means no host effects"
+            ))
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn orphan_cleanup_never_deletes_live_or_unproven_scratch() {
+        let fixture = Fixture::new("success");
+        let scratch = Scratch::create(&fixture.scratch, "synthetic").unwrap();
+        assert!(cleanup_orphans(&fixture.scratch, || true).is_err());
+        assert!(scratch.config().exists());
+        scratch.cleanup().unwrap();
+        let orphan = orphan_fixture(&fixture.scratch, 0);
+        assert!(cleanup_orphans(&fixture.scratch, || false).is_err());
+        let listener = UnixListener::bind(orphan.join("controller.sock")).unwrap();
+        fs::set_permissions(
+            orphan.join("controller.sock"),
+            fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        assert!(cleanup_orphans(&fixture.scratch, || true).is_err());
+        assert!(orphan.join("config.yaml").exists());
+        drop(listener);
+        assert_eq!(cleanup_orphans(&fixture.scratch, || true).unwrap(), 1);
+    }
+
+    #[test]
+    fn orphan_cleanup_unknown_member_or_unmarked_directory_refuses_entire_set() {
+        for bad in [
+            "extra",
+            "missing-marker",
+            "bad-marker",
+            "symlink",
+            "wide-mode",
+            "oversized",
+        ] {
+            let fixture = Fixture::new("success");
+            let first = orphan_fixture(&fixture.scratch, 0);
+            let second = orphan_fixture(&fixture.scratch, 1);
+            match bad {
+                "extra" => fs::write(second.join("unexpected"), "preserve").unwrap(),
+                "missing-marker" => fs::remove_file(second.join(OWNER_MARKER)).unwrap(),
+                "bad-marker" => fs::write(second.join(OWNER_MARKER), "unrecognized").unwrap(),
+                "symlink" => {
+                    fs::remove_file(second.join("cache.db")).unwrap();
+                    symlink(first.join("cache.db"), second.join("cache.db")).unwrap();
+                }
+                "wide-mode" => fs::set_permissions(
+                    second.join("config.yaml"),
+                    fs::Permissions::from_mode(0o644),
+                )
+                .unwrap(),
+                "oversized" => fs::OpenOptions::new()
+                    .write(true)
+                    .open(second.join("cache.db"))
+                    .unwrap()
+                    .set_len(32 * 1024 * 1024 + 1)
+                    .unwrap(),
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                cleanup_orphans(&fixture.scratch, || true).unwrap_err(),
+                ProbeExecutionError::CleanupRequired
+            );
+            assert!(first.join("config.yaml").exists());
+            assert!(second.join("config.yaml").exists());
+        }
+    }
+
+    #[test]
+    fn orphan_cleanup_bounds_and_replacement_refuse_without_prefix_deletion() {
+        let fixture = Fixture::new("success");
+        for sequence in 0..=MAX_ORPHANS as u64 {
+            orphan_fixture(&fixture.scratch, sequence);
+        }
+        assert!(cleanup_orphans(&fixture.scratch, || true).is_err());
+        assert_eq!(
+            fs::read_dir(&fixture.scratch).unwrap().count(),
+            MAX_ORPHANS + 1
+        );
+        let replacement = Fixture::new("success");
+        let orphan = orphan_fixture(&replacement.scratch, 0);
+        let calls = AtomicU64::new(0);
+        assert!(
+            cleanup_orphans(&replacement.scratch, || {
+                if calls.fetch_add(1, Ordering::Relaxed) == 1 {
+                    fs::rename(&orphan, replacement.root.join("preserved")).unwrap();
+                    fs::DirBuilder::new().mode(0o700).create(&orphan).unwrap();
+                    fs::write(orphan.join("sentinel"), "unchanged").unwrap();
+                }
+                true
+            })
+            .is_err()
+        );
+        assert!(orphan.join("sentinel").exists());
+        assert!(replacement.root.join("preserved/config.yaml").exists());
     }
 }
