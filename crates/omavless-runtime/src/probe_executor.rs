@@ -107,6 +107,12 @@ pub fn execute_plan(
         // Cleanup is checked even on cancellation, parse failure or rejected
         // configuration. Never publish success while the disposable core lives.
         run.stop()?;
+        // Revocation may race with a failed connect/read. Cleanup remains the
+        // highest-priority outcome, but a revoked job must not be misclassified
+        // as a provider/controller failure merely because I/O failed first.
+        if cancelled() {
+            return Err(ProbeExecutionError::Cancelled);
+        }
         outcome?;
     }
     check(deadline, &cancelled)?;
@@ -457,6 +463,33 @@ mod tests {
         assert_eq!(error, ProbeExecutionError::Rejected);
         assert!(!error.to_string().contains("fragment"));
         assert_eq!(slot.verified_pid().unwrap(), None);
+        fixture.empty();
+    }
+
+    #[test]
+    fn cancellation_observed_after_cleanup_wins_over_io_failure() {
+        use std::sync::atomic::AtomicBool;
+        let fixture = Fixture::new("malformed");
+        let slot = Arc::<AuxiliarySlot>::default();
+        let lease = slot.reserve().unwrap();
+        let observed_child = AtomicBool::new(false);
+        let outcome = execute_plan(
+            &plan(),
+            &fixture.core,
+            &fixture.scratch,
+            &lease,
+            Instant::now() + Duration::from_secs(5),
+            || {
+                let present = slot.verified_pid().unwrap().is_some();
+                if present {
+                    observed_child.store(true, Ordering::Release);
+                }
+                observed_child.load(Ordering::Acquire) && !present
+            },
+            |_, _| {},
+        );
+        assert_eq!(outcome.unwrap_err(), ProbeExecutionError::Cancelled);
+        assert!(observed_child.load(Ordering::Acquire));
         fixture.empty();
     }
 
