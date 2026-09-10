@@ -35,6 +35,7 @@ pub(crate) fn project(
         json!({
             "ownedCoreRunning":o.owned_core_running,
             "visibleMihomoCount":o.visible_mihomo_count,
+            "ownedAuxiliaryMihomoCount":o.owned_auxiliary_mihomo_count,
             "visibleTunCount":o.visible_tun_count,
             "ownedControllerConfigVerified":o.owned_controller_config_verified,
             "desiredProfileMatchesOwned":o.desired_profile_matches_owned
@@ -102,6 +103,7 @@ mod tests {
             Some(NativeLocalObservation {
                 owned_core_running: true,
                 visible_mihomo_count: 1,
+                owned_auxiliary_mihomo_count: 0,
                 visible_tun_count: 1,
                 owned_controller_config_verified: true,
                 desired_profile_matches_owned: true,

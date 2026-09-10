@@ -284,11 +284,13 @@ impl BatchScheduler {
     pub(super) fn stop(&self, dispatcher: &Arc<Mutex<RuntimeDispatcher>>) {
         self.stopping.store(true, Ordering::Release);
         // Same lock order as admission. The worker only takes dispatcher.
+        let mut auxiliary = None;
         let handle = if let Ok(mut worker) = self.worker.lock() {
             if let Ok(mut dispatcher) = dispatcher.lock()
                 && let RuntimeDispatcher::Native(owner) = &mut *dispatcher
             {
                 owner.batch_stop();
+                auxiliary = owner.auxiliary_slot();
             }
             worker.take()
         } else {
@@ -297,6 +299,7 @@ impl BatchScheduler {
         // Do not hold admission while the bounded provider request drains.
         // An already accepted peer must receive daemon_restarting promptly,
         // rather than waiting as long as the 25-second provider deadline.
+        let _auxiliary_guard = auxiliary.map(|slot| slot.quiesce());
         if let Some(worker) = handle {
             let _ = worker.join();
         }

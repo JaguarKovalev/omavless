@@ -32,6 +32,17 @@ test('disconnected requires absent runtime resources',()=>{
   Object.assign(o.facts,{ownedCoreRunning:false,visibleMihomoCount:0,visibleTunCount:0});
   assert.equal(p.project(s,o,false).state,'disconnected');o.facts.visibleTunCount=1;assert.equal(p.project(s,o,false).state,'unavailable');
 });
+test('only an attributed no-TUN auxiliary core is excluded from tunnel health',()=>{
+  const {snapshot:s,observation:o}=fixture();
+  o.facts.visibleMihomoCount=2; o.facts.ownedAuxiliaryMihomoCount=1;
+  assert.equal(p.project(s,o,false).connected,true);
+  assert.equal(o.facts.visibleMihomoCount,2);
+  o.facts.visibleMihomoCount=3; assert.equal(p.project(s,o,false).state,'unavailable');
+  s.lastKnownActual=o.lastKnownActual='disconnected'; s.desired.connected=o.desired.connected=false;
+  Object.assign(o.facts,{ownedCoreRunning:false,visibleMihomoCount:1,visibleTunCount:0});
+  assert.equal(p.project(s,o,false).state,'disconnected');
+  o.facts.ownedAuxiliaryMihomoCount=2; assert.equal(p.project(s,o,false).state,'unavailable');
+});
 test('search is bounded, preserves names and does not mutate source order',()=>{
   const list=[{name:'First',favorite:false},{name:'Тест',favorite:true},{name:'<b>First</b>',favorite:false}];
   assert.equal(p.filtered(list,'тЕСТ').length,1);assert.equal(p.filtered(list,'').at(0).name,'Тест');assert.equal(list[0].name,'First');

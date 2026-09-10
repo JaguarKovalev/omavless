@@ -296,12 +296,39 @@ const NATIVE_MUTATION_METHODS: &[&str] = &[
     "subscriptions.refresh",
 ];
 
+fn valid_mutation_shape(request: &Value, instance: &str) -> bool {
+    match request["method"].as_str().unwrap_or("") {
+        "plugin.action" => plugin_action::parse(request).is_ok_and(|a| a.instance == instance),
+        "connection.connect" | "connection.disconnect" | "routing.set_mode" => {
+            mutation_protocol::parse_owner_request(request).is_ok()
+        }
+        "profiles.rename" | "profiles.favorite" | "profiles.delete" | "profiles.replace" => {
+            profile_mutation_protocol::parse_profile_mutation_request(request).is_ok()
+        }
+        "profiles.import" => profile_import_protocol::parse_profile_import_request(request).is_ok(),
+        "subscriptions.add" | "subscriptions.update" | "subscriptions.delete" => {
+            subscription_mutation_protocol::parse_subscription_mutation_request(request).is_ok()
+        }
+        "subscriptions.refresh" => {
+            subscription_refresh_protocol::parse_subscription_refresh_request(request).is_ok()
+        }
+        "routing.set_preset" => routing_preset::parse(request).is_ok(),
+        "routing.custom_rules.add" | "routing.custom_rules.delete" => {
+            custom_rule_protocol::parse(request).is_ok()
+        }
+        "startup.configure" => startup_protocol::parse_startup_request(request).is_ok(),
+        "onboarding.complete" => onboarding_protocol::parse(request).is_ok(),
+        _ => false,
+    }
+}
+
 enum RuntimeDispatcher {
     ReadOnly,
     Native(Box<dyn NativeRuntimeOwner>),
 }
 
 trait NativeRuntimeOwner: Send {
+    fn auxiliary_slot(&mut self) -> Option<Arc<auxiliary_core::AuxiliarySlot>>;
     fn ping_plan(
         &mut self,
         request: &Value,
@@ -573,6 +600,9 @@ impl<H> NativeRuntimeOwner for RegisteredNativeOwner<H>
 where
     H: lifecycle::LifecycleHost + Send + 'static,
 {
+    fn auxiliary_slot(&mut self) -> Option<Arc<auxiliary_core::AuxiliarySlot>> {
+        self.owner.batch_coordinator().host().auxiliary_slot()
+    }
     fn ping_plan(
         &mut self,
         request: &Value,
@@ -1198,6 +1228,22 @@ impl RuntimeServer {
         ) {
             return self.dispatch_remote_subscription(request, None);
         }
+        let _auxiliary_guard = if valid_mutation_shape(request, &self.instance_id) {
+            match self.quiesce_auxiliary(Some(request)) {
+                Ok(guard) => guard,
+                Err(code) => {
+                    return error_response(
+                        request["id"].as_str().unwrap_or("invalid"),
+                        0,
+                        code,
+                        code == StableErrorCode::Busy,
+                        None,
+                    );
+                }
+            }
+        } else {
+            None
+        };
         let mut dispatcher = match self.dispatcher.lock() {
             Ok(dispatcher) => dispatcher,
             Err(_) => {
@@ -1551,6 +1597,12 @@ impl RuntimeServer {
         };
         let fetched = subscription_transport::SubscriptionTransport::fetch(&transport, &url);
 
+        let _auxiliary_guard = match self.quiesce_auxiliary(Some(request)) {
+            Ok(guard) => guard,
+            Err(code) => {
+                return error_response(id, revision, code, code == StableErrorCode::Busy, None);
+            }
+        };
         let mut dispatcher = match self.dispatcher.lock() {
             Ok(dispatcher) => dispatcher,
             Err(_) => {
@@ -1565,6 +1617,40 @@ impl RuntimeServer {
                 owner.complete_remote_subscription(request, revision, completion, fetched)
             }
         }
+    }
+
+    // The slot is cloned under the owner mutex; cancellation and waiting are
+    // strictly outside it. The returned guard spans the eventual mutation.
+    fn quiesce_auxiliary(
+        &self,
+        request: Option<&Value>,
+    ) -> std::result::Result<Option<auxiliary_core::QuiescentGuard>, StableErrorCode> {
+        let slot = {
+            let mut dispatcher = self
+                .dispatcher
+                .lock()
+                .map_err(|_| StableErrorCode::InternalError)?;
+            match &mut *dispatcher {
+                RuntimeDispatcher::Native(owner) => {
+                    if request.is_some_and(|r| {
+                        r["params"]["expectedRevision"]
+                            .as_u64()
+                            .is_some_and(|revision| revision != owner.revision())
+                    }) {
+                        return Ok(None);
+                    }
+                    owner.auxiliary_slot()
+                }
+                RuntimeDispatcher::ReadOnly => None,
+            }
+        };
+        slot.map(|slot| {
+            slot.quiesce().map_err(|e| match e {
+                auxiliary_core::AuxiliaryError::Busy => StableErrorCode::Busy,
+                _ => StableErrorCode::ManualRecoveryRequired,
+            })
+        })
+        .transpose()
     }
 
     fn dispatch_transition_bootstrap(
@@ -2006,6 +2092,7 @@ mod tests {
     const SUBSCRIPTION_ID: &str = "10000000-0000-4000-8000-000000000001";
 
     struct FakeHost {
+        auxiliary: Option<Arc<auxiliary_core::AuxiliarySlot>>,
         observation: OwnedObservation,
         calls: Arc<AtomicUsize>,
         lifecycle_effects: Arc<AtomicUsize>,
@@ -2057,6 +2144,9 @@ mod tests {
     }
 
     impl lifecycle::LifecycleHost for FakeHost {
+        fn auxiliary_slot(&self) -> Option<Arc<auxiliary_core::AuxiliarySlot>> {
+            self.auxiliary.clone()
+        }
         fn ping_binding(
             &mut self,
             desired: &DesiredState,
@@ -2423,6 +2513,7 @@ mod tests {
         fs::set_permissions(&store_path, fs::Permissions::from_mode(0o600)).unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
         let host = FakeHost {
+            auxiliary: None,
             lifecycle_effects: Arc::new(AtomicUsize::new(0)),
             fresh_calls: Arc::new(AtomicUsize::new(0)),
             fresh_result: Err(HostStepError::Observation),
@@ -2500,10 +2591,122 @@ mod tests {
         lifecycle::NativeLocalObservation {
             owned_core_running: false,
             visible_mihomo_count: 0,
+            owned_auxiliary_mihomo_count: 0,
             visible_tun_count: 0,
             owned_controller_config_verified: false,
             desired_profile_matches_owned: false,
         }
+    }
+
+    #[test]
+    fn native_mutations_revoke_probe_lease_but_invalid_or_stale_input_does_not() {
+        let base = temporary_base("auxiliary-admission");
+        let (mut owner, _, _) = native_owner_fixture(&base);
+        let slot = Arc::<auxiliary_core::AuxiliarySlot>::default();
+        owner.batch_coordinator().host_mut().auxiliary = Some(Arc::clone(&slot));
+        let server = RuntimeServer::bind_with_owner_factory(
+            RuntimePaths::below(&base.join("runtime")),
+            move |_| Ok(owner),
+        )
+        .unwrap();
+        let lease = slot.reserve().unwrap();
+        let bad = make_request(
+            "invalid",
+            "connection.disconnect",
+            json!({"private":"do not echo"}),
+        )
+        .unwrap();
+        assert_eq!(server.dispatch(&bad).unwrap()["ok"], false);
+        assert!(!lease.cancelled());
+        let stale = make_request(
+            "stale",
+            "routing.set_mode",
+            json!({"mode":"global", "operationId":"stale", "expectedRevision":99}),
+        )
+        .unwrap();
+        assert_eq!(
+            server.dispatch(&stale).unwrap()["error"]["code"],
+            "conflict"
+        );
+        assert!(!lease.cancelled());
+        let change = make_request(
+            "mode",
+            "routing.set_mode",
+            json!({"mode":"global", "operationId":"change", "expectedRevision":0}),
+        )
+        .unwrap();
+        assert_eq!(server.dispatch(&change).unwrap()["ok"], true);
+        assert!(lease.cancelled());
+        assert!(slot.mutation_safe());
+        let next = slot.reserve().unwrap();
+        drop(lease);
+        assert!(!next.cancelled());
+        drop(server);
+        assert!(next.cancelled());
+        drop(next);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn auxiliary_reap_does_not_hold_dispatcher_or_hide_status() {
+        let base = temporary_base("auxiliary-reap");
+        let (mut owner, _, _) = native_owner_fixture(&base);
+        let slot = Arc::<auxiliary_core::AuxiliarySlot>::default();
+        owner.batch_coordinator().host_mut().auxiliary = Some(Arc::clone(&slot));
+        let server = Arc::new(
+            RuntimeServer::bind_with_owner_factory(
+                RuntimePaths::below(&base.join("runtime")),
+                move |_| Ok(owner),
+            )
+            .unwrap(),
+        );
+        let scratch = crate::test_temp::directory("aux-reap").unwrap();
+        let config = scratch.join("config.yaml");
+        fs::write(&config, "mode: rule\n").unwrap();
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+        let tool = scratch.join("synthetic-core");
+        fs::write(&tool, "#!/bin/sh\ntrap '' TERM\nexec /usr/bin/sleep 60\n").unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o700)).unwrap();
+        thread::sleep(Duration::from_millis(20));
+        let lease = slot.reserve().unwrap();
+        lease
+            .spawn(&tool, &scratch, &config, &scratch.join("controller.sock"))
+            .unwrap();
+        let pid = lease.pid().unwrap();
+        // Let the synthetic child install its deliberate TERM refusal.
+        thread::sleep(Duration::from_millis(40));
+        let worker_server = Arc::clone(&server);
+        let worker = thread::spawn(move || {
+            worker_server
+                .dispatch(
+                    &make_request(
+                        "mode",
+                        "routing.set_mode",
+                        json!({"mode":"global", "operationId":"drain-first", "expectedRevision":0}),
+                    )
+                    .unwrap(),
+                )
+                .unwrap()
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while !lease.cancelled() && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert!(lease.cancelled());
+        assert!(slot.verified_pid().is_err()); // drain is still outside dispatcher
+        let started = std::time::Instant::now();
+        let status = server
+            .dispatch(&make_request("status", "status.get", json!({})).unwrap())
+            .unwrap();
+        assert_eq!(status["ok"], true);
+        assert!(started.elapsed() < Duration::from_millis(200));
+        assert_eq!(worker.join().unwrap()["ok"], true);
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        assert!(slot.mutation_safe());
+        drop(lease);
+        drop(server);
+        fs::remove_dir_all(scratch).unwrap();
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
@@ -2983,7 +3186,7 @@ mod tests {
         assert_eq!(
             observed["result"]["facts"],
             json!({
-                "ownedCoreRunning":false,"visibleMihomoCount":0,"visibleTunCount":0,
+                "ownedCoreRunning":false,"visibleMihomoCount":0,"ownedAuxiliaryMihomoCount":0,"visibleTunCount":0,
                 "ownedControllerConfigVerified":false,"desiredProfileMatchesOwned":false
             })
         );

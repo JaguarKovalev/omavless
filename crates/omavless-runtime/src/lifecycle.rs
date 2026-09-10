@@ -56,6 +56,8 @@ pub struct NativeLocalObservation {
     pub owned_core_running: bool,
     /// Exact-name inventory in the trusted procfs view, not service ownership.
     pub visible_mihomo_count: u8,
+    /// Subset of the visible count proven to be our disposable no-TUN probe.
+    pub owned_auxiliary_mihomo_count: u8,
     /// Visible TUN interfaces only; no interface is attributed to this core.
     pub visible_tun_count: u8,
     /// True only after PID-authenticated read-only configuration verification.
@@ -67,6 +69,12 @@ pub struct NativeLocalObservation {
 /// Fixed-purpose package host boundary. Inputs are semantic desired state;
 /// there is no arbitrary argv, shell, service or privileged-command surface.
 pub trait LifecycleHost {
+    fn auxiliary_slot(&self) -> Option<std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>> {
+        None
+    }
+    fn probe_paths(&self) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        None
+    }
     fn ping_binding(
         &mut self,
         _desired: &DesiredState,

@@ -14,7 +14,7 @@ use crate::lifecycle::{HostStepError, LifecycleHost, NativeLocalObservation};
 use omavless_domain::config::MAX_TEMPLATE_BYTES;
 use omavless_domain::private_store::parse_private_store;
 use omavless_mihomo::observation::{
-    processes_named, processes_named_strict, tun_interface_count, tun_interface_count_strict,
+    processes_named_strict, tun_interface_count, tun_interface_count_strict,
 };
 use omavless_mihomo::validate_config;
 use omavless_store::{atomic_replace_private, read_private_utf8};
@@ -188,6 +188,7 @@ pub struct NativeLifecycleHost {
     previous_config: Option<Option<Vec<u8>>>,
     active_install_attempted: bool,
     ping_slot: std::sync::Arc<crate::tun_ping::PingSlot>,
+    auxiliary: std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>,
 }
 
 impl NativeLifecycleHost {
@@ -226,6 +227,7 @@ impl NativeLifecycleHost {
             previous_config: None,
             active_install_attempted: false,
             ping_slot: std::sync::Arc::default(),
+            auxiliary: std::sync::Arc::default(),
         })
     }
 
@@ -266,17 +268,38 @@ impl NativeLifecycleHost {
         Ok(())
     }
 
-    fn visible_core_count(&self, own_pid: Option<u32>, own_running: bool) -> u8 {
-        let named = processes_named(&self.paths.proc_root, "mihomo");
+    fn visible_core_count(
+        &self,
+        own_pid: Option<u32>,
+        own_running: bool,
+    ) -> Result<u8, HostStepError> {
+        let named = processes_named_strict(&self.paths.proc_root, "mihomo")
+            .map_err(|_| HostStepError::Observation)?;
         let mut count = named.len();
+        let auxiliary = self
+            .auxiliary
+            .verified_pid()
+            .map_err(|_| HostStepError::Observation)?;
+        if auxiliary.is_some_and(|pid| named.contains(&pid)) {
+            count -= 1;
+        }
         if own_running && own_pid.is_some_and(|pid| !named.contains(&pid)) {
             count = count.saturating_add(1);
         }
-        u8::try_from(count).unwrap_or(u8::MAX)
+        Ok(u8::try_from(count).unwrap_or(u8::MAX))
     }
 }
 
 impl LifecycleHost for NativeLifecycleHost {
+    fn auxiliary_slot(&self) -> Option<std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>> {
+        Some(std::sync::Arc::clone(&self.auxiliary))
+    }
+    fn probe_paths(&self) -> Option<(PathBuf, PathBuf)> {
+        Some((
+            self.paths.core.clone(),
+            self.paths.runtime_directory.clone(),
+        ))
+    }
     fn ping_binding(
         &mut self,
         desired: &DesiredState,
@@ -288,7 +311,7 @@ impl LifecycleHost for NativeLifecycleHost {
         }
         let facts = self.fresh_observation(desired)?;
         if !facts.owned_core_running
-            || facts.visible_mihomo_count != 1
+            || facts.visible_mihomo_count != 1 + facts.owned_auxiliary_mihomo_count
             || facts.visible_tun_count != 1
             || !facts.owned_controller_config_verified
             || !facts.desired_profile_matches_owned
@@ -341,7 +364,7 @@ impl LifecycleHost for NativeLifecycleHost {
         }
         let valid = |facts: NativeLocalObservation| {
             facts.owned_core_running
-                && facts.visible_mihomo_count == 1
+                && facts.visible_mihomo_count == 1 + facts.owned_auxiliary_mihomo_count
                 && facts.visible_tun_count == 1
                 && facts.owned_controller_config_verified
                 && facts.desired_profile_matches_owned
@@ -391,6 +414,10 @@ impl LifecycleHost for NativeLifecycleHost {
         desired.validate().map_err(|_| HostStepError::Observation)?;
         let named = processes_named_strict(&self.paths.proc_root, "mihomo")
             .map_err(|_| HostStepError::Observation)?;
+        let auxiliary = self
+            .auxiliary
+            .verified_pid()
+            .map_err(|_| HostStepError::Observation)?;
         let tun = tun_interface_count_strict(&self.paths.sys_class_net)
             .map_err(|_| HostStepError::Observation)?;
         let (pid, running) = match self.core.as_mut() {
@@ -422,6 +449,11 @@ impl LifecycleHost for NativeLifecycleHost {
             None => (None, false),
         };
         if (pid, running) != (after_pid, after_running)
+            || self
+                .auxiliary
+                .verified_pid()
+                .map_err(|_| HostStepError::Observation)?
+                != auxiliary
             || processes_named_strict(&self.paths.proc_root, "mihomo")
                 .map_err(|_| HostStepError::Observation)?
                 != named
@@ -435,6 +467,9 @@ impl LifecycleHost for NativeLifecycleHost {
             owned_core_running: running,
             visible_mihomo_count: u8::try_from(named.len())
                 .map_err(|_| HostStepError::Observation)?,
+            owned_auxiliary_mihomo_count: u8::from(
+                auxiliary.is_some_and(|pid| named.contains(&pid)),
+            ),
             visible_tun_count: tun,
             owned_controller_config_verified: verified,
             desired_profile_matches_owned: profile_matches,
@@ -472,7 +507,7 @@ impl LifecycleHost for NativeLifecycleHost {
         Ok(OwnedObservation {
             service_active: own_running,
             controller_ready,
-            core_count: self.visible_core_count(own_pid, own_running),
+            core_count: self.visible_core_count(own_pid, own_running)?,
             tun_count: tun_interface_count(&self.paths.sys_class_net),
             active_profile_matches: own_running
                 && controller_ready
@@ -481,6 +516,9 @@ impl LifecycleHost for NativeLifecycleHost {
     }
 
     fn prepare(&mut self, desired: &DesiredState) -> Result<(), HostStepError> {
+        if !self.auxiliary.mutation_safe() {
+            return Err(HostStepError::Prepare);
+        }
         if self.core.is_some() || self.profile_id.is_some() {
             return Err(HostStepError::Prepare);
         }
@@ -535,6 +573,9 @@ impl LifecycleHost for NativeLifecycleHost {
     }
 
     fn start_prepared(&mut self) -> Result<(), HostStepError> {
+        if !self.auxiliary.mutation_safe() {
+            return Err(HostStepError::Start);
+        }
         if !self.ping_slot.revoke() {
             return Err(HostStepError::Start);
         }
@@ -587,6 +628,9 @@ impl LifecycleHost for NativeLifecycleHost {
     }
 
     fn stop_owned(&mut self) -> Result<(), HostStepError> {
+        if !self.auxiliary.mutation_safe() {
+            return Err(HostStepError::Stop);
+        }
         if !self.ping_slot.revoke() {
             return Err(HostStepError::Stop);
         }
@@ -619,6 +663,7 @@ impl LifecycleHost for NativeLifecycleHost {
 
 impl Drop for NativeLifecycleHost {
     fn drop(&mut self) {
+        let _auxiliary_guard = self.auxiliary.quiesce();
         // Shutdown has no successor TUN. Cleanup is best effort in Drop;
         // ordinary stop/start instead refuse if synchronous reaping is unproven.
         let _ = self.ping_slot.revoke();
@@ -691,6 +736,7 @@ mod tests {
             NativeLocalObservation {
                 owned_core_running: false,
                 visible_mihomo_count: 0,
+                owned_auxiliary_mihomo_count: 0,
                 visible_tun_count: 0,
                 owned_controller_config_verified: false,
                 desired_profile_matches_owned: false

@@ -66,6 +66,13 @@ pub struct AuxiliaryLease {
 pub struct QuiescentGuard(Arc<AuxiliarySlot>);
 
 impl AuxiliarySlot {
+    /// Nonblocking host-side assertion. This does not perform cancellation;
+    /// the outer runtime dispatcher must drain outside its owner mutex first.
+    pub fn mutation_safe(&self) -> bool {
+        self.0
+            .lock()
+            .is_ok_and(|s| !s.failed && !s.draining && s.reservation.is_none())
+    }
     pub fn reserve(self: &Arc<Self>) -> Result<AuxiliaryLease, AuxiliaryError> {
         let mut state = self.0.lock().map_err(|_| AuxiliaryError::Cleanup)?;
         if state.failed {

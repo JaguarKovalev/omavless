@@ -17,16 +17,21 @@ function project(snapshot, observation, failed) {
       || observation.desired.mode !== snapshot.desired.mode) return result
   var facts = observation.facts
   if (!facts) return result
+  // The visible inventory stays truthful: only the explicitly attributed
+  // disposable no-TUN child is separate from the one requested tunnel core.
+  var auxiliary = facts.ownedAuxiliaryMihomoCount === undefined ? 0 : facts.ownedAuxiliaryMihomoCount
+  if ([0, 1].indexOf(auxiliary) < 0 || auxiliary > facts.visibleMihomoCount) return result
+  var tunnelCores = facts.visibleMihomoCount - auxiliary
   result.state = snapshot.lastKnownActual
   if (result.state === "connected") {
     result.connected = snapshot.desired.connected && facts.ownedCoreRunning
       && facts.desiredProfileMatchesOwned && facts.ownedControllerConfigVerified
-      && facts.visibleMihomoCount === 1 && facts.visibleTunCount === 1
+      && tunnelCores === 1 && facts.visibleTunCount === 1
     if (result.connected) result.activeId = snapshot.desired.profileId
     else result.state = "unavailable"
   } else if (result.state === "disconnected"
       && (snapshot.desired.connected || facts.ownedCoreRunning
-          || facts.visibleMihomoCount !== 0 || facts.visibleTunCount !== 0)) {
+          || tunnelCores !== 0 || facts.visibleTunCount !== 0)) {
     result.state = "unavailable"
   }
   return result

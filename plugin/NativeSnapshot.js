@@ -373,9 +373,11 @@ function parseObservation(raw) {
     if (!object(r.verification, ["serviceOwnership", "tunOwnership", "routes", "dns", "internet"])
         || !Object.keys(r.verification).every(function(k) { return r.verification[k] === false })) return null
     if (r.availability === "unavailable") { if (f !== null) return null }
-    else if (!object(f, ["ownedCoreRunning", "visibleMihomoCount", "visibleTunCount", "ownedControllerConfigVerified", "desiredProfileMatchesOwned"])
+    else if (!(object(f, ["ownedCoreRunning", "visibleMihomoCount", "visibleTunCount", "ownedControllerConfigVerified", "desiredProfileMatchesOwned"])
+        || object(f, ["ownedCoreRunning", "visibleMihomoCount", "ownedAuxiliaryMihomoCount", "visibleTunCount", "ownedControllerConfigVerified", "desiredProfileMatchesOwned"]))
         || typeof f.ownedCoreRunning !== "boolean" || typeof f.ownedControllerConfigVerified !== "boolean"
         || typeof f.desiredProfileMatchesOwned !== "boolean" || !number(f.visibleMihomoCount, 64) || !number(f.visibleTunCount, 8)
+        || (f.ownedAuxiliaryMihomoCount !== undefined && !number(f.ownedAuxiliaryMihomoCount, Math.min(1, f.visibleMihomoCount)))
         || (f.desiredProfileMatchesOwned && (!f.ownedCoreRunning || !d.connected))
         || (f.ownedControllerConfigVerified && (!f.ownedCoreRunning || !f.desiredProfileMatchesOwned))) return null
     return {instanceId:r.instanceId, revision:p.revision, desired:d, lastKnownActual:r.lastKnownActual,
