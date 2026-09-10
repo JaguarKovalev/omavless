@@ -125,8 +125,12 @@ confirmed disconnect with verified owned core/TUN cleanup, then native runtime
 stop and plugin disable, preserving installation and private settings. Ordinary
 UI close/reload remains tunnel-neutral. See
 [CONTROL_PLANE.md section 9](docs/roadmap/CONTROL_PLANE.md#9-close-quit-disable-remove-and-stop).
-Implementation, failure/concurrency coverage and exact-head installed acceptance
-are pending. Neither this contract nor the probe evidence completes R5/R6 or V0;
+The local implementation, deterministic failure/concurrency coverage and
+installed CLI/Service connected/disconnected exit gates now pass; see
+[Full Quit evidence](docs/testing/R5_NATIVE_FULL_QUIT.md). Human keyboard and
+authorization-rejection checks remain open. Direct plugin-disable/remove entry
+points still need their native lifecycle bridge; the button does not cover them.
+Neither this checkpoint nor the probe evidence completes R5/R6 or V0;
 Python retirement still requires the full installed Python-unavailable gate.
 
 ## 3. The new global sequence

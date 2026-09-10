@@ -22,6 +22,19 @@ test('unsafe or busy UI cannot submit Quit',()=>{
     const c=context();c[key]=value;assert.equal(c.quitNativeApplication(),false);assert.equal(c.nativeQuitProcess.running,false);
   }
 });
+test('asynchronous Process startup is sealed by the actual pending admission bindings',()=>{
+  const c=context();c.nativeFactsCurrent=true;c.nativePending=null;
+  c.nativeObservation={manualRecoveryRequired:false};
+  Object.defineProperty(c.nativeQuitProcess,'running',{get(){return false;},set(_value){}});
+  for(const name of ['nativeQuitting','nativeCanAct']) {
+    const match=service.match(new RegExp('readonly property bool '+name+': ([\\s\\S]*?)(?=\\n  (?:readonly )?property|\\n  function)'));
+    assert(match);vm.runInContext('Object.defineProperty(this,"'+name+'",{get:function(){return ('+match[1].trim()+');}});',c);
+  }
+  assert(c.quitNativeApplication());assert.equal(c.nativeQuitProcess.running,false);
+  assert.equal(c.nativeCanAct,false);assert.equal(c.quitNativeApplication(),false);
+  assert.equal(c._nativeOperationSerial,1);
+  c.nativeQuitPending=false;assert.equal(c.nativeCanAct,true);
+});
 test('quit blocks new UI actions and does not kill authorization on short timer',()=>{
   assert.match(service,/nativeCanAct: nativeFactsCurrent && !nativePending && !nativeQuitting/);
   assert.match(service,/nativeQuitting: nativeQuitPending \|\| nativeQuitProcess.running/);

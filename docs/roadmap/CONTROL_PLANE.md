@@ -1016,7 +1016,8 @@ has unknown outcome; reconnect, read status and retry only with operation ID.
 
 Owner-directed local contract amendment, 2026-09-10: **Full Quit is an explicit
 shutdown action, not UI close**. A local native implementation now exists;
-exact-head installed acceptance remains pending. See the
+installed CLI/Service connected and disconnected gates pass. Human keyboard
+and authorization-rejection gates remain pending. See the
 [candidate evidence](../testing/R5_NATIVE_FULL_QUIT.md); this is not a shipped capability.
 
 - **Close panel** — UI only.

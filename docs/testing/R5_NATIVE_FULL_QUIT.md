@@ -67,7 +67,7 @@ from this shutdown checkpoint.
 - Full Python suite: 351 executed, four skipped (347 successful tests).
   Includes fixed Quit launcher arity, no Python fallback and harmless synthetic
   wrapper-destruction survival coverage.
-- Five new native Quit JS tests exercise production QML function extraction,
+- Six new native Quit JS tests exercise production QML function extraction,
   guarded action, confirmation/cancel wiring and EN/RU catalog lookup.
 - Full invoked JS/QML contracts, clippy all targets with warnings denied,
   formatting, Python compile, shell syntax, manifest, plugin validate and
@@ -124,16 +124,29 @@ and non-null facts. Do not describe the initial wrapper runs as clean end-to-end
 restoration passes. A QML harness similarly had an early-completion predicate
 before asynchronous Process start; that run is **not** live QML exit evidence.
 The owning UI now marks Quit pending synchronously before child launch to close
-double-admission during that scheduling gap. Its installed Service retest is
-recorded separately below when completed.
+double-admission during that scheduling gap. Frontend source
+`a55de809f77c60bc195d4f840be5603d5fee0f6c` is installed; Rust remains the
+byte-identical `31d4027` package. The actual installed Service → launcher →
+Rust command retest passes; independent inspection confirms inactive/disabled
+runtime and disabled plugin before explicit re-enable. This harness invokes
+the real Service action but is not a human click on the Settings confirmation.
 
-- Exact packaged candidate identity and installed runtime restart.
-- Installed disconnected and connected Full Quit: runtime/core/TUN gone,
-  plugin disabled only after proof; no automatic restart; explicit reopening.
-- Exact EN/RU settings, confirmation/cancel and error rendering, keyboard
-  navigation and human observation.
-- Explicit authorization rejection where reproducible; UI must stay visible.
-- Ordinary close/reload must retain a requested healthy tunnel.
+A final connected repeat also passes cleanly through restoration: one core/TUN
+before exit; zero runtime/core/TUN and disabled plugin afterward; then verified
+Routing/disconnected with plugin and native unit enabled. Private store bytes
+are unchanged throughout. Before exiting, actual panel open/close plus shell
+restart retained the same daemon PID, core PID and one TUN. Full Quit does not
+change those ordinary UI-close semantics. Final runtime is one native daemon,
+zero Mihomo/auxiliary/TUN, no manual recovery and an enabled plugin.
+
+- [x] Exact packaged identity, installed runtime restart and source-matching UI.
+- [x] Installed disconnected and connected Full Quit; no immediate respawn;
+  explicit reopening and independent state verification.
+- [x] Exact EN/RU settings/confirmation/error rendering in isolated synthetic
+  Quickshell captures; installed production Service action.
+- [x] Ordinary panel close and shell reload retain the requested tunnel.
+- [ ] Human pointer/Tab/Shift+Tab/Enter/Escape/cancel review of the new button.
+- [ ] Explicit authorization rejection where reproducible; UI must stay visible.
 
 Direct Omarchy disable/remove lifecycle watchers remain a separate gap: this
 explicit button does not claim that those entry points are now ported. Final
