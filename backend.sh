@@ -57,6 +57,10 @@ if command -v omavless >/dev/null 2>&1; then
             native-operation-cancel) exec omavless operation cancel "$2" "$3" ;;
           esac
           ;;
+        native-desktop-capabilities)
+          [ "$#" -eq 1 ] || blocked
+          exec omavless desktop capabilities
+          ;;
         native-support-report)
           [ "$#" -eq 1 ] || blocked
           exec omavless diagnostics export
