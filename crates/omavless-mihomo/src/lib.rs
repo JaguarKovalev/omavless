@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 
 pub mod diagnostics;
 pub mod observation;
+pub mod probe_controller;
 pub mod probe_plan;
 pub mod route_observation;
 pub mod rule_provider;
