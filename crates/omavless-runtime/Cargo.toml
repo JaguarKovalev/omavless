@@ -24,6 +24,9 @@ url = "2.5"
 [lints]
 workspace = true
 
+[dev-dependencies]
+omavless-profile = { path = "../omavless-profile" }
+
 [[bin]]
 name = "omavless"
 path = "src/main.rs"

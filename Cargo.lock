@@ -493,6 +493,7 @@ dependencies = [
  "omavless-control-protocol",
  "omavless-domain",
  "omavless-mihomo",
+ "omavless-profile",
  "omavless-store",
  "serde",
  "serde_json",

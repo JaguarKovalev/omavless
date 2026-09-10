@@ -67,6 +67,7 @@ mod onboarding_protocol;
 pub mod owner;
 pub mod plugin_action;
 pub mod private_store_transaction;
+pub mod probe_executor;
 pub mod production_cutover;
 pub mod production_observation;
 pub mod production_owner;
