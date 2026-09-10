@@ -592,6 +592,14 @@ Panel {
     page = "main"
   }
 
+  function nativeCoreSetupDescription() {
+    if (vless.nativeCoreSetupStatus !== "") return textFor("native.core." + vless.nativeCoreSetupStatus)
+    var facts = vless.nativeCoreSetupFacts
+    if (facts === null) return textFor("native.core.notChecked")
+    if (!facts.installed) return textFor("native.core.missing")
+    return facts.version === null ? textFor("native.core.versionUnknown") : textFor("native.core.version", {version:facts.version})
+  }
+
   function openAdvancedDiagnostics() {
     page = "diagnostics"
     cursorActive = false
@@ -618,6 +626,7 @@ Panel {
       if (page === "settings") targets.push(nativeProvidersRefresh.focusTarget)
       if (page === "settings") targets.push(nativeSupportSetting.focusTarget)
       if (page === "settings") targets = targets.concat([nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeHelpersRefresh.focusTarget])
+      if (page === "settings") targets.splice(1, 0, nativeCoreSetupRow.focusTarget)
       for (var s = 0; s < nativeSubscriptions.count; s++) {
         var subscriptionRow = nativeSubscriptions.itemAt(s)
         if (subscriptionRow) targets = targets.concat(subscriptionRow.focusTargets)
@@ -1367,6 +1376,7 @@ Panel {
     settings: root.settings
     panelVisible: root.opened
     nativeRoutingToolsVisible: root.opened && routingToolsPrompt.visible
+    nativeCoreSetupVisible: root.opened && root.page === "settings" && vless.nativeOwner
     diagnosticsPageVisible: root.opened && root.page === "diagnostics"
     trafficMonitoring: !vless.nativeOwner && ((root.opened && root.page === "main") || vless.showBarThroughput)
     pingMonitoring: !vless.nativeOwner && root.opened && root.page === "main"
@@ -1849,6 +1859,34 @@ Panel {
             OmaNavigationButton { id: nativeSettingsBack; iconText: "󰁍"; tooltipText: root.textFor("common.back"); focusable: true; onClicked: { if (root.page === "subscription") root.openSubscriptions(); else root.page = "main"; nativeFlick.contentY = 0 } }
             PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: root.page === "subscription" ? (root.nativeSubscription ? root.nativeSubscription.name : "") : root.textFor(root.page === "subscriptions" ? "settings.subscriptions" : "settings.title"); elide: Text.ElideRight; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.title }
             OmaNavigationButton { id: nativeRefresh; visible: root.page !== "subscription"; iconText: "󰑓"; tooltipText: root.textFor("common.refresh"); focusable: true; enabled: !vless.statusProcessRunning && !vless.nativeActionRunning; onClicked: vless.refresh() }
+          }
+          SettingsActionRow {
+            id: nativeCoreSetupRow
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("settings.mihomo_core")
+            description: root.nativeCoreSetupDescription()
+            actionText: root.textFor("common.refresh")
+            actionEnabled: !vless.nativeCoreSetupBusy
+            onAction: vless.refreshNativeCoreSetup()
+          }
+          PlainText {
+            Layout.fillWidth: true
+            visible: root.page === "settings" && vless.nativeCoreSetupFacts !== null
+            text: vless.nativeCoreSetupFacts === null ? "" : root.textFor("native.core.tun." + vless.nativeCoreSetupFacts.tunDevice)
+              + "\n" + root.textFor("native.core.capabilities." + vless.nativeCoreSetupFacts.fileNetworkCapabilities)
+            color: root.dim
+            font.family: root.fontFamily
+            wrapMode: Text.Wrap
+          }
+          PlainText {
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            text: root.textFor("native.core.scope")
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.Wrap
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.appearance"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow { id: nativeLanguageRow; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.language"); description: root.textFor("settings.language_description"); actionText: root.languageSettingLabel(); onAction: root.cycleLanguageSetting() }

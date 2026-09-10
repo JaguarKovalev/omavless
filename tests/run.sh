@@ -37,6 +37,7 @@ if command -v node >/dev/null 2>&1; then
   node "$here/test-native-file-export.js"
   node "$here/test-native-routing-panel.js"
   node "$here/test-native-diagnostics.js"
+  node "$here/test-native-core-setup.js"
   node "$here/test-native-qr.js"
   node "$here/test-native-editor.js"
   node "$here/test-native-presentation.js"

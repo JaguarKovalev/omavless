@@ -69,6 +69,10 @@ if command -v omavless >/dev/null 2>&1; then
           [ "$#" -eq 1 ] || blocked
           exec omavless desktop clipboard-copy
           ;;
+        native-core-readiness)
+          [ "$#" -eq 1 ] || blocked
+          exec omavless desktop core-readiness
+          ;;
         native-routing-rules)
           [ "$#" -eq 1 ] || blocked
           exec omavless routing rules
