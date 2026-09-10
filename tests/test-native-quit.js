@@ -4,7 +4,7 @@ const service = fs.readFileSync(__dirname + '/../plugin/Service.qml', 'utf8');
 const panel = fs.readFileSync(__dirname + '/../plugin/Panel.qml', 'utf8');
 function context() {
   const c = vm.createContext({nativeCanAct:true,nativeEditorRunning:false,nativeImportBusy:false,
-    nativeQuitFailed:true,nativeQuitProcess:{running:false},_nativeOperationSerial:0,
+    nativeQuitFailed:true,nativeQuitPending:false,nativeQuitProcess:{running:false},_nativeOperationSerial:0,
     nativeSnapshot:{instanceId:'synthetic-instance',revision:7},backendPath:'/synthetic/backend.sh'});
   const start=service.indexOf('  function quitNativeApplication('),end=service.indexOf('\n  }',start)+4;
   vm.runInContext(service.slice(start,end),c);return c;
@@ -12,6 +12,7 @@ function context() {
 let count=0; function test(name,f) {try{f();count++}catch(e){e.message=name+': '+e.message;throw e}}
 test('exit is a fixed fenced command with no store data in argv',()=>{
   const c=context(); assert(c.quitNativeApplication());assert(c.nativeQuitProcess.running);
+  assert(c.nativeQuitPending);
   assert.equal(c.nativeQuitFailed,false);
   assert.equal(c.nativeQuitProcess.command.slice(0,5).join('|'),'bash|/synthetic/backend.sh|native-quit|synthetic-instance|7');
   assert.match(c.nativeQuitProcess.command[5],/^quit-[a-z0-9]+-1$/);
@@ -23,6 +24,7 @@ test('unsafe or busy UI cannot submit Quit',()=>{
 });
 test('quit blocks new UI actions and does not kill authorization on short timer',()=>{
   assert.match(service,/nativeCanAct: nativeFactsCurrent && !nativePending && !nativeQuitting/);
+  assert.match(service,/nativeQuitting: nativeQuitPending \|\| nativeQuitProcess.running/);
   const quit=service.slice(service.indexOf('id: nativeQuitProcess'),service.indexOf('property var nativeTestResult'));
   assert(!quit.includes('Timer {'));assert(!quit.includes('signal('));assert(!quit.includes('output.text'));
   assert.match(quit,/nativeQuitFailed = code !== 0/);

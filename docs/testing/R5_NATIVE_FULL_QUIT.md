@@ -101,6 +101,32 @@ failure rather than the existing cleanup deadline; no timeout was relaxed.
 
 ## Remaining acceptance at implementation checkpoint
 
+### Installed continuation
+
+Rust package source `31d402706e55446bb3cbe6cd2ef742c767cadbd6`
+(`omavless 0.0.0.r447.g31d402706e55-1`, ARM64) is installed. Packaged binary
+SHA-256 matches its build identity; all 24 frontend/template/launcher files
+matched the checkout before the later UI pending-flag follow-up.
+Four actual installed-Mihomo opt-ins pass (renderer/controller/native host/
+supervisor), using Mihomo 1.19.30 ARM64.
+
+Fixed CLI Full Quit passes from disconnected and connected Routing states.
+Connected start observed exactly one owned core and one TUN. Both exits verify
+daemon/core/TUN zero, runtime unit disabled, plugin disabled, private store
+bytes unchanged, and no immediate respawn. They do not claim provider HTTPS/DNS
+reachability or fresh-login acceptance. Explicit re-enable restores the native
+unit/plugin, Routing/disconnected/core0/TUN0.
+
+The first smoke wrapper reported restoration uncertainty because it returned
+an available IPC envelope before fresh host facts were ready; independent
+checks confirmed restoration. Its follow-up waits for `availability=observed`
+and non-null facts. Do not describe the initial wrapper runs as clean end-to-end
+restoration passes. A QML harness similarly had an early-completion predicate
+before asynchronous Process start; that run is **not** live QML exit evidence.
+The owning UI now marks Quit pending synchronously before child launch to close
+double-admission during that scheduling gap. Its installed Service retest is
+recorded separately below when completed.
+
 - Exact packaged candidate identity and installed runtime restart.
 - Installed disconnected and connected Full Quit: runtime/core/TUN gone,
   plugin disabled only after proof; no automatic restart; explicit reopening.

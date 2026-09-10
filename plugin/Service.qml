@@ -17,12 +17,16 @@ Item {
   property var settings: ({})
   // Native metadata is deliberately NOT legacy live status.
   property bool nativeOwner: false
-  readonly property bool nativeQuitting: nativeQuitProcess.running
+  property bool nativeQuitPending: false
+  readonly property bool nativeQuitting: nativeQuitPending || nativeQuitProcess.running
   property bool nativeQuitFailed: false
   function quitNativeApplication() {
     if (!nativeCanAct || nativeEditorRunning || nativeImportBusy) return false
     var operation = "quit-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36)
     nativeQuitFailed = false
+    // Process.running becomes true asynchronously. Seal UI admission before
+    // scheduling the child, not only after Quickshell reports it running.
+    nativeQuitPending = true
     nativeQuitProcess.command = ["bash", backendPath, "native-quit",
       nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
     nativeQuitProcess.running = true
@@ -36,6 +40,7 @@ Item {
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(code) {
       root.nativeQuitFailed = code !== 0
+      root.nativeQuitPending = false
       if (code !== 0) root.refreshNativeObservation()
     }
   }
