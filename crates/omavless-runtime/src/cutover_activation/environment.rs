@@ -121,7 +121,7 @@ fn after_agreement<T>(
     Ok(activate())
 }
 
-pub(super) fn with_current<T>(activate: impl FnOnce() -> T) -> Result<T, ()> {
+pub(crate) fn with_current<T>(activate: impl FnOnce() -> T) -> Result<T, ()> {
     let uid = Uid::current();
     let account = User::from_uid(uid).map_err(|_| ())?.ok_or(())?;
     let current: Values = KEYS.map(std::env::var_os);

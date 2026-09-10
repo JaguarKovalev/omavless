@@ -10,7 +10,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 
-mod environment;
+pub(crate) mod environment;
 
 const BINARY: &str = "/usr/bin/omavless";
 const UNIT: &str = "/usr/lib/systemd/user/omavless-runtime.service";

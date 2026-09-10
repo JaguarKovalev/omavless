@@ -88,6 +88,7 @@ pub struct ProductionNativeOwner<H = NativeLifecycleHost> {
     coordinator: OfflineNativeCoordinator<H>,
     startup: ConnectionTransactionOutcome,
     ownership: ProductionOwnership,
+    login_ready: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -145,6 +146,7 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
         Ok(Self {
             coordinator,
             startup,
+            login_ready: false,
             ownership: ProductionOwnership::Committed {
                 rust_generation: marker.generation(),
                 origin_preparing_generation: None,
@@ -209,6 +211,7 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
         Ok(Self {
             coordinator,
             startup,
+            login_ready: false,
             ownership: ProductionOwnership::Candidate(bootstrap),
         })
     }
@@ -226,6 +229,15 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
     #[must_use]
     pub const fn startup_outcome(&self) -> ConnectionTransactionOutcome {
         self.startup
+    }
+
+    pub(crate) const fn login_ready(&self) -> bool {
+        self.login_ready
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_login_ready(&mut self, ready: bool) {
+        self.login_ready = ready;
     }
 
     pub(crate) fn desired(&self) -> Result<crate::desired::DesiredState, ProductionOwnerError> {
@@ -493,6 +505,13 @@ impl ProductionNativeOwner<NativeLifecycleHost> {
         if marker.phase() != OwnershipPhase::Rust {
             return Err(ProductionOwnerError::OwnershipUnavailable);
         }
+        crate::login_activation::require_current_receipt(
+            &cutover_paths,
+            uid,
+            &lock,
+            marker.generation(),
+        )
+        .map_err(|_| ProductionOwnerError::ManualRecoveryRequired)?;
         check_startup_receipt(&cutover_paths, uid, &lock, Some(marker.generation()))
             .map_err(|_| ProductionOwnerError::ManualRecoveryRequired)?;
         let host_paths = NativeHostPaths::current(&runtime_paths.directory)
@@ -500,7 +519,10 @@ impl ProductionNativeOwner<NativeLifecycleHost> {
         let store_path = host_paths.store.clone();
         let host = NativeLifecycleHost::new(host_paths, uid)
             .map_err(|_| ProductionOwnerError::HostUnavailable)?;
-        Self::initialize_locked(host, desired_paths, &store_path, cutover_paths, uid, lock)
+        let mut owner =
+            Self::initialize_locked(host, desired_paths, &store_path, cutover_paths, uid, lock)?;
+        owner.login_ready = crate::login_activation::startup_configuration_available();
+        Ok(owner)
     }
 
     /// Construct a transition candidate only through the package-fixed current

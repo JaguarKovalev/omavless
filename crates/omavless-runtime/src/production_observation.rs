@@ -249,7 +249,7 @@ fn manager_environment_query(systemctl: &Path) -> Result<String, ProductionObser
 
 // Shared private execution mechanics for the fixed observation commands above.
 // No CLI or IPC accepts a Command, executable, argv or deadline.
-fn bounded_fixed_query(
+pub(crate) fn bounded_fixed_query(
     mut command: Command,
     timeout: Duration,
 ) -> Result<String, ProductionObservationError> {

@@ -2,6 +2,54 @@
 use super::*;
 
 #[test]
+fn production_receipt_requires_current_epoch_and_preserves_manual_disconnect() {
+    let fixture = Fixture::new(false);
+    fixture.put(
+        &fixture.paths.desired.file,
+        &serde_json::to_vec(&DesiredState::default()).unwrap(),
+    );
+    let check = |epoch: &str, generation| {
+        let lock = MigrationLock::acquire(&fixture.paths.cutover, fixture.paths.uid).unwrap();
+        check_current_receipt(
+            &fixture.paths.cutover,
+            fixture.paths.uid,
+            &lock,
+            generation,
+            epoch,
+        )
+    };
+    assert_eq!(
+        check("synthetic-epoch", 2),
+        Err(LoginTransactionError::ManualRecoveryRequired)
+    );
+    fixture.run(&mut Host::default()).unwrap();
+    let desired = fs::read(&fixture.paths.desired.file).unwrap();
+    let receipt = fs::read(&fixture.paths.receipt).unwrap();
+    assert_eq!(check("synthetic-epoch", 2), Ok(()));
+    assert_eq!(
+        check("another-manager", 2),
+        Err(LoginTransactionError::ManualRecoveryRequired)
+    );
+    assert_eq!(
+        check("synthetic-epoch", 4),
+        Err(LoginTransactionError::ManualRecoveryRequired)
+    );
+    assert_eq!(
+        fixture.run(&mut Host::default()),
+        Ok(LoginTransactionOutcome::AlreadyConsumed)
+    );
+    assert_eq!(fs::read(&fixture.paths.desired.file).unwrap(), desired);
+    assert_eq!(fs::read(&fixture.paths.receipt).unwrap(), receipt);
+    let mut value: serde_json::Value = serde_json::from_slice(&receipt).unwrap();
+    value["phase"] = serde_json::json!("pending");
+    fixture.put(&fixture.paths.receipt, &serde_json::to_vec(&value).unwrap());
+    assert_eq!(
+        check("synthetic-epoch", 2),
+        Err(LoginTransactionError::ManualRecoveryRequired)
+    );
+}
+
+#[test]
 fn startup_receipt_requires_exact_migration_lease_even_when_absent() {
     let first = Fixture::new(false);
     let other = Fixture::new(false);

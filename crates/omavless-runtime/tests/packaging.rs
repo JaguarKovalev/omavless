@@ -12,6 +12,9 @@ fn packaged_user_unit_preserves_arch_file_capability_contract() {
     assert!(text.contains("\nConditionFileIsExecutable=/usr/bin/omavless\n"));
     assert!(text.contains("\nRuntimeDirectory=omavless\n"));
     assert!(text.contains("\nRuntimeDirectoryMode=0700\n"));
+    assert!(text.contains("\nRuntimeDirectoryPreserve=yes\n"));
+    assert!(text.contains("\nRequires=omavless-login-prepare.service\n"));
+    assert!(text.contains("\nAfter=omavless-login-prepare.service\n"));
     assert!(text.contains("\nUMask=0077\n"));
     assert!(text.contains("\nNoNewPrivileges=no\n"));
     assert!(text.contains("\nLimitCORE=0\n"));
@@ -45,4 +48,51 @@ fn packaged_user_unit_preserves_arch_file_capability_contract() {
     assert!(!text.contains("/bin/sh"));
     assert!(!text.contains("sudo"));
     assert!(!text.contains("pkexec"));
+}
+
+#[test]
+fn login_unit_is_fixed_oneshot_not_a_second_runtime_or_restart_hook() {
+    let package = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packaging/arch/PKGBUILD.local.in"),
+    )
+    .unwrap();
+    assert!(
+        package
+            .lines()
+            .any(|line| line.starts_with("depends=(") && line.contains("'bubblewrap'"))
+    );
+    let text = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packaging/systemd/omavless-login-prepare.service"),
+    )
+    .unwrap();
+    for required in [
+        "Type=oneshot",
+        "RemainAfterExit=yes",
+        "ExecCondition=/usr/bin/omavless login-condition",
+        "ExecStart=/usr/bin/omavless login-prepare",
+        "RuntimeDirectory=omavless",
+        "RuntimeDirectoryMode=0700",
+        "RuntimeDirectoryPreserve=yes",
+        "UMask=0077",
+        "TimeoutStartSec=60s",
+        "Before=omavless-runtime.service",
+    ] {
+        assert!(text.lines().any(|line| line == required));
+    }
+    for forbidden in [
+        "PartOf=",
+        "Restart=",
+        "ExecStop=",
+        "ExecStartPre=",
+        "ConditionPath",
+        "ConditionFile",
+        "[Install]",
+        "sudo",
+        "pkexec",
+        "/bin/sh",
+        "python",
+    ] {
+        assert!(!text.contains(forbidden));
+    }
 }

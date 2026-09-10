@@ -1,5 +1,10 @@
 # R5 isolated login config-validation adapter
 
+Historical foundation and installed offline evidence below. The local
+[packaged login integration](R5_NATIVE_LOGIN_INTEGRATION.md) now composes this
+adapter in production login and startup-preference validation; actual login
+activation acceptance remains separate from these offline results.
+
 This unregistered Rust library is a prerequisite for the read-only login host,
 not login activation. No CLI/IPC registration, unit, startup preference change,
 installed plugin change or second lifecycle owner is added. Existing production

@@ -39,6 +39,8 @@ enum CliError {
     DesktopCancelled,
     ActionOutcomeUnknown,
     ActionNotAdmitted,
+    LoginSkip,
+    LoginFailure(String),
 }
 
 impl From<String> for CliError {
@@ -55,6 +57,25 @@ impl From<&str> for CliError {
 
 fn run() -> Result<(), CliError> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "login-condition" || arg == "login-prepare")
+    {
+        if arguments.len() != 1 {
+            return Err(CliError::LoginFailure(
+                "Invalid OmaVLESS login command".to_owned(),
+            ));
+        }
+        if arguments[0] == "login-condition" {
+            return match omavless_runtime::login_activation::condition() {
+                Ok(true) => Ok(()),
+                Ok(false) => Err(CliError::LoginSkip),
+                Err(error) => Err(CliError::LoginFailure(error.to_string())),
+            };
+        }
+        return omavless_runtime::login_activation::prepare()
+            .map_err(|error| CliError::LoginFailure(error.to_string()));
+    }
     if arguments == ["-h"] || arguments == ["--help"] {
         println!(
             "{USAGE}\n  import preview                  read private input from stdin; private UI output"
@@ -427,6 +448,13 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(CliError::DesktopCancelled) => ExitCode::from(3),
+        Err(CliError::LoginSkip) => ExitCode::from(1),
+        Err(CliError::LoginFailure(message)) => {
+            // ExecCondition treats 1..254 as a skip, not a failed prerequisite.
+            // Only a proven non-native ownership phase may take that path.
+            eprintln!("{message}");
+            ExitCode::from(255)
+        }
         Err(CliError::ActionOutcomeUnknown) => {
             eprintln!(
                 "OmaVLESS action outcome is unknown; retain the original operation for reconciliation"

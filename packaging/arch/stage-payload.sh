@@ -50,6 +50,7 @@ repo_root=$(cd -- "$script_dir/../.." && pwd -P)
 
 binary_target="$destdir/usr/bin/omavless"
 unit_target="$destdir/usr/lib/systemd/user/omavless-runtime.service"
+login_unit_target="$destdir/usr/lib/systemd/user/omavless-login-prepare.service"
 license_target="$destdir/usr/share/licenses/omavless/LICENSE"
 notices_target="$destdir/usr/share/licenses/omavless/THIRD_PARTY_NOTICES.md"
 docs_target="$destdir/usr/share/doc/omavless/README.md"
@@ -57,6 +58,7 @@ docs_target="$destdir/usr/share/doc/omavless/README.md"
 for target in \
   "$binary_target" \
   "$unit_target" \
+  "$login_unit_target" \
   "$license_target" \
   "$notices_target" \
   "$docs_target"; do
@@ -96,6 +98,7 @@ install -d -m 0755 -- \
 for target in \
   "$binary_target" \
   "$unit_target" \
+  "$login_unit_target" \
   "$license_target" \
   "$notices_target" \
   "$docs_target"; do
@@ -107,6 +110,9 @@ install -m 0755 -- "$binary" "$binary_target"
 install -m 0644 -- \
   "$repo_root/packaging/systemd/omavless-runtime.service" \
   "$unit_target"
+install -m 0644 -- \
+  "$repo_root/packaging/systemd/omavless-login-prepare.service" \
+  "$login_unit_target"
 install -m 0644 -- "$repo_root/LICENSE" "$license_target"
 install -m 0644 -- "$repo_root/THIRD_PARTY_NOTICES.md" "$notices_target"
 install -m 0644 -- "$script_dir/README.md" "$docs_target"

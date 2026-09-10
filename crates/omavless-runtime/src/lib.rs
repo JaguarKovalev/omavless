@@ -51,6 +51,7 @@ pub mod frontend_bridge;
 pub mod import_read_protocol;
 pub mod isolated_validation;
 pub mod lifecycle;
+pub mod login_activation;
 pub mod login_intent;
 pub mod login_transaction;
 pub mod long_operation;
@@ -276,6 +277,7 @@ const NATIVE_READ_METHODS: &[&str] = &[
 const NATIVE_MUTATION_METHODS: &[&str] = &[
     "plugin.action",
     "onboarding.complete",
+    "startup.configure",
     "profiles.replace",
     "profiles.import",
     "routing.custom_rules.add",
@@ -394,6 +396,7 @@ trait NativeRuntimeOwner: Send {
         request: &Value,
     ) -> std::result::Result<Value, omavless_control_protocol::ProtocolError>;
     fn bootstrap_generations(&self) -> Option<(u64, u64)>;
+    fn startup_available(&self) -> bool;
     fn mutate(
         &mut self,
         request: &Value,
@@ -862,10 +865,23 @@ where
         self.owner.bootstrap_generations()
     }
 
+    fn startup_available(&self) -> bool {
+        self.owner.login_ready()
+    }
+
     fn mutate(
         &mut self,
         request: &Value,
     ) -> std::result::Result<Value, omavless_control_protocol::ProtocolError> {
+        if request["method"] == "startup.configure" && !self.owner.login_ready() {
+            return error_response(
+                request["id"].as_str().unwrap_or("invalid"),
+                self.owner.revision(),
+                StableErrorCode::CapabilityUnavailable,
+                false,
+                None,
+            );
+        }
         let owner = &mut self.owner;
         let transport = &self.transport;
         let record_ids = &mut self.record_ids;
@@ -1757,6 +1773,7 @@ fn dispatch_native(
                         .flatten(),
                 )
                 .copied()
+                .filter(|method| *method != "startup.configure" || owner.startup_available())
                 .collect();
             json!({
                 "runtimeOwnership": runtime_ownership,
@@ -5620,6 +5637,62 @@ mod tests {
         assert_eq!(fs::read(&desired_path).unwrap(), desired_before);
         worker.join().unwrap();
         fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn startup_socket_requires_host_admission_and_preserves_current_intent() {
+        for admitted in [false, true] {
+            let base = temporary_base("startup-socket");
+            let (mut owner, cutover, _) = native_owner_fixture(&base);
+            owner.set_test_login_ready(admitted);
+            let store = base.join("config/profiles.json");
+            let desired = DesiredPaths::below(&base.join("state")).file;
+            let desired_before = fs::read(&desired).unwrap();
+            let original = fs::read(&store).unwrap();
+            let paths = RuntimePaths::below(&base.join("runtime"));
+            let server =
+                RuntimeServer::bind_with_owner_factory(paths.clone(), move |_| Ok(owner)).unwrap();
+            let worker =
+                thread::spawn(move || server.serve(Some(if admitted { 5 } else { 2 })).unwrap());
+            let caps = call(&paths, "capabilities.get", json!({})).unwrap();
+            assert_eq!(
+                caps["result"]["methods"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == "startup.configure"),
+                admitted
+            );
+            let params = json!({"enabled":false,"target":"last","profileId":"","mode":"global","operationId":"startup-save","expectedRevision":0});
+            let response = call(&paths, "startup.configure", params.clone()).unwrap();
+            if admitted {
+                assert_eq!(response["ok"], true);
+                assert_eq!(response["revision"], 1);
+                let saved = fs::read(&store).unwrap();
+                assert_ne!(saved, original);
+                assert_eq!(
+                    call(&paths, "startup.configure", params.clone()).unwrap(),
+                    response
+                );
+                let mut invalid = params.clone();
+                invalid["unexpected"] = json!("https://private.invalid/secret");
+                let error = call(&paths, "startup.configure", invalid).unwrap();
+                assert_eq!(error["error"]["code"], "invalid_argument");
+                assert!(!error.to_string().contains("private.invalid"));
+                write_marker(&cutover, OwnershipPhase::RollbackPreparing, 2);
+                assert_eq!(
+                    call(&paths, "startup.configure", params).unwrap()["error"]["code"],
+                    "capability_unavailable"
+                );
+                assert_eq!(fs::read(&store).unwrap(), saved);
+            } else {
+                assert_eq!(response["error"]["code"], "capability_unavailable");
+                assert_eq!(fs::read(&store).unwrap(), original);
+            }
+            assert_eq!(fs::read(&desired).unwrap(), desired_before);
+            worker.join().unwrap();
+            fs::remove_dir_all(base).unwrap();
+        }
     }
 
     #[test]

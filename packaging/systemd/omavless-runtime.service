@@ -2,6 +2,8 @@
 Description=OmaVLESS canonical user runtime
 Documentation=https://github.com/k-kostin/omavless
 After=network-online.target
+Requires=omavless-login-prepare.service
+After=omavless-login-prepare.service
 ConditionFileIsExecutable=/usr/bin/omavless
 
 [Service]
@@ -11,6 +13,7 @@ Restart=on-failure
 RestartSec=2s
 RuntimeDirectory=omavless
 RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 UMask=0077
 # Arch file-capability host policy; see docs/roadmap/ARCH_SERVICE_SECURITY.md.
 # The unprivileged runtime must let the separately provisioned core acquire

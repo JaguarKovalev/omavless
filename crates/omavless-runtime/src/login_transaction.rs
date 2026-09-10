@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-//! OFFLINE login receipt transaction. No production caller or activation exists.
+//! Login receipt transaction, composed by the fixed packaged login activation.
 //!
-//! A trusted future host supplies an epoch; hashing it does not prove a new login.
-//! That host must order this transaction before daemon startup and make startup
-//! honor pending receipts. Production owner construction now reads that barrier,
-//! but no login trigger invokes this transaction. This module alone is NOT a
-//! production crash-safety or once-per-login guarantee. Receipts live below
+//! The host supplies a verified user-manager epoch; hashing alone proves nothing.
+//! `login_activation` orders this transaction before daemon startup and verifies
+//! the fixed systemd unit invocation. Production construction requires its exact
+//! consumed current-manager receipt. This module alone is NOT a trusted trigger
+//! or a production crash-safety guarantee. Receipts live below
 //! the user runtime base, outside the removable daemon runtime directory. They
 //! do not provide recovery across user-manager teardown or reboot.
 //!
@@ -276,6 +276,34 @@ fn exact_owner(paths: &LoginPaths, generation: u64) -> Result<()> {
         return Err(LoginTransactionError::OwnershipUnavailable);
     }
     Ok(())
+}
+
+/// Production-only stronger admission: a committed native startup must belong
+/// to the consumed user-manager epoch, not merely find any safe old receipt.
+pub(crate) fn check_current_receipt(
+    paths: &CutoverPaths,
+    uid: u32,
+    lock: &MigrationLock,
+    generation: u64,
+    epoch: &str,
+) -> Result<()> {
+    if !lock.authorizes(paths, uid) {
+        return Err(LoginTransactionError::ManualRecoveryRequired);
+    }
+    let expected = format!(
+        "{:x}",
+        Sha256::digest([b"omavless-login-epoch-v1\0".as_slice(), epoch.as_bytes()].concat())
+    );
+    match read_receipt(&paths.runtime_base.join(RECEIPT_NAME), uid)? {
+        Some(value)
+            if value.phase == Phase::Consumed
+                && value.ownership_generation == generation
+                && value.epoch_hash == expected =>
+        {
+            Ok(())
+        }
+        _ => Err(LoginTransactionError::ManualRecoveryRequired),
+    }
 }
 
 fn desired_from_snapshot(raw: Option<&str>) -> Result<DesiredState> {

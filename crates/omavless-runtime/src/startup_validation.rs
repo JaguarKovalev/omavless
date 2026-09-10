@@ -4,17 +4,24 @@ use crate::desired::DesiredState;
 use crate::lifecycle::HostStepError;
 use crate::native_host::NativeHostPaths;
 use nix::fcntl::{FcntlArg, OFlag, fcntl};
-use omavless_domain::private_store::{PrivateStore, parse_private_store};
+#[cfg(test)]
+use omavless_domain::private_store::PrivateStore;
+use omavless_domain::private_store::parse_private_store;
 use omavless_store::read_private_utf8;
-use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::fs;
+#[cfg(test)]
+use std::fs::OpenOptions;
+use std::io::Read;
+#[cfg(test)]
+use std::io::Write;
+#[cfg(test)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-fn tun_capabilities(getcap: &Path, core: &Path) -> bool {
+pub(crate) fn tun_capabilities(getcap: &Path, core: &Path) -> bool {
     let Ok(mut child) = Command::new(getcap)
         .arg(core)
         .stdin(Stdio::null())
@@ -103,11 +110,26 @@ pub(crate) fn validate(
     let store = read_private_utf8(&paths.store, uid).map_err(|_| HostStepError::Prepare)?;
     let store = parse_private_store(&store).map_err(|_| HostStepError::Prepare)?;
     let template = read_private_utf8(&paths.template, uid).map_err(|_| HostStepError::Prepare)?;
-    validate_snapshot(paths, uid, desired, &store, &template)
+    crate::isolated_validation::ValidationSnapshot::capture(
+        &paths.data_directory,
+        uid,
+        desired,
+        &store,
+        &template,
+    )
+    .and_then(|snapshot| snapshot.validate(&paths.core, &paths.runtime_directory, uid))
+    .map_err(|error| {
+        if error == crate::isolated_validation::ValidationError::Cleanup {
+            HostStepError::Cleanup
+        } else {
+            HostStepError::Prepare
+        }
+    })
 }
 
 /// Pure canonical rendering from already captured inputs. No private-file
 /// rereads and no core execution. This does not prove host/config readiness.
+#[cfg(test)]
 fn render_snapshot(
     desired: &DesiredState,
     store: &PrivateStore,
@@ -136,6 +158,7 @@ fn render_snapshot(
 /// capability/NNP preflight. `-d` retains the existing persistent data directory;
 /// neither the temporary config nor this function provides filesystem/network
 /// isolation from provider/geodata/path options in the exact rendered config.
+#[cfg(test)]
 fn validate_snapshot(
     paths: &NativeHostPaths,
     uid: u32,

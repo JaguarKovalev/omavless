@@ -82,6 +82,7 @@ fn staged_arch_payload_has_exact_tree_content_and_modes() {
 
     let expected = [
         "usr/bin/omavless",
+        "usr/lib/systemd/user/omavless-login-prepare.service",
         "usr/lib/systemd/user/omavless-runtime.service",
         "usr/share/doc/omavless/README.md",
         "usr/share/licenses/omavless/LICENSE",
@@ -101,23 +102,28 @@ fn staged_arch_payload_has_exact_tree_content_and_modes() {
         fs::read(&binary).unwrap()
     );
     assert_eq!(
-        fs::read(destdir.join(expected[1])).unwrap(),
+        fs::read(destdir.join(expected[2])).unwrap(),
         fs::read(repository_root().join("packaging/systemd/omavless-runtime.service")).unwrap()
     );
     assert_eq!(
-        fs::read(destdir.join(expected[2])).unwrap(),
+        fs::read(destdir.join(expected[3])).unwrap(),
         fs::read(repository_root().join("packaging/arch/README.md")).unwrap()
     );
     assert_eq!(
-        fs::read(destdir.join(expected[3])).unwrap(),
+        fs::read(destdir.join(expected[4])).unwrap(),
         fs::read(repository_root().join("LICENSE")).unwrap()
     );
     assert_eq!(
-        fs::read(destdir.join(expected[4])).unwrap(),
+        fs::read(destdir.join(expected[5])).unwrap(),
         fs::read(repository_root().join("THIRD_PARTY_NOTICES.md")).unwrap()
     );
 
     assert_eq!(mode(&destdir.join(expected[0])), 0o755);
+    assert_eq!(
+        fs::read(destdir.join(expected[1])).unwrap(),
+        fs::read(repository_root().join("packaging/systemd/omavless-login-prepare.service"))
+            .unwrap()
+    );
     for path in &expected[1..] {
         assert_eq!(mode(&destdir.join(path)), 0o644);
     }

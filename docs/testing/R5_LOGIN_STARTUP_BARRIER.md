@@ -1,5 +1,9 @@
 # R5 login receipt startup barrier
 
+Historical foundation below. The local [packaged login integration](R5_NATIVE_LOGIN_INTEGRATION.md)
+adds the trusted trigger and requires a current-manager consumed receipt in the
+production constructor; absence remains allowed only in the injected foundation.
+
 This checkpoint connects only the **read-side recovery barrier** of the
 [offline login transaction](R5_LOGIN_INTENT_TRANSACTION.md) to native owner
 construction. It does not call that transaction, install a login trigger,

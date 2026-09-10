@@ -386,6 +386,8 @@ where
         }
     } else if method == "onboarding.complete" {
         owner.execute_onboarding(request)
+    } else if method == "startup.configure" {
+        owner.execute_startup(request)
     } else if method == "profiles.import" {
         owner.execute_profile_import(request, next_record_id)
     } else if method == "routing.set_preset" {

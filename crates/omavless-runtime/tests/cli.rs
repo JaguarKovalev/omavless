@@ -47,6 +47,32 @@ fn status_without_runtime_reports_unavailable_not_unsafe_and_never_creates_state
 }
 
 #[test]
+fn login_commands_reject_terminal_invocation_without_skipping_or_writing() {
+    let base = runtime_base();
+    for args in [
+        vec!["login-condition"],
+        vec!["login-prepare"],
+        vec!["login-condition", "private-epoch"],
+    ] {
+        let result = isolated_command(&base)
+            .env("MANAGERPID", "1")
+            .env("SYSTEMD_EXEC_PID", "1")
+            .env("INVOCATION_ID", "1234567890abcdef1234567890abcdef")
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(255));
+        assert!(result.stdout.is_empty());
+        let text = String::from_utf8(result.stderr).unwrap();
+        assert!(text.len() < 160);
+        assert!(!text.contains("private-epoch"));
+        assert!(!text.contains("1234567890abcdef"));
+        assert_eq!(fs::read_dir(&base).unwrap().count(), 0);
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
 fn plugin_snapshot_cli_uses_fixed_private_read_and_rejects_extra_arguments() {
     assert_fixed_observation_read("plugin", "snapshot", "ui.snapshot");
 }

@@ -2,7 +2,8 @@
 
 This directory defines the inert filesystem payload for the future Arch
 package. The payload contains the prebuilt `omavless` executable, its packaged
-systemd user unit, license, third-party notices and this packaging note.
+systemd runtime and login-preparation user units, license, third-party notices
+and this packaging note.
 
 `stage-payload.sh` accepts an existing absolute package build root and an
 absolute prebuilt executable. It does not build software, install onto a live
@@ -34,6 +35,14 @@ that declares `provides=mihomo`. The core and its reviewed TUN capability setup
 remain external. Picker/QR/clipboard helpers are optional package dependencies;
 this package does not silently install or invoke them. No Python or Cargo runtime
 dependency is declared.
+
+`bubblewrap` is required for fail-closed offline startup validation. Runtime
+startup is ordered after the fixed login-preparation oneshot; both preserve the
+private owner-lock directory across service stops. Installation still does not
+enable either unit. After reviewed ownership migration, explicit enablement of
+`omavless-runtime.service` is required for login activation; saving startup
+preferences does not enable it. Startup Off means an enabled runtime starts
+disconnected. Actual packaged login acceptance is a separate R5 host gate.
 
 `/usr/share/doc/omavless/build-identity.txt` records full source SHA, native
 architecture and exact prebuilt binary SHA256. Stripping/debug splitting are
