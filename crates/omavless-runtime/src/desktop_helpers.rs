@@ -70,6 +70,12 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Clone, Copy)]
+pub enum ExportKind {
+    Report,
+    Profile,
+}
+
 /// Helper names and preference are fixed; relative/empty PATH entries are ignored.
 pub struct DesktopHelpers {
     search: Vec<PathBuf>,
@@ -247,6 +253,56 @@ impl DesktopHelpers {
             return Err(Error::Cancelled);
         }
         read_import_file(selected.as_bytes())
+    }
+
+    /// Destination selection only, in an isolated desktop process. The existing
+    /// export-file writer must still validate ownership/permissions at write time.
+    pub fn pick_export(&self, kind: ExportKind, locale: &str) -> Result<Vec<u8>> {
+        if !matches!(locale, "en" | "ru") {
+            return Err(Error::InvalidInput);
+        }
+        let (name, title) = match (kind, locale) {
+            (ExportKind::Report, "ru") => ("omavless-report.json", "Сохранить отчёт для поддержки"),
+            (ExportKind::Report, _) => ("omavless-report.json", "Save support report"),
+            (ExportKind::Profile, "ru") => (
+                "omavless-profile.conf",
+                "Сохранить профиль — содержит данные доступа",
+            ),
+            (ExportKind::Profile, _) => (
+                "omavless-profile.conf",
+                "Save profile — contains connection credentials",
+            ),
+        };
+        let (provider, tool) = self.picker().ok_or(Error::MissingPicker)?;
+        let args: Vec<OsString> = match provider {
+            "kdialog" => ["--getsavefilename", name, "*", "--title", title]
+                .map(Into::into)
+                .to_vec(),
+            _ => [
+                if provider == "zenity" {
+                    "--file-selection"
+                } else {
+                    "--file"
+                }
+                .to_owned(),
+                "--save".into(),
+                "--confirm-overwrite".into(),
+                format!("--filename={name}"),
+                format!("--title={title}"),
+            ]
+            .map(Into::into)
+            .to_vec(),
+        };
+        let selected = execute(&tool, &args, &[], MAX_PATH_BYTES + 2, None, true)?;
+        let selected = std::str::from_utf8(&selected).map_err(|_| Error::InvalidInput)?;
+        // Remove only the tool's one line terminator; reject extra selections.
+        let selected = selected.strip_suffix('\n').unwrap_or(selected);
+        let selected = selected.strip_suffix('\r').unwrap_or(selected);
+        if selected.is_empty() {
+            return Err(Error::Cancelled);
+        }
+        selected_path(selected.as_bytes())?;
+        Ok(selected.as_bytes().to_vec())
     }
 
     /// The caller supplies the explicit editor seed; no store access or confirmation mutation.
@@ -904,6 +960,92 @@ mod tests {
         assert_eq!(f.helpers().pick_import(), Err(Error::Cancelled));
         f.tool("zenity", "printf '/tmp/a\\n/tmp/b\\n'");
         assert_eq!(f.helpers().pick_import(), Err(Error::InvalidInput));
+    }
+
+    #[test]
+    fn save_chooser_defaults_overwrite_flags_and_preference_are_fixed() {
+        let f = Fixture::new();
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "en"),
+            Err(Error::MissingPicker)
+        );
+        for name in ["yad", "kdialog", "zenity"] {
+            let script = if name == "kdialog" {
+                "test \"$1\" = --getsavefilename && test \"$2\" = omavless-report.json && test \"$4\" = --title && test \"$5\" = 'Save support report' || exit 9\nprintf '/tmp/report $(false);name.json\\n'"
+            } else if name == "zenity" {
+                "test \"$1\" = --file-selection && test \"$2\" = --save && test \"$3\" = --confirm-overwrite && test \"$4\" = --filename=omavless-report.json && test \"$5\" = '--title=Save support report' || exit 9\nprintf '/tmp/report $(false);name.json\\n'"
+            } else {
+                "test \"$1\" = --file && test \"$2\" = --save && test \"$3\" = --confirm-overwrite && test \"$4\" = --filename=omavless-report.json || exit 9\nprintf '/tmp/report $(false);name.json\\n'"
+            };
+            f.tool(name, script);
+            assert_eq!(
+                f.helpers().pick_export(ExportKind::Report, "en").unwrap(),
+                b"/tmp/report $(false);name.json"
+            );
+            // Previously preferred tools now fail, so the next iteration also
+            // proves deterministic preference, not merely equivalent output.
+            f.tool(name, "exit 9");
+        }
+        f.tool("zenity", "test \"$4\" = --filename=omavless-profile.conf && test \"$5\" = '--title=Сохранить профиль — содержит данные доступа' || exit 9\nprintf '/tmp/profile.conf\\n'");
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Profile, "ru").unwrap(),
+            b"/tmp/profile.conf"
+        );
+        assert_eq!(fs::read_dir(&f.0).unwrap().count(), 3);
+    }
+
+    #[test]
+    fn save_chooser_refuses_ambiguous_unsafe_and_oversized_output() {
+        let f = Fixture::new();
+        for script in [
+            "printf relative",
+            "printf '/tmp/a\\n/tmp/b\\n'",
+            "printf '/tmp/a\\n\\n'",
+            "printf '/tmp/../a'",
+            "printf '/tmp/\\377'",
+            "printf '/tmp/\\000a'",
+        ] {
+            f.tool("zenity", script);
+            assert_eq!(
+                f.helpers().pick_export(ExportKind::Report, "en"),
+                Err(Error::InvalidInput)
+            );
+        }
+        f.tool(
+            "zenity",
+            &format!("printf '/{}\\n'", "a".repeat(MAX_PATH_BYTES)),
+        );
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "en"),
+            Err(Error::TooLarge)
+        );
+        f.tool(
+            "zenity",
+            &format!("printf '/{}\\n'", "a".repeat(MAX_PATH_BYTES - 1)),
+        );
+        assert_eq!(
+            f.helpers()
+                .pick_export(ExportKind::Report, "en")
+                .unwrap()
+                .len(),
+            MAX_PATH_BYTES
+        );
+        for script in ["exit 0", "exit 1", "printf private-partial; exit 1"] {
+            f.tool("zenity", script);
+            assert_eq!(
+                f.helpers().pick_export(ExportKind::Report, "en"),
+                Err(Error::Cancelled)
+            );
+        }
+        f.tool("zenity", "printf private-partial; exit 9");
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "en"),
+            Err(Error::Unavailable)
+        );
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "private-token"),
+            Err(Error::InvalidInput)
+        );
     }
 
     #[test]

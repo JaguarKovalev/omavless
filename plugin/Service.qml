@@ -3230,6 +3230,23 @@ Item {
   property var nativeFileExportProcess: null
   property string nativeFileExportStatus: ""
   property string nativeFileExportKind: "profile"
+  signal nativeExportPickerFinished()
+  function startNativeExportPicker(profile, locale) {
+    if (!nativeCanAct || nativeFileExportProcess !== null
+        || (profile && !nativeSnapshot.profiles.some(function(p) { return p.id === profile.uuid }))) return false
+    var context = {kind:profile ? "profile" : "report", id:profile ? profile.uuid : "",
+      instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
+    nativeFileExportContext = context
+    nativeFileExportKind = context.kind
+    nativeFileExportStatus = ""
+    nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
+      picking:true, stdinEnabled:true, privateInput:locale === "ru" ? "ru" : "en",
+      command:["bash", backendPath, "native-pick-" + context.kind + "-export"]})
+    if (nativeFileExportProcess === null) { nativeFileExportContext = null; nativeFileExportStatus = "failed"; return false }
+    nativeFileExportProcess.context = context
+    nativeFileExportProcess.running = true
+    return true
+  }
   function validNativeExportPath(path) {
     return typeof path === "string" && path[0] === "/" && path.length <= 4096
       && !/[\u0000-\u001f\u007f]/.test(path) && NativeSnapshot.editorText(path, 4096)
@@ -3268,10 +3285,23 @@ Item {
     nativeFileExportProcess.running = true
     return true
   }
-  function finishNativeFileExport(process, code, output) {
+  function finishNativeFileExport(process, code, output, error) {
     var context = process.context
     nativeFileExportProcess = null
     try {
+      if (process.picking) {
+        var accepted = nativeFileExportCurrent(context) && code === 0 && validNativeExportPath(output)
+        nativeFileExportContext = null
+        if (accepted) {
+          if (context.kind === "report") startNativeReportFileExport(output)
+          else startNativeFileExport({uuid:context.id}, output)
+        } else if (code !== 3) {
+          nativeFileExportStatus = error === "File picker unavailable: install zenity, kdialog or yad\n"
+            ? "pickerUnavailable" : error === "Invalid desktop helper command\n" ? "helperUnavailable" : "failed"
+        }
+        nativeExportPickerFinished()
+        return
+      }
       if (process.writing) {
         nativeFileExportStatus = code === 0 && process.writeAdmitted ? "saved" : "failed"
         nativeFileExportContext = null
@@ -4256,22 +4286,28 @@ Item {
     Process {
       id: process
       property var context: null
+      property bool picking: false
       property bool writing: false
       property bool writeAdmitted: false
       property string privateInput: ""
       running: false
       onStarted: {
-        if (writing) {
+        if (picking) {
+          write(privateInput)
+          privateInput = ""
+          stdinEnabled = false
+        } else if (writing) {
           writeAdmitted = root.nativeFileExportCurrent(context)
           if (writeAdmitted) write(privateInput)
           privateInput = ""
           stdinEnabled = false
         }
       }
-      property Timer watchdog: Timer { interval: 15000; running: process.running; onTriggered: process.signal(9) }
+      // Interactive selection has no artificial human-response deadline.
+      property Timer watchdog: Timer { interval: 15000; running: process.running && !process.picking; onTriggered: process.signal(9) }
       stdout: StdioCollector { id: output; waitForEnd: true }
-      stderr: StdioCollector { waitForEnd: true }
-      onExited: function(code) { privateInput = ""; root.finishNativeFileExport(process, code, output.text) }
+      stderr: StdioCollector { id: pickerError; waitForEnd: true }
+      onExited: function(code) { privateInput = ""; root.finishNativeFileExport(process, code, output.text, pickerError.text) }
     }
   }
 

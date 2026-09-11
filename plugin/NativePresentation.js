@@ -1,24 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Presentation of validated native metadata. No mutation or lifecycle ownership.
-// Only local file URLs from the explicit Save As chooser are admitted. Decode
-// once; never treat a remote URL, authority or URL suffix as a filesystem path.
-function exportLocalPath(url) {
-  if (typeof url !== "string" || url.length > 3 * 4096 + 16
-      || !/^file:\/\/\//.test(url) || /[?#]/.test(url)) return ""
-  try {
-    var path = decodeURIComponent(url.slice(7))
-    if (path.length > 4096 || /[\u0000-\u001f\u007f]/.test(path)
-        || path.split("/").some(function(part) { return part === "." || part === ".." })) return ""
-    return path
-  } catch (_) { return "" }
-}
-
-function exportDefaultUrl(home, kind) {
-  if (typeof home !== "string" || home[0] !== "/" || ["report", "profile"].indexOf(kind) < 0) return ""
-  var path = home.replace(/\/$/, "") + (kind === "report" ? "/omavless-report.json" : "/omavless-profile.conf")
-  return "file://" + path.split("/").map(encodeURIComponent).join("/")
-}
-
 function project(snapshot, observation, failed) {
   var result = {state:"unavailable", connected:false, activeId:"", mode:"rule",
     profiles:[], subscriptions:[], lastProfileId:""}

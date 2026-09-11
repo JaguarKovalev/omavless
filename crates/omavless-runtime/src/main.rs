@@ -149,7 +149,7 @@ fn run() -> Result<(), CliError> {
             "  profile replace PROFILE_ID      read confirmed name + replacement link from stdin"
         );
         println!(
-            "  desktop capabilities|core-readiness|clipboard-read|clipboard-copy|pick-import|file-read|edit|qr|qr-data-uri|export-file|cleanup"
+            "  desktop capabilities|core-readiness|clipboard-read|clipboard-copy|pick-import|pick-report-export|pick-profile-export|file-read|edit|qr|qr-data-uri|export-file|cleanup"
         );
         println!(
             "                                  explicit private client-only helpers; input through stdin"
@@ -199,6 +199,15 @@ fn run() -> Result<(), CliError> {
                 return Ok(());
             }
             Some("pick-import") => helpers.pick_import(),
+            Some("pick-report-export" | "pick-profile-export") => {
+                let locale = read_semantic_input(8)?;
+                let kind = if arguments[1] == "pick-report-export" {
+                    desktop_helpers::ExportKind::Report
+                } else {
+                    desktop_helpers::ExportKind::Profile
+                };
+                helpers.pick_export(kind, locale.trim_end_matches('\n'))
+            }
             Some("file-read") => {
                 let path = read_semantic_input(MAX_PATH_BYTES + 1)?;
                 desktop_helpers::read_import_file(path.trim_end_matches('\n').as_bytes())

@@ -4,16 +4,14 @@ const source = fs.readFileSync(__dirname + '/../plugin/Service.qml', 'utf8');
 const panel = fs.readFileSync(__dirname + '/../plugin/Panel.qml', 'utf8');
 const parser = vm.createContext({});
 vm.runInContext(fs.readFileSync(__dirname + '/../plugin/NativeSnapshot.js', 'utf8'), parser);
-const presentation = vm.createContext({});
-vm.runInContext(fs.readFileSync(__dirname + '/../plugin/NativePresentation.js', 'utf8'), presentation);
 let count = 0;
 function test(name, fn) { try { fn(); count++; } catch (e) { e.message = name + ': ' + e.message; throw e; } }
 function context() {
-  const c = vm.createContext({NativeSnapshot:parser, nativeCanAct:true, nativeSnapshot:{instanceId:'instance',revision:7,profiles:[{id:'one'},{id:'two'}]}, nativeFileExportContext:null, nativeFileExportProcess:null, nativeFileExportStatus:'',backendPath:'/synthetic/backend.sh'});
+  const c = vm.createContext({NativeSnapshot:parser, nativeCanAct:true, nativeSnapshot:{instanceId:'instance',revision:7,profiles:[{id:'one'},{id:'two'}]}, nativeFileExportContext:null, nativeFileExportProcess:null, nativeFileExportStatus:'',backendPath:'/synthetic/backend.sh',nativeExportPickerFinished:()=>{}});
   c.root = c;
   // QML initial properties cross a QVariant map; object identity is not retained.
   c.nativeFileExportComponent = {createObject:(_, properties) => ({...JSON.parse(JSON.stringify(properties)), destroy(){this.destroyed=true}})};
-  for (const name of ['validNativeExportPath','nativeFileExportCurrent','startNativeFileExport','startNativeReportFileExport','finishNativeFileExport']) {
+  for (const name of ['startNativeExportPicker','validNativeExportPath','nativeFileExportCurrent','startNativeFileExport','startNativeReportFileExport','finishNativeFileExport']) {
     const start=source.indexOf('  function '+name+'('), end=source.indexOf('\n  }', start)+4;
     assert(start>=0); vm.runInContext(source.slice(start,end), c);
   }
@@ -61,13 +59,10 @@ test('failure malformed and mismatched reply do not release private data', () =>
   }
 });
 test('explicit confirmation UI and Process cleanup guards', () => {
-  assert(panel.includes('fileMode: Dialogs.FileDialog.SaveFile'));
-  assert(panel.includes('"native.fileExport.saveTitle"'));
-  assert(!panel.includes('DontConfirmOverwrite'));
-  assert(!panel.includes('exportWindow.value'));
-  assert(panel.includes('context.revision !== vless.nativeSnapshot.revision'));
-  assert(panel.includes('context.instanceId !== vless.nativeSnapshot.instanceId'));
-  assert(panel.includes('exportWindow.selectedFile = ""'));
+  assert(panel.includes('vless.startNativeExportPicker(null, root.uiLocale)'));
+  assert(!panel.includes('id: exportWindow'));
+  assert(!panel.includes('QtQuick.Dialogs'));
+  assert(source.includes('process.running && !process.picking'));
   // Other restored profile actions may follow Edit; export must retain its
   // position without freezing the complete keyboard navigation array.
   assert(panel.includes('rowQr, rowExport, rowEdit'));
@@ -77,60 +72,6 @@ test('explicit confirmation UI and Process cleanup guards', () => {
   assert(component.includes('if (writeAdmitted) write(privateInput)'));
   assert(component.includes('privateInput = ""'));
   assert(!component.includes('console.'));
-});
-test('chooser local URL conversion is bounded and never interprets shell syntax', () => {
-  for (const path of ['/tmp/report.json','/tmp/Пример файла #1%.conf','/tmp/$(false);a.conf']) {
-    const url='file://' + path.split('/').map(encodeURIComponent).join('/');
-    assert.equal(presentation.exportLocalPath(url),path);
-  }
-  for(const url of ['https://example.invalid/file','file://remote/tmp/a','file:/tmp/a','file:///tmp/a?query','file:///tmp/a#fragment','file:///tmp/%FF','file:///tmp/%00','file:///tmp/a%0Ab','file:///tmp/%2E%2E/a','file:///tmp/./a','file:///'+'x'.repeat(4097)]) assert.equal(presentation.exportLocalPath(url),'');
-  assert.equal(presentation.exportLocalPath('file:///tmp/%252e%252e'),'/tmp/%2e%2e');
-  assert.equal(presentation.exportDefaultUrl('/home/example','report'),'file:///home/example/omavless-report.json');
-  assert.equal(presentation.exportDefaultUrl('/home/example/','profile'),'file:///home/example/omavless-profile.conf');
-  assert.equal(presentation.exportDefaultUrl('/home/example','private-profile-name'),'');
-  assert.equal(presentation.exportDefaultUrl('relative','report'),'');
-});
-function panelContext() {
-  const vless=context();
-  const c=vm.createContext({vless, NativePresentation:presentation,pendingFileExport:null,
-    StandardPaths:{HomeLocation:1,writableLocation:()=>'/home/example'},Qt:{callLater:fn=>fn()},
-    exportWindow:{selectedFile:'',open(){this.visible=true},close(){this.visible=false}},
-    close(){this.closed=true},open(){this.opened=true}});
-  c.root=c;
-  for (const name of ['requestFileExport','requestReportExport','openFileExportChooser','cancelFileExport','confirmFileExport']) {
-    const start=panel.indexOf('  function '+name+'('), end=panel.indexOf('\n  }',start)+4;
-    vm.runInContext(panel.slice(start,end),c);
-  }
-  return c;
-}
-test('Save As prefills generic name, serializes selection and Cancel never reads or writes', () => {
-  const c=panelContext();c.requestReportExport();
-  assert(c.exportWindow.visible && c.closed);
-  assert.equal(c.exportWindow.selectedFile,'file:///home/example/omavless-report.json');
-  assert.equal(c.exportWindow.defaultSuffix,'json');
-  const context=c.pendingFileExport;c.requestFileExport({uuid:'one'});
-  assert.equal(c.pendingFileExport,context);
-  assert.equal(c.vless.nativeFileExportProcess,null);
-  c.cancelFileExport();
-  assert.equal(c.pendingFileExport,null);assert.equal(c.exportWindow.selectedFile,'');
-  assert.equal(c.vless.nativeFileExportProcess,null);assert.equal(c.vless.nativeFileExportStatus,'');
-  c.requestFileExport({uuid:'one'});
-  assert.equal(c.exportWindow.defaultSuffix,'conf');
-  assert(c.exportWindow.selectedFile.endsWith('/omavless-profile.conf'));
-});
-test('chooser confirmation preserves writer boundary and clears private selection', () => {
-  const c=panelContext();c.requestReportExport();
-  c.exportWindow.selectedFile='file:///tmp/report%20name.json';c.confirmFileExport();
-  assert.equal(c.vless.nativeFileExportContext.path,'/tmp/report name.json');
-  assert.equal(c.vless.nativeFileExportProcess.command.at(-1),'native-support-report');
-  assert.equal(c.exportWindow.selectedFile,'');assert.equal(c.pendingFileExport,null);assert(c.opened);
-});
-test('stale, revoked and invalid chooser results do not reach exporter', () => {
-  for(const change of [c=>c.vless.nativeSnapshot.revision++,c=>c.vless.nativeSnapshot.instanceId='new',c=>c.vless.nativeCanAct=false,c=>c.exportWindow.selectedFile='file://remote/a',c=>c.exportWindow.selectedFile='file:///tmp/%00']) {
-    const c=panelContext();c.requestReportExport();change(c);c.confirmFileExport();
-    assert.equal(c.vless.nativeFileExportProcess,null);assert.equal(c.vless.nativeFileExportStatus,'failed');
-    assert.equal(c.exportWindow.selectedFile,'');assert.equal(c.pendingFileExport,null);assert(c.opened);
-  }
 });
 test('report export uses canonical report projection, not profile export', () => {
   const c=context(); let parsed=0;
@@ -150,7 +91,46 @@ test('stale and malformed reports never reach writer', () => {
     c.finishNativeFileExport(c.nativeFileExportProcess,0,'secret-invalid-report');
     assert.equal(c.nativeFileExportProcess,null);assert.equal(c.nativeFileExportStatus,'failed');
   }
-  assert(panel.includes('context.kind === "report") vless.startNativeReportFileExport'));
+  assert(source.includes('context.kind === "report") startNativeReportFileExport'));
   assert(panel.slice(panel.indexOf('function panelTabTargets()'),panel.indexOf('function availablePanelTabTargets()')).includes('nativeSupportSetting.exportFocusTarget'));
+});
+
+test('isolated chooser is explicit, serialized, private and has no writer before acceptance', () => {
+  const c=context();assert(c.startNativeExportPicker(null,'ru'));
+  const picker=c.nativeFileExportProcess;
+  assert.equal(picker.command.join('|'),'bash|/synthetic/backend.sh|native-pick-report-export');
+  assert.equal(picker.privateInput,'ru');assert(picker.picking);
+  assert(!c.startNativeExportPicker({uuid:'one'},'en'));
+  assert(!picker.writing);
+  c.finishNativeFileExport(picker,3,'private-discarded','');
+  assert.equal(c.nativeFileExportProcess,null);assert.equal(c.nativeFileExportStatus,'');assert(picker.destroyed);
+});
+test('chooser accepted destination enters canonical report/profile reader, then secure writer', () => {
+  for(const profile of [null,{uuid:'one'}]) {
+    const c=context();assert(c.startNativeExportPicker(profile,'unsupported'));
+    const picker=c.nativeFileExportProcess;assert.equal(picker.privateInput,'en');
+    c.finishNativeFileExport(picker,0,'/tmp/selected $(false).conf','');
+    assert.equal(c.nativeFileExportContext.path,'/tmp/selected $(false).conf');
+    assert.equal(c.nativeFileExportStatus,'pending');
+    assert.equal(c.nativeFileExportProcess.command[2],profile?'native-profile-file':'native-support-report');
+    assert(picker.destroyed);
+  }
+});
+test('chooser cancellation, stale result, invalid path and fixed public errors', () => {
+  for(const change of [c=>c.nativeSnapshot.revision++,c=>c.nativeSnapshot.instanceId='new',c=>c.nativeCanAct=false,c=>c.nativeSnapshot.profiles=[]]) {
+    const c=context();c.startNativeExportPicker({uuid:'one'},'en');const p=c.nativeFileExportProcess;
+    change(c);c.finishNativeFileExport(p,0,'/tmp/file','secret-error');
+    assert.equal(c.nativeFileExportProcess,null);assert.equal(c.nativeFileExportStatus,'failed');
+  }
+  for(const path of ['relative','/tmp/a\nb','/tmp/'+ 'x'.repeat(4097)]) {
+    const c=context();c.startNativeExportPicker(null,'en');c.finishNativeFileExport(c.nativeFileExportProcess,0,path,'');
+    assert.equal(c.nativeFileExportProcess,null);assert.equal(c.nativeFileExportStatus,'failed');
+  }
+  const c=context();c.startNativeExportPicker(null,'en');
+  c.finishNativeFileExport(c.nativeFileExportProcess,2,'','File picker unavailable: install zenity, kdialog or yad\n');
+  assert.equal(c.nativeFileExportStatus,'pickerUnavailable');
+  c.startNativeExportPicker(null,'en');
+  c.finishNativeFileExport(c.nativeFileExportProcess,2,'','Invalid desktop helper command\n');
+  assert.equal(c.nativeFileExportStatus,'helperUnavailable');
 });
 console.log(`${count} native file-export tests passed`);

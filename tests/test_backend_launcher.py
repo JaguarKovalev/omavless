@@ -255,6 +255,8 @@ printf 'finished\\n' >> "$BRIDGE_TEST_TRACE"
             (("native-profile-qr", "synthetic-record"), ["profile", "export", "synthetic-record", "qr"]),
             (("native-profile-file", "synthetic-record"), ["profile", "export", "synthetic-record", "file"]),
             (("native-export-write",), ["desktop", "export-file"]),
+            (("native-pick-report-export",), ["desktop", "pick-report-export"]),
+            (("native-pick-profile-export",), ["desktop", "pick-profile-export"]),
             (("native-qr-render",), ["desktop", "qr-data-uri"]),
         ]:
             result = self.run_launcher(*args)

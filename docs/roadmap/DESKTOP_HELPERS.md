@@ -16,6 +16,7 @@ generation-fenced semantic API, then invokes a fixed helper operation.
 | `clipboard-read` | none | private UTF-8 clipboard text |
 | `clipboard-copy` | private UTF-8 text | empty |
 | `pick-import` | none | selected file **contents**, never its path |
+| `pick-report-export` / `pick-profile-export` | bounded `en` or `ru` locale | private absolute destination selected in Save As; no write |
 | `file-read` | absolute local path, optional final newline | private file contents |
 | `edit` | explicit UTF-8 editor seed | private edited text |
 | `qr` | explicit private profile link | binary PNG |
@@ -40,6 +41,27 @@ detection and confirmation remain client responsibilities. Export preserves
 the supplied bytes; profile-link file callers append the established newline.
 
 ## Helper selection and bounds
+
+### Save As selection
+
+The two fixed export pickers prefill `omavless-report.json` or
+`omavless-profile.conf`, never a private profile name. They reuse the existing
+zenity/kdialog/yad preference and cancellation/error/size policy. Zenity/yad
+explicitly enable save mode and overwrite confirmation; kdialog uses its
+save-file dialog with default overwrite confirmation. The profile title warns
+that the file contains credentials. No profile content is acquired until the
+selection succeeds and the QML instance/revision/record fence still matches.
+The existing atomic mode-0600 export writer remains authoritative for path,
+ownership and permissions checks. Cancel exits 3 with no write or public error.
+
+Try Omarchy evaluation of in-process QtQuick FileDialog on 2026-09-11 reached
+the GTK3 picker but crashed Quickshell in GLib/GIO/GVfs directory monitoring.
+The recorded stack traverses `g_malloc`, variant construction and
+`gvfs_dbus_mount_call_create_directory_monitor_sync`; the precise upstream root
+cause is not established. This is not evidence of a VPN/runtime failure.
+Do not reintroduce that in-process chooser on the basis of static QML success.
+The fixed Rust desktop adapter isolates the dialog process from the shell.
+No GTK binding, Qt module or GUI dependency is added to the daemon.
 
 Executable discovery uses only fixed helper names and absolute PATH entries;
 it never invokes a shell. Picker preference remains zenity, kdialog, yad.

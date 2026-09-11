@@ -72,6 +72,8 @@ CASES = (
     fixed("native-profile-qr", ("profile", "export"), RECORD, suffix=("qr",)),
     fixed("native-profile-file", ("profile", "export"), RECORD, suffix=("file",)),
     fixed("native-export-write", ("desktop", "export-file"), private_stdin=True),
+    fixed("native-pick-report-export", ("desktop", "pick-report-export"), private_stdin=True),
+    fixed("native-pick-profile-export", ("desktop", "pick-profile-export"), private_stdin=True),
     fixed("native-qr-render", ("desktop", "qr-data-uri"), private_stdin=True),
     fixed("native-profile-edit-input", ("profile", "edit-input"), RECORD),
     fixed("native-subscription-edit-input", ("subscription", "edit-input"), RECORD),

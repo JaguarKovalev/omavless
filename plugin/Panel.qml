@@ -7,8 +7,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtCore
-import QtQuick.Dialogs as Dialogs
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -508,43 +506,11 @@ Panel {
   // fine. Duplicates are refused: every name-based entry point in the
   // widget treats an ambiguous name as an error, so don't let one be made.
   readonly property string renameClean: renameWindow.value.trim()
-  property var pendingFileExport: null
   function requestFileExport(profile) {
-    if (!vless.nativeCanAct || !profile || pendingFileExport !== null || vless.nativeFileExportProcess !== null) return
-    pendingFileExport = {profile:profile, instanceId:vless.nativeSnapshot.instanceId, revision:vless.nativeSnapshot.revision}
-    openFileExportChooser("profile")
+    if (profile && vless.startNativeExportPicker(profile, root.uiLocale)) root.close()
   }
   function requestReportExport() {
-    if (!vless.nativeCanAct || pendingFileExport !== null || vless.nativeFileExportProcess !== null) return
-    pendingFileExport = {kind:"report", instanceId:vless.nativeSnapshot.instanceId, revision:vless.nativeSnapshot.revision}
-    openFileExportChooser("report")
-  }
-  function openFileExportChooser(kind) {
-    // Assign after construction: Qt may evaluate selectedFile before SaveFile
-    // mode during component initialization and reject a not-yet-existing file.
-    exportWindow.defaultSuffix = kind === "report" ? "json" : "conf"
-    exportWindow.selectedFile = NativePresentation.exportDefaultUrl(StandardPaths.writableLocation(StandardPaths.HomeLocation), kind)
-    root.close()
-    Qt.callLater(function() { if (root.pendingFileExport !== null) exportWindow.open() })
-  }
-  function cancelFileExport() {
-    pendingFileExport = null
-    exportWindow.close()
-    exportWindow.selectedFile = ""
-  }
-  function confirmFileExport() {
-    var context = pendingFileExport
-    var path = NativePresentation.exportLocalPath(String(exportWindow.selectedFile))
-    if (!context || !vless.nativeCanAct || context.instanceId !== vless.nativeSnapshot.instanceId
-        || context.revision !== vless.nativeSnapshot.revision || !vless.validNativeExportPath(path)) {
-      vless.nativeFileExportKind = context && context.kind === "report" ? "report" : "profile"
-      vless.nativeFileExportStatus = "failed"
-      cancelFileExport(); root.open(); return
-    }
-    if (context.kind === "report") vless.startNativeReportFileExport(path)
-    else vless.exportToPath(context.profile, path)
-    cancelFileExport()
-    root.open()
+    if (vless.startNativeExportPicker(null, root.uiLocale)) root.close()
   }
   readonly property bool renameNameValid: vless.isValidName(renameClean)
   readonly property bool renameDuplicate: renameClean !== ""
@@ -1426,7 +1392,6 @@ Panel {
       onboardingDismissed = false
       if (vless.qrVisible) vless.closeQr()
       cancelRename()
-      cancelFileExport()
       // The error surface is back on screen; whatever happens to the editor
       // now needs no rescue.
       editHandedOff = false
@@ -1475,6 +1440,10 @@ Panel {
 
   Connections {
     target: vless
+    function onNativeExportPickerFinished() {
+      root.open()
+      if (vless.nativeFileExportKind === "report") root.openSettings()
+    }
     function onNativeSubscriptionReady(name, url, kind, editing) {
       if (!root.opened) root.open()
       root.editingSubscription = null
@@ -1950,7 +1919,7 @@ Panel {
             Layout.fillWidth: true
             visible: vless.nativeFileExportStatus !== ""
             text: vless.nativeFileExportStatus !== "" ? root.textFor((vless.nativeFileExportKind === "report" ? "native.supportExport." : "native.fileExport.") + vless.nativeFileExportStatus) : ""
-            color: vless.nativeFileExportStatus === "failed" ? root.urgent : root.dim
+            color: ["failed", "pickerUnavailable", "helperUnavailable"].indexOf(vless.nativeFileExportStatus) >= 0 ? root.urgent : root.dim
             font.family: root.fontFamily; font.pixelSize: Style.font.body
             wrapMode: Text.Wrap
           }
@@ -3984,19 +3953,6 @@ Panel {
     fontFamily: root.fontFamily
     onConfirmed: root.confirmRename()
     onCanceled: root.cancelRename()
-  }
-
-  Dialogs.FileDialog {
-    id: exportWindow
-    parentWindow: button.Window.window
-    fileMode: Dialogs.FileDialog.SaveFile
-    // Default Qt overwrite confirmation stays enabled. No file is written by
-    // the chooser: the fenced Rust export helper remains the only writer.
-    title: root.textFor(root.pendingFileExport && root.pendingFileExport.kind === "report" ? "native.support.export" : "native.fileExport.saveTitle")
-    acceptLabel: root.textFor("common.save")
-    rejectLabel: root.textFor("common.cancel")
-    onAccepted: root.confirmFileExport()
-    onRejected: { root.cancelFileExport(); root.open() }
   }
 
   // Every cell in the grid holds its place from the moment the tunnel comes

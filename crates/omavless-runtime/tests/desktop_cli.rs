@@ -193,10 +193,38 @@ fn desktop_dialog_cancellation_retains_exit_three_without_error_output() {
         assert_eq!(response.status.code(), Some(3));
         assert!(response.stdout.is_empty() && response.stderr.is_empty());
     }
+    for operation in ["pick-report-export", "pick-profile-export"] {
+        let response = f.call(&["desktop", operation], b"en");
+        assert_eq!(response.status.code(), Some(3));
+        assert!(response.stdout.is_empty() && response.stderr.is_empty());
+        let rejected = f.call(&["desktop", operation, "private-token"], b"en");
+        assert_eq!(rejected.status.code(), Some(2));
+        assert!(rejected.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&rejected.stderr).contains("private-token"));
+    }
     assert_eq!(
         fs::read_dir(f.0.join("omavless-desktop")).unwrap().count(),
         0
     );
+    assert!(!f.0.join("omavless").exists());
+}
+
+#[test]
+fn save_chooser_cli_only_releases_destination_after_explicit_selection() {
+    let f = Fixture::new();
+    let tool = f.0.join("zenity");
+    fs::write(&tool, b"#!/bin/bash\ntest \"$4\" = --filename=omavless-report.json || exit 9\nprintf '/tmp/synthetic-destination.json\\n'\n").unwrap();
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o700)).unwrap();
+    let selected = f.call(&["desktop", "pick-report-export"], b"en");
+    assert!(selected.status.success() && selected.stderr.is_empty());
+    assert_eq!(selected.stdout, b"/tmp/synthetic-destination.json");
+    for input in [b"unknown".as_slice(), b"en\0", b"\xff", b"private-token"] {
+        let rejected = f.call(&["desktop", "pick-report-export"], input);
+        assert_eq!(rejected.status.code(), Some(2));
+        assert!(rejected.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&rejected.stderr).contains("private-token"));
+    }
+    assert_eq!(fs::read_dir(&f.0).unwrap().count(), 1);
     assert!(!f.0.join("omavless").exists());
 }
 

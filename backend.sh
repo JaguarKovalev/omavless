@@ -151,6 +151,10 @@ if command -v omavless >/dev/null 2>&1; then
           [ "$#" -eq 2 ] || blocked
           exec omavless profile export "$2" file
           ;;
+        native-pick-report-export|native-pick-profile-export)
+          [ "$#" -eq 1 ] || blocked
+          exec omavless desktop "${1#native-}"
+          ;;
         native-export-write)
           [ "$#" -eq 1 ] || blocked
           exec omavless desktop export-file
