@@ -142,6 +142,9 @@ fn run() -> Result<(), CliError> {
         );
         println!("  onboarding complete              mark first-use setup complete");
         println!(
+            "  setup initialize                 create initial private config only; no activation"
+        );
+        println!(
             "  store-compatibility              read-only native store check and recovery guidance"
         );
         println!(
@@ -280,6 +283,20 @@ fn run() -> Result<(), CliError> {
                 "configReady": result.config_ready,
             }))
             .map_err(|_| "Output failed")?
+        );
+        return Ok(());
+    }
+    if arguments.first().is_some_and(|arg| arg == "setup") {
+        if arguments != ["setup", "initialize"] {
+            return Err("Invalid native setup command".into());
+        }
+        let result =
+            omavless_runtime::fresh_setup::prepare_current().map_err(|error| error.to_string())?;
+        println!(
+            "{}",
+            json!({"schemaVersion":1,"outcome":"prepared",
+            "createdFiles":result.created_files,"ownershipActivated":false,
+            "startupEnabled":false,"onboardingComplete":false})
         );
         return Ok(());
     }

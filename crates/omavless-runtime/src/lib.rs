@@ -48,6 +48,7 @@ pub mod cutover_transaction;
 pub mod desired;
 pub mod desktop_helpers;
 mod diagnostic_read;
+pub mod fresh_setup;
 pub mod frontend_bridge;
 pub mod full_quit;
 pub mod import_read_protocol;

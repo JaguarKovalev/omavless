@@ -7,7 +7,7 @@ const path = require("node:path");
 const cp = require("node:child_process");
 const crypto = require("node:crypto");
 const os = require("node:os");
-const SUITES = Object.freeze(["cli", "plugin_action_cli", "desktop_cli", "plugin_target"]);
+const SUITES = Object.freeze(["cli", "plugin_action_cli", "desktop_cli", "plugin_target", "fresh_setup_cli"]);
 const BLOCKED = Object.freeze(["sudo", "pkexec", "systemctl", "systemd-run", "busctl", "dbus-send", "resolvectl", "nmcli"]);
 const ROOT = path.resolve(__dirname, "..");
 function requireFact(value) { if (!value) throw new Error("conformance_unconfirmed"); }

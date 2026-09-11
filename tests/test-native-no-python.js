@@ -14,7 +14,7 @@ const source = subject.SUITES.map(n => record(n));
 const encode = values => values.map(v => JSON.stringify(v)).join("\n");
 let count = 0;
 function test(name, run) { run(); count++; }
-test("exact four test artifacts, independent of compiler ordering", () => {
+test("exact named test artifacts, independent of compiler ordering", () => {
     const rows = subject.artifacts(encode([{ reason: "build-finished", success: true }, ...source.slice().reverse()]));
     assert.deepEqual(rows.map(r => r.name), subject.SUITES);
     assert(rows.every(r => r.executable.startsWith("/synthetic/debug/deps/")));
