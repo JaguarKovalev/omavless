@@ -8,6 +8,13 @@ Python/Rust parity gates. It complements [`CONTROL_PLANE.md`](CONTROL_PLANE.md),
 [`ARCHITECTURE.md`](ARCHITECTURE.md), [`TUI_APP.md`](TUI_APP.md) and
 [`PLATFORM.md`](PLATFORM.md).
 
+Local-only R6 continuity, 2026-09-11: native config preparation and
+[strict absent-legacy activation composition](../testing/R6_ABSENT_LEGACY_ACTIVATION.md)
+now have deterministic coverage, including unchanged initial-config parity and
+transaction compensation. This source is not installed or published acceptance:
+clean-user package activation/onboarding, login/recovery and full installed
+Python-unavailability remain required. The production TUI gate is unchanged.
+
 ## 1. Decision
 
 The long-term OmaVLESS application stack is selected as:

@@ -162,8 +162,11 @@ Later local checkpoints supersede parts of that audit: the
 [native-only frontend installation](docs/testing/R6_NATIVE_ONLY_FRONTEND.md)
 have actual Try Omarchy UI evidence. The
 [fresh-config preparation CLI](docs/testing/R6_FRESH_CONFIG_PREPARATION.md)
-adds create-only defaults with54 compiled no-Python conformance tests; it does
-**not** activate ownership. Missing-legacy clean-host activation, complete
+adds create-only defaults; it does **not** activate ownership. The subsequent
+[absent-legacy activation composition](docs/testing/R6_ABSENT_LEGACY_ACTIVATION.md)
+adds strict missing-unit admission and safe default state parents, with synthetic
+commit/compensation tests but no new installed acceptance. Clean-user packaged
+activation, complete
 onboarding/login/package recovery, support composition and controlled DNS/auth/
 full installed Python-absence remain open. These are local-only checkpoints,
 not published `main` or a completed R6 release.

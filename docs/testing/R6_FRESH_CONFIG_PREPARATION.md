@@ -87,13 +87,12 @@ Current native runtime and legacy behavior are not cut over by this command.
 
 ## Next owning slice
 
-The existing packaged `cutover activate` still assumes an initialized legacy
-installation, including disabled legacy-unit installation facts and existing
-state-parent setup. A clean host with no Python unit requires an explicit,
-strict absent-legacy admission/composition checkpoint plus deterministic host
-tests, followed by actual packaged acceptance. Do not fake a disabled legacy
-unit, write ownership/receipt files by hand, or claim this preparation alone
-unlocks `install.sh --native-only` (which requires committed Rust ownership).
+The later local [absent-legacy activation checkpoint](R6_ABSENT_LEGACY_ACTIVATION.md)
+supersedes the disabled-legacy-unit assumption and adds safe default state-parent
+preparation. Its synthetic transaction tests pass; actual clean-user packaged
+acceptance is still required. Do not fake a disabled legacy unit, write
+ownership/receipt files by hand, or claim preparation alone unlocks
+`install.sh --native-only` (which requires committed Rust ownership).
 
 Then test the full fresh-user onboarding/import/startup-Off path, activation
 failure/retry/recovery and actual login. Package upgrade/removal/rollback,
