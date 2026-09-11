@@ -83,3 +83,36 @@ validation and diff checks passed.
 Installed schema-2 report-copy acceptance remains distinct from these source
 checks. No live VPN, authorization or private-fixture acceptance is claimed
 by this implementation slice.
+
+## Installed integration, 2026-09-11
+
+Runtime/package and frontend source:
+`46b4413c6626eec677fbcc7d9cd6627934d8d99e`. The aarch64 package is
+`omavless 0.0.0.r471.g46b4413c6626-1`; executable SHA-256 is
+`b4abb18b88f91b12071b6608db07e77046093df2922966f842ef4fd4216ff2c6`.
+It was installed with ordinary pacman dependency checks. All 19 frontend files
+matched the checkout after `install.sh --native-only`; no legacy backend or
+uninstaller was installed. A disconnected service restart loaded the new binary;
+the actual `/proc/PID/exe` digest matched, not merely the disk artifact.
+
+The actual native `diagnostics export` emitted schema 2, scope `native_support`,
+with an observed disconnected Routing state and core/TUN counts 0/0. Running the
+installed matching parser against that response accepted a 1515-byte shareable
+projection. Forbidden URI/UUID/identity/path-field patterns were absent. These
+checks are successful CLI/projection integration, not GUI clipboard acceptance.
+The same executable passed 55 synthetic CLI cases with Python masked; the
+separate real empty-user Off/login gate above used the prior `82a4444` binary.
+
+**GUI copy remains unconfirmed.** Settings and the Copy report focus target
+were reached through actual keyboard navigation. Synthetic activation did not
+yield a readable report in the clipboard; the panel was subsequently closed.
+One shell restart did not resolve this result. The evidence does not yet
+distinguish an input-automation/focus problem from the real copy path, and does
+not justify calling the button PASS or blaming stale QML caching. A direct
+human click/status observation was requested. Private screenshots remain outside
+Git and are not shareable captures. No production timeout, privilege or focus
+behavior was changed to force this smoke to pass.
+
+Final observed native state after the restart was Routing/disconnected,
+manualRecoveryRequired false, core/auxiliary/TUN counts 0/0/0. No VPN transition
+or DNS change was requested in this integration pass.
