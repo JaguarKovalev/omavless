@@ -336,6 +336,7 @@ exec /usr/bin/cat
             ("native-import-preview", ["import", "preview"]),
             ("native-import-clipboard", ["desktop", "clipboard-read"]),
             ("native-import-file", ["desktop", "pick-import"]),
+            ("native-import-path", ["desktop", "file-read"]),
         ]:
             result = self.run_launcher(command)
             self.assertEqual(result.returncode, 0)

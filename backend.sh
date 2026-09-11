@@ -179,11 +179,12 @@ if command -v omavless >/dev/null 2>&1; then
           [ "$#" -eq 1 ] || blocked
           exec omavless import preview
           ;;
-        native-import-clipboard|native-import-file)
+        native-import-clipboard|native-import-file|native-import-path)
           [ "$#" -eq 1 ] || blocked
           case "$1" in
             native-import-clipboard) exec omavless desktop clipboard-read ;;
             native-import-file) exec omavless desktop pick-import ;;
+            native-import-path) exec omavless desktop file-read ;;
           esac
           ;;
         native-connect|native-disconnect|native-mode|native-profile-rename|native-profile-favorite|native-profile-delete|native-profile-import|native-profile-replace|native-subscription-add|native-subscription-update|native-subscription-delete|native-subscription-refresh|native-routing-preset|native-custom-rule-add|native-custom-rule-delete)

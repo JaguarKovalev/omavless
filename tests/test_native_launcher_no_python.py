@@ -80,6 +80,7 @@ CASES = (
     fixed("native-import-preview", ("import", "preview"), private_stdin=True),
     fixed("native-import-clipboard", ("desktop", "clipboard-read")),
     fixed("native-import-file", ("desktop", "pick-import")),
+    fixed("native-import-path", ("desktop", "file-read"), private_stdin=True),
     action("connect", RECORD, "global"),
     action("disconnect"),
     action("mode", "rule"),

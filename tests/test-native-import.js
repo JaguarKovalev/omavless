@@ -46,6 +46,60 @@ function sourced(c, input='synthetic-private-link', kind='clipboard') {
 function previewed(c, input='synthetic-private-link', kind='clipboard') {
   sourced(c,input,kind);c.nativeImportPreview.running=false;c.finishNativeImportPreview(0,frame());
 }
+function sourceStarted(c) {
+  const source=fs.readFileSync(path.join(__dirname,'../plugin/Service.qml'),'utf8');
+  const start=source.indexOf('    onStarted: {',source.indexOf('id: nativeImportSource'));
+  const body=source.slice(start+'    onStarted: {'.length,source.indexOf('\n    }',start));
+  c.root=c;c.writes=[];c.write=text=>c.writes.push(text);
+  vm.runInContext(body,c);
+  assert.equal(c.stdinEnabled,false);
+}
+test('IPC file acquisition preserves literal bounded path only in private stdin',()=>{
+  for(const value of ['/tmp/profile.conf','/tmp/a space.conf','/tmp/$(not-executed);file','/tmp/профиль.conf']) {
+    const c=harness();assert(c.startNativeImport('file',value));
+    assert.equal(c.nativeImportSource.command.join('|'),'bash|/synthetic/backend.sh|native-import-path');
+    assert.equal(c.nativeImportSource.stdinEnabled,true);
+    sourceStarted(c);assert.deepEqual(c.writes,[value]);assert.equal(c._nativeSourceContext.path,'');
+    c.nativeImportSource.running=false;c.finishNativeImportSource(0,'synthetic-private-link','');
+    c.nativeImportPreview.running=false;c.finishNativeImportPreview(0,frame());
+    assert.equal(c.ready.length,1);assert.equal(c.ready[0][0],'native-file');assert.equal(c.nativePending,null);
+    assert(!JSON.stringify(c._nativeImportContext).includes(value));
+  }
+});
+test('IPC file acquisition rejects unsafe path and wrong input kind before launch',()=>{
+  for(const value of ['',null,12,'relative','file:///tmp/input','/tmp/../input','/tmp/a\nb','/tmp/a\0b','/tmp/\ud800','/'+'я'.repeat(2048)]) {
+    const c=harness();assert.equal(c.startNativeImport('file',value),false);
+    assert.equal(c.nativeImportSource.running,false);assert.equal(c._nativeSourceContext,null);
+  }
+  assert.equal(harness().startNativeImport('clipboard','/tmp/input'),false);
+});
+test('cancel and stale admission never send path to helper',()=>{
+  for(const change of [c=>c.cancelNativeImport(),c=>c.nativeSnapshot.revision++,c=>c.nativeOwner=false]) {
+    const c=harness();c.startNativeImport('file','/tmp/private-filename');change(c);
+    sourceStarted(c);assert.deepEqual(c.writes,[]);assert.equal(c._nativeSourceContext.path,'');
+  }
+});
+test('IPC files reuse subscription confirmation and duplicate rejection',()=>{
+  for(const duplicate of [false,true]) {
+    const c=harness();c.startNativeImport('file','/tmp/subscription.txt');sourceStarted(c);
+    c.nativeImportSource.running=false;c.finishNativeImportSource(0,'https://synthetic.invalid/token','');
+    c.nativeImportPreview.running=false;
+    c.finishNativeImportPreview(0,frame({version:1,kind:'subscription',suggestedName:'Subscription',duplicate}));
+    assert.equal(c.subscriptionReady.length,duplicate?0:1);assert.equal(c.nativePending,null);
+    assert.equal(c.nativeImportCode,duplicate?'duplicateSubscription':'');
+  }
+});
+test('IPC handler reports confirmation only and does not invoke legacy replacement',()=>{
+  const panel=fs.readFileSync(path.join(__dirname,'../plugin/Panel.qml'),'utf8');
+  const start=panel.indexOf('    function importConfig(');
+  const fn=panel.slice(start,panel.indexOf('\n    }',start)+6).replace('(path: string): string','(path)');
+  for(const allowed of [true,false]) {
+    const calls=[];const c=vm.createContext({vless:{nativeOwner:true,startNativeImport:(...args)=>{calls.push(args);return allowed;}}});
+    vm.runInContext(fn,c);
+    assert.equal(c.importConfig('/tmp/private-name'),allowed?'ok: confirmation required':'error: native import unavailable');
+    assert.deepEqual(calls,[['file','/tmp/private-name']]);
+  }
+});
 test('UTF8 input bounds never truncate and reject NUL or malformed surrogate',()=>{
   for(const input of ['x','x'.repeat(32768),'я'.repeat(16384)]) assert.equal(parser.importInput(input),true);
   for(const input of ['',null,1,'x'.repeat(32769),'я'.repeat(16385),'bad\0value','\ud800']) assert.equal(parser.importInput(input),false);

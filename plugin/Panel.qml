@@ -1615,9 +1615,12 @@ Panel {
     // something is watching them, so a headless caller sees the totals and
     // the addresses live, and "--" where a sample would have to be paid for.
     function details(): string { return vless.nativeOwner ? root.nativeIpc.details : vless.detailsText() }
-    // Headless import — no prompt, the name is derived from the filename.
+    // Native IPC requests a preview/confirmation, never implicit replacement.
+    // Legacy import retains its original filename-based behavior.
     // (`import` is a JS keyword, hence the longer name.)
     function importConfig(path: string): string {
+      if (vless.nativeOwner)
+        return vless.startNativeImport("file", path) ? "ok: confirmation required" : "error: native import unavailable"
       var name = vless.sanitizeName(path)
       if (!vless.isValidName(name)) return "error: cannot derive a profile name from " + path
       if (vless.countByName(name) > 1) return "error: ambiguous profile name " + name

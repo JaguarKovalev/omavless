@@ -333,17 +333,24 @@ Item {
   readonly property bool nativeImportBusy: nativeImportSource.running || nativeImportPreview.running
 
   function cancelNativeImport() {
+    if (_nativeSourceContext) _nativeSourceContext.path = ""
     _nativeImportContext = null
     importPreview = ({})
   }
 
-  function startNativeImport(kind) {
+  function startNativeImport(kind, path) {
     if (!nativeCanAct || nativeImportBusy || _nativeImportContext || ["file", "clipboard"].indexOf(kind) < 0) return false
+    var fromPath = path !== undefined
+    if (fromPath && (kind !== "file" || typeof path !== "string" || path[0] !== "/"
+        || !NativeSnapshot.editorText(path, 4096) || /[\u0000-\u001f\u007f]/.test(path)
+        || path.split("/").indexOf("..") >= 0)) return false
     nativeImportCode = ""
     importPreview = ({})
     _nativeImportContext = {kind:kind, instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
     _nativeSourceContext = _nativeImportContext
-    nativeImportSource.command = ["bash", backendPath, "native-import-" + kind]
+    _nativeSourceContext.path = fromPath ? path : ""
+    nativeImportSource.command = ["bash", backendPath, fromPath ? "native-import-path" : "native-import-" + kind]
+    nativeImportSource.stdinEnabled = fromPath
     nativeImportSource.running = true
     return true
   }
@@ -355,6 +362,7 @@ Item {
 
   function finishNativeImportSource(exitCode, output, error) {
     var context = _nativeSourceContext
+    if (context) context.path = ""
     _nativeSourceContext = null
     if (context !== _nativeImportContext || context === null) return
     if (exitCode === 3) { cancelNativeImport(); return }
@@ -3862,6 +3870,15 @@ Item {
     id: nativeImportSource
     running: false
     command: []
+    onStarted: {
+      var context = root._nativeSourceContext
+      if (context) {
+        var path = context.path
+        context.path = ""
+        if (path && root.nativeImportCurrent(context)) write(path)
+      }
+      stdinEnabled = false
+    }
     stdout: StdioCollector { id: nativeImportSourceOut; waitForEnd: true }
     stderr: StdioCollector { id: nativeImportSourceError; waitForEnd: true }
     onExited: function(code) { root.finishNativeImportSource(code, nativeImportSourceOut.text, nativeImportSourceError.text) }
