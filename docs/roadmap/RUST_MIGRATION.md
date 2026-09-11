@@ -11,9 +11,12 @@ Python/Rust parity gates. It complements [`CONTROL_PLANE.md`](CONTROL_PLANE.md),
 Local-only R6 continuity, 2026-09-11: native config preparation and
 [strict absent-legacy activation composition](../testing/R6_ABSENT_LEGACY_ACTIVATION.md)
 now have deterministic coverage, including unchanged initial-config parity and
-transaction compensation. This source is not installed or published acceptance:
-clean-user package activation/onboarding, login/recovery and full installed
-Python-unavailability remain required. The production TUI gate is unchanged.
+transaction compensation. The subsequent
+[installed fresh-account gate](../testing/R6_FRESH_PACKAGE_ACTIVATION_2026-09-11.md)
+PASSed real initialize/activate/retry refusal on Try Omarchy ARM64 with no legacy
+service. Complete onboarding, login/recovery and full installed Python-absence
+remain required; this local work is not published acceptance. The production TUI
+gate is unchanged.
 
 ## 1. Decision
 

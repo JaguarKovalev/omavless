@@ -88,6 +88,11 @@ publication to main; the installed runtime/frontend remain unchanged.
 
 ## Exact-source validation
 
+Subsequent [fresh-user installed package acceptance](R6_FRESH_PACKAGE_ACTIVATION_2026-09-11.md)
+at combined source `82a4444` passed actual initialize/activate/duplicate-refusal
+with no legacy unit and cleaned up the disposable user. That report supersedes
+the uninstalled status for this bounded host gate only; other R6 gates remain.
+
 - Full `cargo test --locked --workspace` with `RUST_TEST_THREADS=2`:
   **944 passed, 10 existing ignored**, no failures.
 - The initial default-parallel final-source run failed an existing helper fixture's

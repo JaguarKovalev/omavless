@@ -164,9 +164,11 @@ have actual Try Omarchy UI evidence. The
 [fresh-config preparation CLI](docs/testing/R6_FRESH_CONFIG_PREPARATION.md)
 adds create-only defaults; it does **not** activate ownership. The subsequent
 [absent-legacy activation composition](docs/testing/R6_ABSENT_LEGACY_ACTIVATION.md)
-adds strict missing-unit admission and safe default state parents, with synthetic
-commit/compensation tests but no new installed acceptance. Clean-user packaged
-activation, complete
+adds strict missing-unit admission and safe default state parents. The later
+[real packaged fresh-user gate](docs/testing/R6_FRESH_PACKAGE_ACTIVATION_2026-09-11.md)
+PASSed initialize/activate/retry refusal with no legacy service on Try Omarchy
+ARM64; the main UI mode controls/profile frame were restored and inspected too.
+Complete
 onboarding/login/package recovery, support composition and controlled DNS/auth/
 full installed Python-absence remain open. These are local-only checkpoints,
 not published `main` or a completed R6 release.
