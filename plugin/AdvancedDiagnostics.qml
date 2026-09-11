@@ -21,6 +21,8 @@ Item {
   property color urgent: Color.urgent
   property string fontFamily: Style.font.family
   property string locale: "en"
+  property string nativeLocalSummary: ""
+  property string nativeSetupSummary: ""
   readonly property real controlHeight: Style.space(32)
   readonly property int visibleRuleLimit: 300
   readonly property bool readOnlyNative: service && service.nativeOwner === true
@@ -201,6 +203,18 @@ Item {
         font.family: page.fontFamily
         font.pixelSize: Style.font.caption
         wrapMode: Text.Wrap
+      }
+
+      // Installation and local-health detail belongs here, not in Settings.
+      PlainText {
+        visible: page.readOnlyNative
+        width: parent.width
+        text: [page.nativeLocalSummary, page.nativeSetupSummary,
+          page.textFor("native.settings.healthScope")].filter(function(value) { return value !== "" }).join("\n\n")
+        color: page.dim
+        font.family: page.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
       }
 
       PlainText {

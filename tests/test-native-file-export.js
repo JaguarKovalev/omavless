@@ -92,6 +92,6 @@ test('stale and malformed reports never reach writer', () => {
     assert.equal(c.nativeFileExportProcess,null);assert.equal(c.nativeFileExportStatus,'failed');
   }
   assert(panel.includes('context.kind === "report") vless.startNativeReportFileExport'));
-  assert(panel.slice(panel.indexOf('function panelTabTargets()'),panel.indexOf('function availablePanelTabTargets()')).includes('nativeSupportExportSetting.focusTarget'));
+  assert(panel.slice(panel.indexOf('function panelTabTargets()'),panel.indexOf('function availablePanelTabTargets()')).includes('nativeSupportSetting.exportFocusTarget'));
 });
 console.log(`${count} native file-export tests passed`);

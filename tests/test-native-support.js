@@ -102,6 +102,6 @@ test('native clipboard and UI bounded lifecycle contract',()=>{
  assert(source.includes('interval: 15000; running: process.running'));
  const panel=fs.readFileSync(__dirname+'/../plugin/Panel.qml','utf8');
  assert(panel.slice(panel.indexOf('function panelTabTargets()'),panel.indexOf('function availablePanelTabTargets()')).includes('nativeSupportSetting.focusTarget'));
- assert(panel.includes('onAction: vless.copyNativeConfigurationReport()'));
+ assert(panel.includes('onClicked: vless.copyNativeConfigurationReport()'));
 });
 console.log(`${count} native support-report tests passed`);

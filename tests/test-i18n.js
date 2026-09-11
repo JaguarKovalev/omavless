@@ -3,12 +3,18 @@ const I18n = require("../plugin/I18n.js")
 assert.strictEqual(I18n.translate("native.probe.dns_failed", "en"), "DNS failed")
 assert.strictEqual(I18n.translate("native.probe.dns_failed", "ru"), "Ошибка DNS")
 
-// Do not keep claiming already-restored routing/traffic controls are absent.
-assert(!I18n.translate("native.main.unavailable", "en").includes("routing tools"))
-assert(!I18n.translate("native.main.unavailable", "ru").includes("инструменты маршрутизации"))
-assert(I18n.translate("native.main.unavailable", "en").includes("Fresh-login"))
-assert(I18n.translate("native.main.unavailable", "ru").includes("нового входа"))
-assert(!I18n.translate("native.main.unavailable", "en").includes("subscription latency tests"))
+// Release/migration acceptance belongs in documentation, not product copy.
+const panelSource = require("fs").readFileSync(require("path").join(__dirname, "../plugin/Panel.qml"), "utf8")
+assert(!panelSource.includes('native.main.unavailable'))
+assert.strictEqual(I18n.translate("native.state.connected", "en"), "CONNECTED")
+assert.strictEqual(I18n.translate("native.state.connected", "ru"), "ПОДКЛЮЧЕНО")
+for (const locale of ["en", "ru"]) {
+  for (const key of ["settings.setup_description", "native.support.scope", "native.support.save", "native.settings.modeHelp"]) {
+    const value = I18n.translate(key, locale)
+    assert(value.length > 0 && value.length < 150)
+    assert(!/Missing translation|Rust|Python|acceptance|приёмк/i.test(value))
+  }
+}
 
 assert.strictEqual(I18n.normalizeLocale("ru_RU.UTF-8"), "ru")
 assert.strictEqual(I18n.normalizeLocale("ru-RU"), "ru")

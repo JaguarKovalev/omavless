@@ -223,7 +223,7 @@ test('main HTTPS Test is presentation-hidden without removing Ping or its probe 
 });
 test('settings sections group related controls in a stable visual order',()=>{
   const region=source.slice(source.indexOf('id: nativeColumn'),source.indexOf('AdvancedDiagnostics {'));
-  const order=['settings.appearance','id: nativeLanguageRow','settings.connections','id: nativeModeButtons','id: nativeRoutingPresetSetting','id: nativeRoutingToolsSetting','id: nativeProvidersRefresh','id: nativeSubscriptionsSetting','settings.setup_startup','id: nativeCoreSetupRow','native.core.scope','id: nativeOnboardingSetting','id: nativeStartupSummaryRow','id: nativeHelpersRefresh','settings.diagnostics_privacy','id: nativeDiagnosticsSetting','id: nativeSupportSetting','id: nativeSupportExportSetting','id: nativeExitIpSetting','settings.application','id: nativeQuitSetting'];
+  const order=['settings.appearance','id: nativeLanguageRow','settings.connections','id: nativeModeButtons','id: nativeRoutingPresetSetting','id: nativeRoutingToolsSetting','id: nativeProvidersRefresh','id: nativeSubscriptionsSetting','settings.setup_startup','id: nativeCoreSetupRow','id: nativeOnboardingSetting','id: nativeStartupSummaryRow','id: nativeHelpersRefresh','settings.diagnostics_privacy','id: nativeDiagnosticsSetting','id: nativeSupportSetting','id: nativeSupportCopy','id: nativeSupportSave','id: nativeExitIpSetting','settings.application','id: nativeQuitSetting'];
   let previous=-1;for(const marker of order){const at=region.indexOf(marker);assert(at>previous,marker);previous=at;}
 });
 test('native Settings Tab order follows visual action order without hidden Test',()=>{
@@ -231,10 +231,11 @@ test('native Settings Tab order follows visual action order without hidden Test'
   const names=Array.from(new Set(source.slice(from,to).match(/\bnative[A-Z]\w*/g)));
   const c=vm.createContext({page:'settings',vless:{nativeOwner:true},showMainConnectionTest:false});
   for(const name of names)c[name]={focusTarget:name,count:0};
+  c.nativeSupportSetting.exportFocusTarget='nativeSupportSave';
   c.nativeSettingsBack='back';c.nativeRefresh='refresh';c.nativeGlobal='global';c.nativeRule='rule';c.nativeDirect='direct';
   vm.runInContext(source.slice(from,to),c);
   const result=Array.from(c.panelTabTargets());
-  assert.deepEqual(result.slice(0,23),['back','refresh','nativeLanguageRow','nativeThroughputSetting','global','rule','direct','nativeRoutingPresetSetting','nativeRoutingToolsSetting','nativeProvidersRefresh','nativeSubscriptionsSetting','nativeCoreSetupRow','nativeOnboardingSetting','nativeStartupSummaryRow','nativeHelpersRefresh','nativeFileImportRow','nativeProfileEditorRow','nativeQrExportRow','nativeDiagnosticsSetting','nativeSupportSetting','nativeSupportExportSetting','nativeExitIpSetting','nativeQuitSetting']);
+  assert.deepEqual(result.slice(0,23),['back','refresh','nativeLanguageRow','nativeThroughputSetting','global','rule','direct','nativeRoutingPresetSetting','nativeRoutingToolsSetting','nativeProvidersRefresh','nativeSubscriptionsSetting','nativeCoreSetupRow','nativeOnboardingSetting','nativeStartupSummaryRow','nativeHelpersRefresh','nativeFileImportRow','nativeProfileEditorRow','nativeQrExportRow','nativeDiagnosticsSetting','nativeSupportSetting','nativeSupportSave','nativeExitIpSetting','nativeQuitSetting']);
   assert(!result.includes(c.nativeTestButton));
 });
 test('native text uses explicit theme font roles rather than the oversized default',()=>{
@@ -242,5 +243,23 @@ test('native text uses explicit theme font roles rather than the oversized defau
   const texts=region.match(/PlainText \{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)||[];
   assert(texts.length>20);
   for(const block of texts){assert(block.includes('font.family: root.fontFamily'));assert.match(block,/font.pixelSize: Style.font\.(body|caption|title|display)/);}
+});
+test('Settings has one report card and keeps diagnostics and developer notes out of ordinary rows',()=>{
+  const section=source.slice(source.indexOf('id: nativeColumn'),source.indexOf('AdvancedDiagnostics {'));
+  for(const key of ['native.main.unavailable','native.core.scope','native.settings.healthScope','nativeLocalStatus()'])assert(!section.includes(key));
+  assert.equal((section.match(/root.textFor\("native.support.scope"\)/g)||[]).length,1);
+  assert(!section.includes('nativeSupportExportSetting'));
+  assert.match(section,/id: nativeSupportCopy;[^\n]*enabled: vless.nativeFactsCurrent && !vless.nativeSupportBusy && !vless.copying;[^\n]*onClicked: vless.copyNativeConfigurationReport\(\)/);
+  assert.match(section,/id: nativeSupportSave;[^\n]*enabled: vless.nativeCanAct && vless.nativeFileExportProcess === null;[^\n]*onClicked: root.requestReportExport\(\)/);
+  const diagnostics=fs.readFileSync(path.join(__dirname,'../plugin/AdvancedDiagnostics.qml'),'utf8');
+  assert(diagnostics.includes('page.nativeLocalSummary'));assert(diagnostics.includes('page.nativeSetupSummary'));assert(diagnostics.includes('native.settings.healthScope'));
+  assert(source.includes('nativeLocalSummary: vless.nativeOwner ? root.nativeLocalStatus() : ""'));
+});
+test('ready desktop helpers show availability without a dead install button',()=>{
+  for(const [id,missing] of [['nativeFileImportRow','!vless.nativeDesktopCapabilities.filePicker'],['nativeProfileEditorRow','!vless.nativeDesktopCapabilities.configEditorAvailable'],['nativeQrExportRow','!vless.nativeDesktopCapabilities.qrEncoderAvailable']]){
+    const start=source.indexOf('id: '+id),end=source.indexOf('\n          }',start),row=source.slice(start,end);
+    assert(row.includes('actionVisible: !!vless.nativeDesktopCapabilities && '+missing));
+    assert(row.includes('onAction: vless.copyText('));
+  }
 });
 console.log('native main panel: '+count+' passed');

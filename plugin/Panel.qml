@@ -686,7 +686,7 @@ Panel {
   function panelTabTargets() {
     if (page === "diagnostics") return advancedDiagnosticsPage.focusTargets
     if (vless.nativeOwner) {
-      var targets = page === "settings" ? [nativeSettingsBack, nativeRefresh, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeGlobal, nativeRule, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeProvidersRefresh.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeCoreSetupRow.focusTarget, nativeOnboardingSetting.focusTarget, nativeStartupSummaryRow.focusTarget, nativeHelpersRefresh.focusTarget, nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeSupportSetting.focusTarget, nativeSupportExportSetting.focusTarget, nativeExitIpSetting.focusTarget, nativeQuitSetting.focusTarget]
+      var targets = page === "settings" ? [nativeSettingsBack, nativeRefresh, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeGlobal, nativeRule, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeProvidersRefresh.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeCoreSetupRow.focusTarget, nativeOnboardingSetting.focusTarget, nativeStartupSummaryRow.focusTarget, nativeHelpersRefresh.focusTarget, nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeSupportSetting.focusTarget, nativeSupportSetting.exportFocusTarget, nativeExitIpSetting.focusTarget, nativeQuitSetting.focusTarget]
         : page === "subscriptions" ? [nativeSettingsBack, nativeRefresh, nativeSubscriptionAdd, nativeSubscriptionRefreshAll]
         : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionTest, nativeSubscriptionSort, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
         : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativeGlobal, nativeRule, nativeDirect, nativePingTest, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
@@ -2038,30 +2038,12 @@ Panel {
             actionEnabled: !vless.nativeCoreSetupBusy
             onAction: vless.refreshNativeCoreSetup()
           }
-          PlainText {
-            Layout.fillWidth: true
-            visible: root.page === "settings" && vless.nativeCoreSetupFacts !== null
-            text: vless.nativeCoreSetupFacts === null ? "" : root.textFor("native.core.tun." + vless.nativeCoreSetupFacts.tunDevice)
-              + "\n" + root.textFor("native.core.capabilities." + vless.nativeCoreSetupFacts.fileNetworkCapabilities)
-            color: root.dim
-            font.family: root.fontFamily; font.pixelSize: Style.font.caption
-            wrapMode: Text.Wrap
-          }
-          PlainText {
-            Layout.fillWidth: true
-            visible: root.page === "settings"
-            text: root.textFor("native.core.scope")
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.Wrap
-          }
           SettingsActionRow {
             id: nativeOnboardingSetting
             Layout.fillWidth: true
             visible: root.page === "settings"
             title: root.textFor("settings.setup_assistant")
-            description: root.textFor("native.onboarding.scope")
+            description: root.textFor("settings.setup_description")
             actionText: root.textFor("common.open")
             actionEnabled: vless.nativeSnapshot !== null && !vless.nativeSnapshotFailed && !vless.nativePending
             onAction: root.openOnboarding(1)
@@ -2094,6 +2076,7 @@ Panel {
             title: root.textFor("settings.file_import")
             description: !vless.nativeDesktopCapabilities ? root.textFor("native.helpers.unavailable") : vless.nativeDesktopCapabilities.filePicker
               ? root.textFor("settings.file_picker_provider", {provider:vless.nativeDesktopCapabilities.filePicker}) : root.textFor("settings.file_picker_missing")
+            actionVisible: !!vless.nativeDesktopCapabilities && !vless.nativeDesktopCapabilities.filePicker
             actionText: root.textFor(vless.nativeDesktopCapabilities && vless.nativeDesktopCapabilities.filePicker ? "common.ready" : "common.copy_command")
             actionEnabled: !!vless.nativeDesktopCapabilities && !vless.nativeDesktopCapabilities.filePicker && vless.nativeDesktopCapabilities.clipboardWriteAvailable && !vless.copying
             onAction: vless.copyText(root.filePickerInstallCommand)
@@ -2104,6 +2087,7 @@ Panel {
             visible: root.page === "settings"
             title: root.textFor("settings.profile_editor")
             description: root.textFor(!vless.nativeDesktopCapabilities ? "native.helpers.unavailable" : vless.nativeDesktopCapabilities.configEditorAvailable ? "settings.profile_editor_ready" : "settings.profile_editor_missing")
+            actionVisible: !!vless.nativeDesktopCapabilities && !vless.nativeDesktopCapabilities.configEditorAvailable
             actionText: root.textFor(vless.nativeDesktopCapabilities && vless.nativeDesktopCapabilities.configEditorAvailable ? "common.ready" : "common.copy_command")
             actionEnabled: !!vless.nativeDesktopCapabilities && !vless.nativeDesktopCapabilities.configEditorAvailable && vless.nativeDesktopCapabilities.clipboardWriteAvailable && !vless.copying
             onAction: vless.copyText(root.profileEditorInstallCommand)
@@ -2114,6 +2098,7 @@ Panel {
             visible: root.page === "settings"
             title: root.textFor("settings.qr_export")
             description: root.textFor(!vless.nativeDesktopCapabilities ? "native.helpers.unavailable" : vless.nativeDesktopCapabilities.qrEncoderAvailable ? "settings.qr_export_ready" : "settings.qr_export_missing")
+            actionVisible: !!vless.nativeDesktopCapabilities && !vless.nativeDesktopCapabilities.qrEncoderAvailable
             actionText: root.textFor(vless.nativeDesktopCapabilities && vless.nativeDesktopCapabilities.qrEncoderAvailable ? "common.ready" : "common.copy_command")
             actionEnabled: !!vless.nativeDesktopCapabilities && !vless.nativeDesktopCapabilities.qrEncoderAvailable && vless.nativeDesktopCapabilities.clipboardWriteAvailable && !vless.copying
             onAction: vless.copyText(root.qrEncoderInstallCommand)
@@ -2163,10 +2148,32 @@ Panel {
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.diagnostics_privacy"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow { id: nativeDiagnosticsSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.live_diagnostics"); description: root.textFor("settings.live_diagnostics_description"); actionText: root.textFor("common.open"); onAction: root.openAdvancedDiagnostics() }
-          PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.state." + root.nativeView.state) + "\n" + root.nativeLocalStatus(); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.settings.healthScope"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-          SettingsActionRow { id: nativeSupportSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("native.support.title"); description: root.textFor("native.support.scope"); actionText: root.textFor("native.support.copy"); actionEnabled: vless.nativeFactsCurrent && !vless.nativeSupportBusy && !vless.copying; onAction: vless.copyNativeConfigurationReport() }
-          SettingsActionRow { id: nativeSupportExportSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("native.support.export"); description: root.textFor("native.support.scope"); actionText: root.textFor("common.export"); actionEnabled: vless.nativeCanAct && vless.nativeFileExportProcess === null; onAction: root.requestReportExport() }
+          BorderSurface {
+            id: nativeSupportSetting
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            implicitHeight: nativeSupportContent.implicitHeight + Style.space(20)
+            color: "transparent"
+            borderSpec: Border.flat(Util.alpha(root.foreground, 0.28), Style.normalBorderWidth)
+            radius: Style.cornerRadius
+            readonly property Item focusTarget: nativeSupportCopy
+            readonly property Item exportFocusTarget: nativeSupportSave
+            ColumnLayout {
+              id: nativeSupportContent
+              anchors.centerIn: parent
+              width: parent.width - Style.space(20)
+              spacing: Style.space(8)
+              PlainText { Layout.fillWidth: true; text: root.textFor("native.support.title"); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.WordWrap }
+              PlainText { Layout.fillWidth: true; text: root.textFor("native.support.scope"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap }
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(8)
+                Item { Layout.fillWidth: true }
+                Button { id: nativeSupportCopy; text: root.textFor("native.support.copy"); bordered: true; focusable: true; fontFamily: root.fontFamily; enabled: vless.nativeFactsCurrent && !vless.nativeSupportBusy && !vless.copying; Keys.onPressed: function(event) { root.handlePanelControlKey(event) }; onClicked: vless.copyNativeConfigurationReport() }
+                Button { id: nativeSupportSave; text: root.textFor("native.support.save"); bordered: true; focusable: true; fontFamily: root.fontFamily; enabled: vless.nativeCanAct && vless.nativeFileExportProcess === null; Keys.onPressed: function(event) { root.handlePanelControlKey(event) }; onClicked: root.requestReportExport() }
+              }
+            }
+          }
           PlainText { Layout.fillWidth: true; visible: root.page === "settings" && vless.nativeSupportStatus !== ""; text: vless.nativeSupportStatus !== "" ? root.textFor("native.support." + vless.nativeSupportStatus) : ""; color: vless.nativeSupportStatus === "failed" ? root.urgent : root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           SettingsActionRow {
             id: nativeExitIpSetting
@@ -2188,7 +2195,6 @@ Panel {
             actionEnabled: vless.nativeCanAct && !vless.nativeEditorRunning && !vless.nativeImportBusy
             onAction: root.quitConfirmation = true
           }
-          PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.main.unavailable"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           PlainText { Layout.fillWidth: true; visible: root.page === "subscriptions"; text: root.textFor("native.subscription.help"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           Button { id: nativeSubscriptionAdd; visible: root.page === "subscriptions"; text: root.textFor("common.add"); focusable: true; bordered: true; enabled: vless.nativeCanAct && !vless.nativeSubscriptionLoading && !vless.nativeSubscriptionDraft; onClicked: root.addSubscription() }
           Button { id: nativeSubscriptionRefreshAll; visible: root.page === "subscriptions"; text: root.textFor("diagnostics.update_all"); focusable: true; bordered: true; enabled: vless.nativeCanAct && !vless.nativeBatchBusy && root.nativeView.subscriptions.length > 0; onClicked: vless.refreshAllSubscriptions() }
@@ -2367,6 +2373,10 @@ Panel {
 
       AdvancedDiagnostics {
         id: advancedDiagnosticsPage
+        nativeLocalSummary: vless.nativeOwner ? root.nativeLocalStatus() : ""
+        nativeSetupSummary: vless.nativeOwner && vless.nativeCoreSetupFacts !== null
+          ? root.nativeCoreSetupDescription() + "\n" + root.textFor("native.core.tun." + vless.nativeCoreSetupFacts.tunDevice)
+            + "\n" + root.textFor("native.core.capabilities." + vless.nativeCoreSetupFacts.fileNetworkCapabilities) : ""
         anchors.fill: parent
         visible: root.page === "diagnostics"
         service: vless
