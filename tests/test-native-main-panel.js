@@ -219,7 +219,7 @@ test('main HTTPS Test is presentation-hidden without removing Ping or its probe 
   assert.match(source,/if \(page === "main" && showMainConnectionTest\) targets.push\(nativeTestButton\)/);
   assert(block.includes('onClicked: vless.startNativeConnectionTest()'));
   assert(source.includes('id: nativePingTest;'));
-  assert.match(source,/RowLayout \{\s+Layout.fillWidth: true\s+spacing: Style.space\(12\)\s+DetailPair \{\s+Layout.fillWidth: true\s+label: root.textFor\("metric.ping"\)/);
+  assert.match(source,/RowLayout \{\s+Layout.fillWidth: true\s+visible: root.showMainLatencySection\s+spacing: Style.space\(12\)\s+DetailPair \{\s+Layout.fillWidth: true\s+label: root.textFor\("metric.ping"\)/);
 });
 test('settings sections group related controls in a stable visual order',()=>{
   const region=source.slice(source.indexOf('id: nativeColumn'),source.indexOf('AdvancedDiagnostics {'));
@@ -229,7 +229,7 @@ test('settings sections group related controls in a stable visual order',()=>{
 test('native Settings Tab order follows visual action order without hidden Test',()=>{
   const from=source.indexOf('  function panelTabTargets()'),to=source.indexOf('\n  function availablePanelTabTargets()',from);
   const names=Array.from(new Set(source.slice(from,to).match(/\bnative[A-Z]\w*/g)));
-  const c=vm.createContext({page:'settings',vless:{nativeOwner:true},showMainConnectionTest:false});
+  const c=vm.createContext({page:'settings',vless:{nativeOwner:true},showMainConnectionTest:false,showMainLatencySection:false});
   for(const name of names)c[name]={focusTarget:name,count:0};
   c.nativeSupportSetting.exportFocusTarget='nativeSupportSave';
   c.nativeSettingsBack='back';c.nativeRefresh='refresh';c.nativeGlobal='global';c.nativeRule='rule';c.nativeDirect='direct';

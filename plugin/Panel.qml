@@ -22,8 +22,10 @@ Panel {
   ipcTarget: "kdk.omavless"
   manageIpc: false
 
-  // Presentation switch only: the bounded runtime probe remains available.
+  // Owner-requested temporary presentation gates. Restore only on explicit
+  // owner direction; see docs/roadmap/MAIN_PANEL_DEFERRED_SECTIONS.md.
   readonly property bool showMainConnectionTest: false
+  readonly property bool showMainLatencySection: false
   property string focusSection: "header"
   property string page: "main"
   property int subscriptionIndex: 0
@@ -702,9 +704,10 @@ Panel {
       var targets = page === "settings" ? [nativeSettingsBack, nativeRefresh, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeGlobal, nativeRule, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeProvidersRefresh.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeCoreSetupRow.focusTarget, nativeOnboardingSetting.focusTarget, nativeStartupSummaryRow.focusTarget, nativeHelpersRefresh.focusTarget, nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeSupportSetting.focusTarget, nativeSupportSetting.exportFocusTarget, nativeExitIpSetting.focusTarget, nativeQuitSetting.focusTarget]
         : page === "subscriptions" ? [nativeSettingsBack, nativeRefresh, nativeSubscriptionAdd, nativeSubscriptionRefreshAll]
         : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionTest, nativeSubscriptionSort, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
-        : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativeGlobal, nativeRule, nativeDirect, nativePingTest, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
+        : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativeGlobal, nativeRule, nativeDirect, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
       targets = targets.concat([nativeBatchCheck, nativeBatchCancel, nativeBatchDismiss, nativeBatchAbandon])
       if (page === "main" && showMainConnectionTest) targets.push(nativeTestButton)
+      if (page === "main" && showMainLatencySection) targets.splice(6, 0, nativePingTest)
       for (var s = 0; s < nativeSubscriptions.count; s++) {
         var subscriptionRow = nativeSubscriptions.itemAt(s)
         if (subscriptionRow) targets = targets.concat(subscriptionRow.focusTargets)
@@ -1466,7 +1469,7 @@ Panel {
     diagnosticsPageVisible: root.opened && root.page === "diagnostics"
     trafficMonitoring: !vless.nativeOwner && ((root.opened && root.page === "main") || vless.showBarThroughput)
     nativeTrafficMonitoring: vless.nativeOwner && ((root.opened && root.page === "main") || vless.showBarThroughput)
-    nativePingMonitoring: vless.nativeOwner && root.opened && root.page === "main"
+    nativePingMonitoring: root.showMainLatencySection && vless.nativeOwner && root.opened && root.page === "main"
     pingMonitoring: !vless.nativeOwner && root.opened && root.page === "main"
   }
 
@@ -2146,6 +2149,7 @@ Panel {
             }
             RowLayout {
               Layout.fillWidth: true
+              visible: root.showMainLatencySection
               spacing: Style.space(12)
               DetailPair {
                 Layout.fillWidth: true
@@ -2156,8 +2160,8 @@ Panel {
               DetailPair { Layout.fillWidth: true; label: root.textFor("metric.packet_loss"); value: vless.nativePingFresh ? String(vless.nativePingSummary.loss) + "%" : "--" }
               Button { id: nativePingTest; text: root.textFor("native.ping.test"); focusable: true; bordered: true; enabled: vless.nativePingEligible; onClicked: vless.testNativePing() }
             }
-            PlainText { Layout.fillWidth: true; text: root.textFor("native.ping." + (vless.nativePingStatus || "unavailable")); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-            PlainText { Layout.fillWidth: true; visible: vless.nativeTrafficFresh; text: root.textFor("traffic.native_note"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+            PlainText { Layout.fillWidth: true; visible: root.showMainLatencySection; text: root.textFor("native.ping." + (vless.nativePingStatus || "unavailable")); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+            PlainText { Layout.fillWidth: true; visible: root.showMainLatencySection && vless.nativeTrafficFresh; text: root.textFor("traffic.native_note"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.diagnostics_privacy"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow { id: nativeDiagnosticsSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.live_diagnostics"); description: root.textFor("settings.live_diagnostics_description"); actionText: root.textFor("common.open"); onAction: root.openAdvancedDiagnostics() }

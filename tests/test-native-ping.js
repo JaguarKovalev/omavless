@@ -75,7 +75,10 @@ test('stale and backwards clock clear old window',()=>{
  for(const now of [0,11001]){const c=context();c.finishNativePing(fence,0,frame());c.now=now;c.sampleNativePing();assert.equal(c.nativePingSamples.length,0)}
 });
 test('visible-main only, native controls and localized number sink',()=>{
- assert(panel.includes('nativePingMonitoring: vless.nativeOwner && root.opened && root.page === "main"'));
+ assert(panel.includes('nativePingMonitoring: root.showMainLatencySection && vless.nativeOwner && root.opened && root.page === "main"'));
+ assert(panel.includes('readonly property bool showMainLatencySection: false'));
+ assert(panel.includes('if (page === "main" && showMainLatencySection) targets.splice(6, 0, nativePingTest)'));
+ assert(panel.includes('visible: root.showMainLatencySection && vless.nativeTrafficFresh'));
  assert(panel.includes('onClicked: vless.testNativePing()'));assert(panel.includes('toLocaleString(Qt.locale(root.uiLocale), "f"'));
  assert(source.includes('interval: 3000'));assert(source.includes('pingHost !== ""'));
  assert(source.includes('property Timer watchdog: Timer'));assert(source.includes('finally { process.destroy() }'));
