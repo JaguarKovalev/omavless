@@ -78,3 +78,32 @@ unchanged private-store bytes per complete cycle. Zero counts alone never pass.
 
 This does not close DNS/provider, fresh-login, rollback, Python-absence or all
 remaining R5/R6 gates, and does not change V0/#30.
+
+## Installed result and authentication interruption
+
+Installed exact source `9de33cd0243261e6ce20d352135ea0b77919f56e`, package
+`0.0.0.r452.g9de33cd02432-1`, binary SHA-256
+`1713849692563ae0ecaa67dc1e8e27ea40d9c054e38c5c1f573e44095fbd2b1d`.
+Installed and built binary hashes agree. Startup recovered the unchanged
+connected intent with one core/TUN, then semantic Disconnect returned to
+Routing/disconnected with manual recovery false and core0/aux0/TUN0.
+
+The automatic 20-cycle helper reported 20 local lifecycle passes with preserved
+store bytes and no manual recovery. **This is NOT full host acceptance.** The
+owner reported a burst of password dialogs and an authentication timeout. A
+post-run process check found 21 orphaned polkit authentication helpers. The
+test advanced from successful local CLI replies without waiting for host
+authorization dialogs to resolve, so its automation was unsuitable for this
+environment. In particular these results do not prove DNS/route authorization
+or cleanup succeeded. The process-churn worker also had a 60-second cap; do
+not claim all 20 cycles ran under churn.
+
+Further transitions and planned Quit/removal regression runs were stopped.
+The cycle helper had already exited. Final read-only runtime observation was
+Routing/disconnected, manual recovery false, core0/aux0/TUN0. No PAM reset,
+security-policy change, new privileged cleanup or private-state reset was
+attempted. Outstanding authentication helpers are not counted as cleaned up.
+
+Next installed acceptance must be one explicitly observed transition at a time,
+with all host authentication settled before another mutation. Fix the test's
+authorization-aware admission before reusing any repeated-cycle harness.
