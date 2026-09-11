@@ -30,6 +30,15 @@ Python-unavailable matrix and fresh-login gates remain open.
 
 ### Subsequent local checkpoints in this session
 
+Later installed UI/IPC evidence at `2fd0d2b` supersedes the old installation
+identity and headless-file-import gap below: see
+[native IPC file import](R6_NATIVE_IPC_FILE_IMPORT.md). It includes successful
+actual UI file export and a shell-restart requirement observed during deployment.
+The earlier zero-auth-helper statement below was incorrect because Linux
+truncates process names; see the correction in the
+[UI audit](TRY_OMARCHY_NATIVE_UI_AUDIT_2026-09-11.md). No new authorization
+was initiated by these UI fixes.
+
 The findings below describe the audited source SHA, not permanent deficiencies.
 Later local commits address these bounded parts:
 

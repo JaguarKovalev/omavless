@@ -153,6 +153,12 @@ fix UI export completion; repeat the affected installed paths. Preserve the
 authorization pause and separate host DNS/login/R6 gates.
 # Local fix continuation — 2026-09-11
 
+**Subsequent gate closed:** the actual installed profile-export roundtrip and
+scroll-reset repeat passed on `2fd0d2b` after a supported shell restart. See
+[IPC/import and UI acceptance](R6_NATIVE_IPC_FILE_IMPORT.md). The pending
+export gate below is historical; disk identity alone did not establish loaded
+QML identity until the changed IPC responses were observed after restart.
+
 Candidate `81622be406c345a7f35063c601d9b86358208d03` is installed locally;
 all 22 tracked frontend/launcher identity files match byte-for-byte. Installed
 Rust binary remains the previously recorded `9de33cd` build. No remote writes,
