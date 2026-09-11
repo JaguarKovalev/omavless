@@ -157,13 +157,16 @@ expose private endpoint/name/record information from private UI detail reads.
 
 ### 4. Diagnostic scope is still deliberately narrower
 
-[`support_diagnostics.rs`](../../crates/omavless-runtime/src/support_diagnostics.rs)
-marks live-host/controller/login coverage false. The Settings copy/file export
-is a bounded configuration report, not a full legacy support bundle. Live
-rule/provider UI diagnostics, core setup facts and native traffic/ping exist
-separately. Preserve that distinction and either compose a reviewed safe
-support snapshot or explicitly accept a changed product contract before claiming
-complete support parity. A literal `doctor` CLI is also not registered at this
+The subsequent [native support composition](R6_NATIVE_SUPPORT_COMPOSITION.md)
+adds a schema-2 report with bounded fresh core/TUN/controller facts to
+[`support_diagnostics.rs`](../../crates/omavless-runtime/src/support_diagnostics.rs).
+The matching Settings parser accepts schema 1 and 2. Unavailable observations
+are null, and store/desired/ownership changes refuse the report. This is not a
+full legacy support bundle: service/TUN ownership, DNS/routes/internet, login,
+core setup, service enablement, file readiness and loaded-policy counts remain
+explicitly unverified. Live rule/provider UI diagnostics, core setup facts and
+native traffic/ping still exist separately. Preserve that distinction before
+claiming complete support parity. A literal `doctor` CLI is not registered at this
 head; existing preflight/observation/diagnostic commands are not automatically
 that future unified command.
 
@@ -176,7 +179,10 @@ documented explicit reopen sequence still need their complete declared gates.
 Do not delete packaged units, private data or ownership/receipt state to force
 an apparent success. Fresh login must cover Off/Last/pinned preferences and
 same-manager restart after explicit Disconnect; saved settings are not proof
-of login activation. See [login contract/evidence](R5_NATIVE_LOGIN_INTEGRATION.md)
+of login activation. The subsequent [installed Off/no-Python gate](R6_INSTALLED_NO_PYTHON_LOGIN_OFF_2026-09-11.md)
+passes empty-user setup/cutover, actual new-session Off activation and ordinary
+disconnected restart using a real daemon with Python inaccessible. Last/pinned
+and restart after a real connected session remain separate. See [login contract/evidence](R5_NATIVE_LOGIN_INTEGRATION.md)
 and [Full Quit](R5_NATIVE_FULL_QUIT.md).
 
 ## Feasible next no-sudo slice

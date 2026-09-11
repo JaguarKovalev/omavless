@@ -129,9 +129,7 @@ fn run() -> Result<(), CliError> {
         );
         println!("  diagnostics summary|rules|providers  bounded live controller diagnostics");
         println!("  runtime test                      explicit current-route HTTPS/IP observation");
-        println!(
-            "  diagnostics export               shareable native configuration report (no live host checks)"
-        );
+        println!("  diagnostics export               shareable bounded native support report");
         println!("  routing preset PRESET [keep-mode]  adopt a bundled routing policy");
         println!("  routing rule-add KIND ACTION     read private rule value from stdin");
         println!("  routing rule-delete RULE_ID       remove one custom rule");

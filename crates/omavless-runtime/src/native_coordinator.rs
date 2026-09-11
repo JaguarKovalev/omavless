@@ -825,13 +825,38 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
 
     pub(crate) fn support_report(&mut self, request: &Value) -> Result<Value, NativeOwnerError> {
         crate::support_diagnostics::validate(request)?;
-        let actual = self.actual();
-        let desired_paths = self.transaction.desired_paths().clone();
-        self.with_owned_private_store(|store| {
+        self.with_owned_read(|owner| {
+            let uid = owner.transaction.uid();
+            let store_path = owner.transaction.store_path().to_owned();
+            let desired_paths = owner.transaction.desired_paths().clone();
+            crate::private_store_transaction::validate_store_path(&store_path, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let input = omavless_store::read_private_utf8(&store_path, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let store = omavless_domain::private_store::parse_private_store(&input)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let desired = crate::desired::read_desired_snapshot(&desired_paths, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let pending = crate::routing_preset::pending(&desired_paths);
+            let observation = owner.host_mut().fresh_observation(&desired).ok();
+            // Preserve one coherent sample even if a non-cooperating writer
+            // changes private input during the bounded host read.
+            if crate::desired::read_desired_snapshot(&desired_paths, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?
+                != desired
+                || omavless_store::read_private_utf8(&store_path, uid)
+                    .map_err(|_| NativeOwnerError::Invariant)?
+                    != input
+                || crate::routing_preset::pending(&desired_paths) != pending
+            {
+                return Err(NativeOwnerError::OwnershipUnavailable);
+            }
             Ok(crate::support_diagnostics::report(
                 store.support_projection(),
-                actual,
-                crate::routing_preset::pending(&desired_paths),
+                &desired,
+                owner.actual(),
+                pending,
+                observation,
             ))
         })
     }
@@ -1892,9 +1917,20 @@ mod tests {
         fail_stop: bool,
         fail_starts: usize,
         calls: usize,
+        support_observation: Option<crate::lifecycle::NativeLocalObservation>,
+        support_read_change: Option<(PathBuf, Vec<u8>)>,
     }
 
     impl LifecycleHost for FakeHost {
+        fn fresh_observation(
+            &mut self,
+            _desired: &DesiredState,
+        ) -> Result<crate::lifecycle::NativeLocalObservation, HostStepError> {
+            if let Some((path, bytes)) = self.support_read_change.take() {
+                fs::write(path, bytes).unwrap();
+            }
+            self.support_observation.ok_or(HostStepError::Observation)
+        }
         fn validate_startup(&mut self, _desired: &DesiredState) -> Result<(), HostStepError> {
             if self.fail_stop {
                 Err(HostStepError::Prepare)
@@ -2001,6 +2037,8 @@ mod tests {
                 fail_stop: false,
                 fail_starts: 0,
                 calls: 0,
+                support_observation: None,
+                support_read_change: None,
             },
             desired_paths,
             &store_path,
@@ -2008,6 +2046,110 @@ mod tests {
             uid,
         );
         (root, store_path, owner)
+    }
+
+    fn support_fixture(label: &str) -> (PathBuf, PathBuf, OfflineNativeCoordinator<FakeHost>) {
+        let (root, store, mut owner) = fixture(label);
+        let paths = owner.transaction.cutover_paths();
+        fs::create_dir_all(&paths.state_directory).unwrap();
+        fs::set_permissions(&paths.state_directory, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(
+            &paths.ownership_marker,
+            br#"{"schemaVersion":1,"generation":2,"phase":"rust"}"#,
+        )
+        .unwrap();
+        fs::set_permissions(&paths.ownership_marker, fs::Permissions::from_mode(0o600)).unwrap();
+        owner.required_ownership = Some(OwnershipFence {
+            phase: OwnershipPhase::Rust,
+            generation: 2,
+        });
+        (root, store, owner)
+    }
+
+    #[test]
+    fn support_report_unavailable_is_null_and_does_not_write_or_change_revision() {
+        let (root, store, mut owner) = support_fixture("support-unavailable");
+        let before = fs::read(&store).unwrap();
+        let report = owner
+            .support_report(&profile_request("diagnostics.export", json!({})))
+            .unwrap();
+        assert_eq!(report["schemaVersion"], 2);
+        assert_eq!(report["localObservation"]["availability"], "unavailable");
+        assert!(report["localObservation"]["facts"].is_null());
+        assert_eq!(report["coverage"]["liveHostObservation"], false);
+        assert_eq!(owner.host().calls, 0);
+        assert_eq!(owner.revision(), 0);
+        assert!(fs::read(&store).unwrap() == before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn support_report_composes_fresh_disconnected_counts_without_health_promotion() {
+        let (root, store, mut owner) = support_fixture("support-observed");
+        let before = fs::read(&store).unwrap();
+        owner.host_mut().support_observation = Some(crate::lifecycle::NativeLocalObservation {
+            owned_core_running: false,
+            visible_mihomo_count: 1,
+            owned_auxiliary_mihomo_count: 0,
+            visible_tun_count: 1,
+            owned_controller_config_verified: false,
+            desired_profile_matches_owned: false,
+        });
+        let report = owner
+            .support_report(&profile_request("diagnostics.export", json!({})))
+            .unwrap();
+        assert_eq!(report["localObservation"]["availability"], "observed");
+        assert_eq!(report["localObservation"]["facts"]["visibleMihomoCount"], 1);
+        assert_eq!(
+            report["localObservation"]["facts"]["ownedCoreRunning"],
+            false
+        );
+        assert_eq!(report["runtime"]["lastKnownState"], "disconnected");
+        assert_eq!(report["coverage"]["controllerQuery"], false);
+        assert_eq!(owner.revision(), 0);
+        assert_eq!(owner.host().calls, 0);
+        assert!(fs::read(&store).unwrap() == before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn support_report_refuses_changed_store_desired_and_ownership_after_observation() {
+        for kind in ["store", "desired", "ownership"] {
+            let (root, store, mut owner) = support_fixture(kind);
+            let (path, bytes) = match kind {
+                "store" => {
+                    let mut value: Value =
+                        serde_json::from_slice(&fs::read(&store).unwrap()).unwrap();
+                    value["onboardingComplete"] = json!(false);
+                    (store, serde_json::to_vec(&value).unwrap())
+                }
+                "desired" => {
+                    let desired_paths = owner.transaction.desired_paths();
+                    let mut desired = crate::desired::read_desired_snapshot(
+                        desired_paths,
+                        owner.transaction.uid(),
+                    )
+                    .unwrap();
+                    desired.mode = RoutingMode::Direct;
+                    (
+                        desired_paths.file.clone(),
+                        serde_json::to_vec(&desired).unwrap(),
+                    )
+                }
+                _ => (
+                    owner.transaction.cutover_paths().ownership_marker.clone(),
+                    br#"{"schemaVersion":1,"generation":3,"phase":"rollbackPreparing"}"#.to_vec(),
+                ),
+            };
+            owner.host_mut().support_read_change = Some((path, bytes));
+            assert!(matches!(
+                owner.support_report(&profile_request("diagnostics.export", json!({}))),
+                Err(NativeOwnerError::OwnershipUnavailable)
+            ));
+            assert_eq!(owner.revision(), 0);
+            assert_eq!(owner.host().calls, 0);
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

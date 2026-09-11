@@ -425,19 +425,51 @@ function routingResult(raw, revision) {
     && p.api === "omavless.control" && p.version === 1 && id(p.id, false)
     && p.ok === true && number(p.revision, 9007199254740991) && p.revision === revision ? p.result : null
 }
-// Explicit shareable configuration-only projection. Never copy the raw frame.
+// Shareable support projection. V1 remains configuration-only; v2 carries
+// bounded fresh local facts without claiming DNS/routes/service ownership.
+function supportObservation(r) {
+  if (!object(r, ["availability", "desired", "facts", "verification"])
+      || ["observed", "unavailable"].indexOf(r.availability) < 0
+      || !object(r.desired, ["connected", "mode"]) || typeof r.desired.connected !== "boolean"
+      || ["rule", "global", "direct"].indexOf(r.desired.mode) < 0
+      || !object(r.verification, ["serviceOwnership", "tunOwnership", "routes", "dns", "internet"])
+      || !Object.keys(r.verification).every(function(k) { return r.verification[k] === false })) return null
+  var f = r.facts, facts = null
+  if (r.availability === "unavailable") { if (f !== null) return null }
+  else {
+    if (!object(f, ["ownedCoreRunning", "visibleMihomoCount", "ownedAuxiliaryMihomoCount", "visibleTunCount", "ownedControllerConfigVerified", "desiredProfileMatchesOwned"])
+        || typeof f.ownedCoreRunning !== "boolean" || typeof f.ownedControllerConfigVerified !== "boolean"
+        || typeof f.desiredProfileMatchesOwned !== "boolean" || !number(f.visibleMihomoCount, 64) || !number(f.visibleTunCount, 8)
+        || !number(f.ownedAuxiliaryMihomoCount, Math.min(1, f.visibleMihomoCount))
+        || (f.desiredProfileMatchesOwned && (!f.ownedCoreRunning || !r.desired.connected))
+        || (f.ownedControllerConfigVerified && (!f.ownedCoreRunning || !f.desiredProfileMatchesOwned))) return null
+    facts = {ownedCoreRunning:f.ownedCoreRunning, visibleMihomoCount:f.visibleMihomoCount,
+      ownedAuxiliaryMihomoCount:f.ownedAuxiliaryMihomoCount, visibleTunCount:f.visibleTunCount,
+      ownedControllerConfigVerified:f.ownedControllerConfigVerified, desiredProfileMatchesOwned:f.desiredProfileMatchesOwned}
+  }
+  return {availability:r.availability, desired:{connected:r.desired.connected, mode:r.desired.mode}, facts:facts,
+    verification:{serviceOwnership:false, tunOwnership:false, routes:false, dns:false, internet:false}}
+}
 function configurationReport(raw, revision) {
   try {
     var r = routingResult(raw, revision)
-    if (!object(r, ["schemaVersion", "scope", "runtime", "configuration", "coverage"])
-        || r.schemaVersion !== 1 || r.scope !== "native_configuration") return null
+    if (!r) return null
+    var modern = r.schemaVersion === 2
+    if (!(modern ? object(r, ["schemaVersion", "scope", "runtime", "configuration", "coverage", "localObservation"])
+        && r.scope === "native_support" : object(r, ["schemaVersion", "scope", "runtime", "configuration", "coverage"])
+        && r.schemaVersion === 1 && r.scope === "native_configuration")) return null
+    var observation = modern ? supportObservation(r.localObservation) : null
+    if (modern && !observation) return null
     var h = r.runtime, c = r.configuration, v = r.coverage
     if (!object(h, ["implementation", "version", "lastKnownState", "routingTransactionPending"])
         || h.implementation !== "rust" || !text(h.version, 32, false) || !/^\d+\.\d+\.\d+$/.test(h.version)
         || ["disconnected", "starting", "connected", "reconnecting", "stopping", "failed", "manual_recovery_required"].indexOf(h.lastKnownState) < 0
         || typeof h.routingTransactionPending !== "boolean"
-        || !object(v, ["privateStoreValidated", "liveHostObservation", "controllerQuery", "loginActivationVerified"])
-        || v.privateStoreValidated !== true || v.liveHostObservation !== false || v.controllerQuery !== false || v.loginActivationVerified !== false
+        || !(modern ? object(v, ["privateStoreValidated", "liveHostObservation", "controllerQuery", "loginActivationVerified", "coreSetupVerified", "serviceEnablementVerified", "loadedPolicyCounts", "fileReadiness"])
+          && v.coreSetupVerified === false && v.serviceEnablementVerified === false && v.loadedPolicyCounts === false && v.fileReadiness === false
+          : object(v, ["privateStoreValidated", "liveHostObservation", "controllerQuery", "loginActivationVerified"]))
+        || v.privateStoreValidated !== true || v.liveHostObservation !== (modern && observation.availability === "observed")
+        || v.controllerQuery !== !!(modern && observation.facts && observation.facts.ownedControllerConfigVerified) || v.loginActivationVerified !== false
         || !object(c, ["inventory", "routing", "startup", "updates", "onboardingComplete"])) return null
     var i = c.inventory, s = c.startup, t = c.routing
     if (!object(i, ["profiles", "favorites", "subscriptions", "customRules"])
@@ -450,12 +482,20 @@ function configurationReport(raw, revision) {
         || typeof c.onboardingComplete !== "boolean") return null
     // Unknown user-defined preset labels are never shareable identifiers.
     var preset = ["", "custom", "roscomvpn-default", "china-cn-direct", "iran-ir-direct"].indexOf(t.preset) >= 0 ? t.preset : "custom"
-    return JSON.stringify({schemaVersion:1, scope:"native_configuration", runtime:{implementation:"rust", version:h.version,
+    var report = {schemaVersion:r.schemaVersion, scope:r.scope, runtime:{implementation:"rust", version:h.version,
       lastKnownState:h.lastKnownState, routingTransactionPending:h.routingTransactionPending}, configuration:{inventory:{profiles:i.profiles,
       favorites:i.favorites, subscriptions:i.subscriptions, customRules:i.customRules}, routing:{preset:preset, configured:t.configured,
       lastManualRuleUpdate:t.lastManualRuleUpdate}, startup:{configured:s.configured, enabled:s.enabled, target:s.target, mode:s.mode},
       updates:{latestSubscription:c.updates.latestSubscription}, onboardingComplete:c.onboardingComplete}, coverage:{privateStoreValidated:true,
-      liveHostObservation:false, controllerQuery:false, loginActivationVerified:false}}, null, 2) + "\n"
+      liveHostObservation:v.liveHostObservation, controllerQuery:v.controllerQuery, loginActivationVerified:false}}
+    if (modern) {
+      report.localObservation = observation
+      report.coverage.coreSetupVerified = false
+      report.coverage.serviceEnablementVerified = false
+      report.coverage.loadedPolicyCounts = false
+      report.coverage.fileReadiness = false
+    }
+    return JSON.stringify(report, null, 2) + "\n"
   } catch (_) { return null }
 }
 function parseCustomRules(raw, revision) {

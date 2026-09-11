@@ -168,8 +168,15 @@ adds strict missing-unit admission and safe default state parents. The later
 [real packaged fresh-user gate](docs/testing/R6_FRESH_PACKAGE_ACTIVATION_2026-09-11.md)
 PASSed initialize/activate/retry refusal with no legacy service on Try Omarchy
 ARM64; the main UI mode controls/profile frame were restored and inspected too.
-Complete
-onboarding/login/package recovery, support composition and controlled DNS/auth/
+The [installed Python-unavailable Off/login gate](docs/testing/R6_INSTALLED_NO_PYTHON_LOGIN_OFF_2026-09-11.md)
+then PASSed with the actual packaged daemon in a disposable real user-manager
+namespace: fresh setup/cutover, full session teardown/new epoch, and same-session
+disconnected restart. Last/pinned, graphical/live and package recovery are not
+covered by that empty-user gate.
+The subsequent [native support composition](docs/testing/R6_NATIVE_SUPPORT_COMPOSITION.md)
+adds fenced fresh local facts to the private-data-free support report, without
+claiming DNS/routes/login or complete legacy doctor coverage. Complete
+onboarding/login/package recovery, remaining host-support coverage and controlled DNS/auth/
 full installed Python-absence remain open. These are local-only checkpoints,
 not published `main` or a completed R6 release.
 
