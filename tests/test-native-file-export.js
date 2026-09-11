@@ -9,7 +9,8 @@ function test(name, fn) { try { fn(); count++; } catch (e) { e.message = name + 
 function context() {
   const c = vm.createContext({NativeSnapshot:parser, nativeCanAct:true, nativeSnapshot:{instanceId:'instance',revision:7,profiles:[{id:'one'},{id:'two'}]}, nativeFileExportContext:null, nativeFileExportProcess:null, nativeFileExportStatus:'',backendPath:'/synthetic/backend.sh'});
   c.root = c;
-  c.nativeFileExportComponent = {createObject:(_, properties) => ({...properties, destroy(){this.destroyed=true}})};
+  // QML initial properties cross a QVariant map; object identity is not retained.
+  c.nativeFileExportComponent = {createObject:(_, properties) => ({...JSON.parse(JSON.stringify(properties)), destroy(){this.destroyed=true}})};
   for (const name of ['validNativeExportPath','nativeFileExportCurrent','startNativeFileExport','startNativeReportFileExport','finishNativeFileExport']) {
     const start=source.indexOf('  function '+name+'('), end=source.indexOf('\n  }', start)+4;
     assert(start>=0); vm.runInContext(source.slice(start,end), c);

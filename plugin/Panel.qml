@@ -1423,6 +1423,7 @@ Panel {
       cursorActive = false
       hoveredSubscriptionServerUuid = ""
       if (panelFlick) panelFlick.contentY = 0
+      if (nativeFlick) nativeFlick.contentY = 0
       vless.refresh()
       Qt.callLater(function() {
         keyCatcher.forceActiveFocus()

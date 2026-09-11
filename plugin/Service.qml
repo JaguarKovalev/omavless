@@ -3238,8 +3238,11 @@ Item {
     nativeFileExportKind = "report"
     nativeFileExportStatus = "pending"
     nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
-      context:context, command:["bash", backendPath, "native-support-report"]})
+      command:["bash", backendPath, "native-support-report"]})
     if (nativeFileExportProcess === null) { nativeFileExportContext = null; nativeFileExportStatus = "failed"; return false }
+    // createObject's initial-property map copies JS objects through QVariant.
+    // Assign afterward to preserve the exact operation identity fence.
+    nativeFileExportProcess.context = context
     nativeFileExportProcess.running = true
     return true
   }
@@ -3251,8 +3254,9 @@ Item {
     nativeFileExportKind = "profile"
     nativeFileExportStatus = "pending"
     nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
-      context:context, command:["bash", backendPath, "native-profile-file", profile.uuid]})
+      command:["bash", backendPath, "native-profile-file", profile.uuid]})
     if (nativeFileExportProcess === null) { nativeFileExportContext = null; nativeFileExportStatus = "failed"; return false }
+    nativeFileExportProcess.context = context
     nativeFileExportProcess.running = true
     return true
   }
@@ -3269,9 +3273,10 @@ Item {
         ? (context.kind === "report" ? NativeSnapshot.configurationReport(output, context.revision) : NativeSnapshot.parseQrExport(output, context.revision)) : null
       if (content === null) { nativeFileExportStatus = "failed"; nativeFileExportContext = null; return }
       nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
-        context:context, writing:true, privateInput:context.path + "\n" + content,
+        writing:true, privateInput:context.path + "\n" + content,
         stdinEnabled:true, command:["bash", backendPath, "native-export-write"]})
       if (nativeFileExportProcess === null) { nativeFileExportStatus = "failed"; nativeFileExportContext = null; return }
+      nativeFileExportProcess.context = context
       nativeFileExportProcess.running = true
     } finally { process.destroy() }
   }

@@ -22,6 +22,17 @@ function context(){
   return c;
 }
 let count=0;function test(name,f){try{f();count++;}catch(e){e.message=name+': '+e.message;throw e;}}
+test('reopening main resets both scrollers without erasing search',()=>{
+  const c=context();c.opened=true;c.panelFlick={contentY:210};c.nativeFlick.contentY=470;c.profileFilter='kept';
+  c.vless.refresh=()=>{};
+  for(const name of ['subscriptionPrompt','routingPresetPrompt','startupPrompt','onboardingWizard','routingToolsPrompt']) c[name]={dismiss(){}};
+  for(const name of ['cancelImport','cancelRename','cancelFileExport','syncNativeOnboarding']) c[name]=()=>{};
+  c.keyCatcher={forceActiveFocus(){}};
+  const start=source.indexOf('  onOpenedChanged: {');
+  const body=source.slice(start+'  onOpenedChanged: {'.length,source.indexOf('\n  }',start));
+  vm.runInContext(body,c);
+  assert.equal(c.page,'main');assert.equal(c.nativeFlick.contentY,0);assert.equal(c.panelFlick.contentY,0);assert.equal(c.profileFilter,'kept');
+});
 test('standalone and collapsed subscriptions preserve grouping',()=>{
   const c=context();let rows=c.buildNativeRows();assert.equal(rows.length,2);assert.equal(rows[0].profile.id,'local');assert.equal(rows[1].subscription.id,'sub');
   c.toggleNativeSubscription('sub');rows=c.buildNativeRows();assert.equal(rows.length,3);assert.equal(rows[2].profile.id,'managed');
