@@ -134,6 +134,53 @@ fn initialize_creates_exact_private_defaults_without_python_or_runtime_and_retri
 }
 
 #[test]
+fn default_state_parents_are_create_only_and_custom_roots_require_host_preparation() {
+    let f = Fixture::new();
+    let run = || {
+        f.command()
+            .env_remove("XDG_STATE_HOME")
+            .args(["setup", "initialize"])
+            .output()
+            .unwrap()
+    };
+    accepted(run(), 2);
+    for path in [f.home.join(".local"), f.home.join(".local/state")] {
+        let m = fs::symlink_metadata(path).unwrap();
+        assert!(m.is_dir());
+        assert_eq!(m.mode() & 0o777, 0o700);
+        assert_eq!(m.uid(), Uid::current().as_raw());
+    }
+    assert!(!f.home.join(".local/state/omavless").exists());
+    accepted(run(), 0);
+    fs::set_permissions(f.home.join(".local"), fs::Permissions::from_mode(0o777)).unwrap();
+    refused(run());
+    assert_eq!(
+        fs::metadata(f.home.join(".local")).unwrap().mode() & 0o777,
+        0o777
+    );
+
+    let f = Fixture::new();
+    refused(
+        f.command()
+            .env("XDG_STATE_HOME", f.root.join("missing/custom"))
+            .args(["setup", "initialize"])
+            .output()
+            .unwrap(),
+    );
+    assert!(!f.config().exists());
+    assert!(!f.root.join("missing").exists());
+    symlink(&f.state, f.home.join(".local")).unwrap();
+    refused(
+        f.command()
+            .env_remove("XDG_STATE_HOME")
+            .args(["setup", "initialize"])
+            .output()
+            .unwrap(),
+    );
+    assert!(!f.state.join("state").exists());
+}
+
+#[test]
 fn initialize_resumes_only_exact_partial_initial_payloads() {
     for missing_store in [true, false] {
         let f = Fixture::new();

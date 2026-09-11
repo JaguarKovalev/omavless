@@ -630,6 +630,16 @@ impl<B: ProductionPluginBridge> CutoverTransactionHost for ProductionCutoverHost
     }
 
     fn stop_legacy(&mut self) -> Result<(), CutoverHostError> {
+        let installation = crate::production_observation::cutover_service_installation(
+            &self.paths.systemctl,
+            LEGACY_SERVICE,
+        )
+        .map_err(|_| CutoverHostError)?;
+        if crate::cutover_activation::legacy_unit_absent(&installation)
+            .map_err(|_| CutoverHostError)?
+        {
+            return self.wait_service(LEGACY_SERVICE, false);
+        }
         self.run_service_action("stop", LEGACY_SERVICE)?;
         self.wait_service(LEGACY_SERVICE, false)
     }
@@ -766,10 +776,7 @@ impl<B: ProductionPluginBridge> CutoverTransactionHost for ProductionCutoverHost
         }
         self.restore_desired(desired)?;
         match readiness {
-            CutoverReadiness::ReadyDisconnected => {
-                self.run_service_action("stop", LEGACY_SERVICE)?;
-                self.wait_service(LEGACY_SERVICE, false)
-            }
+            CutoverReadiness::ReadyDisconnected => self.stop_legacy(),
             CutoverReadiness::ReadyToAdopt => {
                 let intent = self.staged_intent.as_ref().ok_or(CutoverHostError)?;
                 self.restore_legacy_config(intent)?;
@@ -845,7 +852,7 @@ mod tests {
     fn publish_service_harness(path: &Path, script: &str) {
         let staged = path.with_extension("staged");
         let script = format!(
-            "#!/bin/sh\ncase \"$*\" in *--property=UnitFileState*) printf 'UnitFileState=disabled\\nNeedDaemonReload=no\\nDropInPaths=\\nFragmentPath=/usr/lib/systemd/user/omavless-runtime.service\\n'; exit 0 ;; esac\n{}",
+            "#!/bin/sh\ncase \"$*\" in *--property=UnitFileState*) printf 'LoadState=loaded\\nUnitFileState=disabled\\nNeedDaemonReload=no\\nDropInPaths=\\nFragmentPath=/usr/lib/systemd/user/omavless-runtime.service\\n'; exit 0 ;; esac\n{}",
             script.strip_prefix("#!/bin/sh\n").unwrap_or(script)
         );
         fs::write(&staged, script).unwrap();
@@ -973,6 +980,80 @@ mod tests {
                 writeln!(stream, "{}", serde_json::to_string(&response).unwrap()).unwrap();
             }
         })
+    }
+
+    fn remove_legacy_fixture_unit(fixture: &Fixture) {
+        let path = &fixture.paths.systemctl;
+        let original = fs::read_to_string(path).unwrap();
+        let wrapper = format!(
+            "#!/bin/sh\nif [ \"$3\" = omavless.service ]; then\n if [ \"$2\" != show ]; then touch '{}'; exit 4; fi\n printf 'LoadState=not-found\\nUnitFileState=\\nFragmentPath=\\nDropInPaths=\\nNeedDaemonReload=no\\nActiveState=inactive\\nMainPID=0\\nExecMainStatus=0\\nResult=success\\n'; exit 0\nfi\n{}",
+            fixture.root.join("forbidden-legacy-action").display(),
+            original.strip_prefix("#!/bin/sh\n").unwrap()
+        );
+        let staged = path.with_extension("absent");
+        fs::write(&staged, wrapper).unwrap();
+        fs::set_permissions(&staged, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::rename(staged, path).unwrap();
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    #[test]
+    fn absent_legacy_activation_commits_without_legacy_actions() {
+        let fixture = Fixture::new("absent-legacy");
+        fixture.write_private(
+            &fixture.paths.store,
+            std::str::from_utf8(crate::store_bootstrap::EMPTY_STORE_PAYLOAD).unwrap(),
+        );
+        fixture.write_private(
+            &fixture.paths.template,
+            include_str!("../../../templates/default.yaml"),
+        );
+        install_service_harness(&fixture, false, false);
+        remove_legacy_fixture_unit(&fixture);
+        let hello = json!({"instanceId":"fresh-candidate","version":1,"runtimeOwnership":false});
+        let server = spawn_candidate_server(
+            &fixture,
+            vec![
+                (
+                    "runtime.transitionBootstrap",
+                    json!({"instanceId":"fresh-candidate","preparingGeneration":1,"rustGeneration":2,"runtimeOwnership":false}),
+                ),
+                ("system.hello", hello.clone()),
+                (
+                    "status.get",
+                    json!({"desired":"disconnected","actual":"disconnected","activeProfileId":"","mode":"rule","transition":"cutoverPreparing","runtimeOwnership":false}),
+                ),
+                ("system.hello", hello.clone()),
+                ("system.hello", hello),
+            ],
+        );
+        let mut host =
+            ProductionCutoverHost::new(fixture.paths.clone(), fixture.uid, FakeBridge::new())
+                .unwrap();
+        let outcome = host.activate_disconnected().unwrap();
+        server.join().unwrap();
+        assert_eq!(outcome.marker.phase(), OwnershipPhase::Rust);
+        assert_eq!(outcome.marker.generation(), 2);
+        assert!(!fixture.root.join("forbidden-legacy-action").exists());
+        assert!(
+            !read_desired(&fixture.paths.desired, fixture.uid)
+                .unwrap()
+                .connected
+        );
+    }
+
+    #[test]
+    fn absent_legacy_failed_candidate_restores_without_legacy_actions() {
+        let fixture = Fixture::new("absent-legacy-rollback");
+        prepare_disconnected_fixture(&fixture);
+        install_service_harness(&fixture, true, false);
+        remove_legacy_fixture_unit(&fixture);
+        let bridge = FakeBridge::new();
+        let mut host =
+            ProductionCutoverHost::new(fixture.paths.clone(), fixture.uid, bridge.clone()).unwrap();
+        assert!(host.activate_disconnected().is_err());
+        assert_disconnected_restored(&fixture, &bridge);
+        assert!(!fixture.root.join("forbidden-legacy-action").exists());
     }
 
     fn assert_disconnected_restored(fixture: &Fixture, bridge: &FakeBridge) {

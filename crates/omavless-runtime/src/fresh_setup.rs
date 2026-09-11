@@ -168,6 +168,19 @@ fn prepare(paths: &SetupPaths, uid: u32) -> Result<SetupOutcome, SetupError> {
         return Err(SetupError::UnsafePath);
     }
     validate_chain(&paths.cutover.state_directory)?;
+    let state_base = paths
+        .cutover
+        .state_directory
+        .parent()
+        .ok_or(SetupError::UnsafePath)?;
+    let default_state = paths.home.join(".local/state");
+    if state_base == default_state {
+        directory(&paths.home.join(".local"), uid, false)?;
+        directory(state_base, uid, false)?;
+    } else if !directory(state_base, uid, false)? {
+        // Custom XDG roots are host configuration, not arbitrary mkdir inputs.
+        return Err(SetupError::UnsafePath);
+    }
     if !directory(&paths.cutover.runtime_base, uid, true)? {
         return Err(SetupError::UnsafePath);
     }
@@ -181,6 +194,10 @@ fn prepare(paths: &SetupPaths, uid: u32) -> Result<SetupOutcome, SetupError> {
     })?;
     unused_state(paths, uid)?;
     initial_config(&config, uid)?;
+    if state_base == default_state {
+        ensure_directory(&paths.home.join(".local"), uid, false)?;
+        ensure_directory(state_base, uid, false)?;
+    }
     ensure_directory(&parent, uid, false)?;
     ensure_directory(&config, uid, true)?;
     initial_config(&config, uid)?;
