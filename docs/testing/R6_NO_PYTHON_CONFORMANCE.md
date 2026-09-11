@@ -5,6 +5,12 @@
 
 ## Two complementary layers
 
+Subsequent fresh-setup checkpoint: the harness now includes the fixed fifth
+`fresh_setup_cli` suite. All54 CLI tests pass on source `58b9856`, including nine
+fresh-config cases. See [fresh preparation](R6_FRESH_CONFIG_PREPARATION.md) for
+the new binary identity. The four-suite/45-test identity below is historical;
+include `--test fresh_setup_cli` when regenerating the current artifact manifest.
+
 `tests/test_native_launcher_no_python.py` executes the real `backend.sh` with a
 synthetic fixed native executable and a PATH containing no interpreter or host
 commands. One matrix covers 51 aliases and 14 private-stdin flows, exact argv,

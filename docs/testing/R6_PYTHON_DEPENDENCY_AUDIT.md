@@ -30,6 +30,12 @@ Python-unavailable matrix and fresh-login gates remain open.
 
 ### Subsequent local checkpoints in this session
 
+`58b9856` implements fixed `setup initialize` for create-only private empty
+config preparation; [contract/evidence](R6_FRESH_CONFIG_PREPARATION.md).
+This is tested compiled Rust, not installed activation. Clean-host absent-legacy
+admission and complete onboarding/activation remain open; do not confuse
+prepared files with committed ownership or finished first-install support.
+
 `3eb2d73` adds and installs an explicitly guarded native-only frontend, omitting
 the installed legacy backend/remover and refusing interpreter fallback if the
 legacy payload is absent. See [native-only frontend](R6_NATIVE_ONLY_FRONTEND.md).

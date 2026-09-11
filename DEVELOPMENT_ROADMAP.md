@@ -157,6 +157,17 @@ headless file-import/support boundaries and real login/package/authorization/
 Python-unavailable gates. Do not describe this remainder as merely deleting
 `backend.py`, and do not start TUI production before R6.
 
+Later local checkpoints supersede parts of that audit: the
+[IPC file-import/export pass](docs/testing/R6_NATIVE_IPC_FILE_IMPORT.md) and
+[native-only frontend installation](docs/testing/R6_NATIVE_ONLY_FRONTEND.md)
+have actual Try Omarchy UI evidence. The
+[fresh-config preparation CLI](docs/testing/R6_FRESH_CONFIG_PREPARATION.md)
+adds create-only defaults with54 compiled no-Python conformance tests; it does
+**not** activate ownership. Missing-legacy clean-host activation, complete
+onboarding/login/package recovery, support composition and controlled DNS/auth/
+full installed Python-absence remain open. These are local-only checkpoints,
+not published `main` or a completed R6 release.
+
 ## 3. The new global sequence
 
 Development now has two active lanes which intentionally converge.
