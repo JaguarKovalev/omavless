@@ -98,6 +98,7 @@ test('native view keeps data plain and hides legacy mutation pages while diagnos
   assert(!/(?:^|\s)Text \{/.test(view));
   assert(!view.includes('Text.AutoText'));
   assert(view.includes('focusable: true; bordered: true'));
-  assert(source.includes('nativeControls: true, liveHealth: "unavailable", metadataUnavailable: vless.nativeSnapshotFailed'));
+  assert(source.includes('return JSON.stringify(root.nativeIpc.diagnostics)'));
+  assert(source.includes('readonly property var nativeIpc: NativePresentation.ipc'));
 });
 console.log(`${count} native snapshot tests passed`);

@@ -159,6 +159,8 @@ Panel {
   property int nativeCursor: -1
   property var nativeExpanded: ({})
   readonly property var nativeView: NativePresentation.project(vless.nativeSnapshot, vless.nativeObservation, vless.nativeSnapshotFailed)
+  readonly property var nativeIpc: NativePresentation.ipc(vless.nativeSnapshot, vless.nativeObservation,
+    vless.nativeSnapshotFailed, vless.nativePending, vless.nativeOutcomeUnknown)
   readonly property var nativeRows: buildNativeRows()
   property var nativeSettingsControl: null
   property var nativeQrControl: null
@@ -1588,13 +1590,13 @@ Panel {
       if (vless.nativeOwner) return vless.requestNativeAction("disconnect", "", "") ? "ok" : "error: native action unavailable"
       return vless.disconnectAll() ? "ok" : "error: " + vless.actionRejection
     }
-    function status(): string { return vless.statusText }
-    function routing(): string { return vless.nativeOwner ? "Native routing observation unavailable" : vless.routingTitle + " · " + vless.routingSummary }
+    function status(): string { return vless.nativeOwner ? root.nativeIpc.status : vless.statusText }
+    function routing(): string { return vless.nativeOwner ? root.nativeIpc.routing : vless.routingTitle + " · " + vless.routingSummary }
     // Credential-free support snapshot. Names, ids, endpoints, provider URLs
     // and free-form error strings stay out because they can identify a user
     // even when they do not contain the complete profile credential.
     function diagnostics(): string {
-      if (vless.nativeOwner) return JSON.stringify({nativeControls: true, liveHealth: "unavailable", metadataUnavailable: vless.nativeSnapshotFailed, localFactsCurrent: vless.nativeFactsCurrent, pending: vless.nativePending !== null, outcomeUnknown: vless.nativeOutcomeUnknown})
+      if (vless.nativeOwner) return JSON.stringify(root.nativeIpc.diagnostics)
       return JSON.stringify({
         active: vless.active,
         profiles: vless.profiles.length,
@@ -1611,7 +1613,7 @@ Panel {
     // The connection grid without the panel. Rates and ping only move while
     // something is watching them, so a headless caller sees the totals and
     // the addresses live, and "--" where a sample would have to be paid for.
-    function details(): string { return vless.nativeOwner ? "Native live details unavailable" : vless.detailsText() }
+    function details(): string { return vless.nativeOwner ? root.nativeIpc.details : vless.detailsText() }
     // Headless import — no prompt, the name is derived from the filename.
     // (`import` is a JS keyword, hence the longer name.)
     function importConfig(path: string): string {
