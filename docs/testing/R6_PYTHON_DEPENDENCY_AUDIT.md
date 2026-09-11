@@ -30,6 +30,12 @@ Python-unavailable matrix and fresh-login gates remain open.
 
 ### Subsequent local checkpoints in this session
 
+`3eb2d73` adds and installs an explicitly guarded native-only frontend, omitting
+the installed legacy backend/remover and refusing interpreter fallback if the
+legacy payload is absent. See [native-only frontend](R6_NATIVE_ONLY_FRONTEND.md).
+Default compatibility installation still exists; this closes an opt-in migrated
+host payload boundary, not clean-user initialization or full Python-absence.
+
 Later installed UI/IPC evidence at `2fd0d2b` supersedes the old installation
 identity and headless-file-import gap below: see
 [native IPC file import](R6_NATIVE_IPC_FILE_IMPORT.md). It includes successful

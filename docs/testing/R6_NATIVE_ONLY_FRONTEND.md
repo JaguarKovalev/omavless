@@ -53,3 +53,27 @@ The installed native payload is a prerequisite for the full application-scoped
 Python-unavailable matrix, not a substitute for it. Clean-user initialization,
 complete support composition, login, package upgrade/removal/rollback/recovery
 and the controlled DNS/host authorization gates remain open.
+
+## Installed local evidence
+
+Exact candidate `3eb2d73d1a4a4c5c5b3597534128245acc954767` installed with the
+native-only option on Try Omarchy ARM64. All 21 tracked runtime frontend/
+launcher/manifest files match byte-for-byte. `backend.py` and `uninstall.sh`
+are absent from the installed plugin; their source remains recoverable in Git.
+No system Python files or private profile data were removed. Rust executable
+remains the previously recorded `9de33cd` build.
+
+After asynchronous shell reload settled, cached status returned disconnected,
+and actual IPC file import displayed the synthetic profile confirmation in the
+installed UI. It was canceled without saving. This update did not need another
+shell restart; initial IPC requests during reload were unavailable, so those
+attempts are not counted as acceptance. No VPN/auth operation was initiated.
+
+Full local tests: 411 Python tests, 4 expected skips, all JS/QML contracts PASS.
+The actual Quickshell synthetic export regression also passes. Compile, shell
+syntax, JSON, plugin validation and diff checks pass. No Rust production code
+changed or Rust workspace test rerun is claimed.
+
+Final state: runtime service active, Routing/disconnected, no manual recovery,
+Mihomo/auxiliary/TUN 0/0/0, plugin enabled, 22 profiles and one subscription.
+Private screenshots stay outside Git. Local-only; no GitHub/main changes.
