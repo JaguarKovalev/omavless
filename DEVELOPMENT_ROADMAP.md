@@ -137,8 +137,25 @@ uninstall/purge refuses Rust-owned state; native package removal is not claimed.
   that checkpoint: desired disconnected and zero core/TUN were observed, but
   the coordinator remained in manual recovery until explicit reconciliation.
   Capture the failing cleanup phase before changing lifecycle/security policy.
+  The [local process-exit correction](docs/testing/R5_NATIVE_DISCONNECT_PROCESS_EXIT.md)
+  now distinguishes proven procfs task disappearance and adds safe phase
+  evidence. Its automatic batch exposed unresolved host authorization; that
+  result is not full host acceptance. Use the
+  [per-action human barrier](docs/testing/HOST_AUTHORIZATION_ACCEPTANCE.md),
+  never unattended repeated transitions or a PAM/polkit bypass.
 Neither this checkpoint nor the probe evidence completes R5/R6 or V0;
 Python retirement still requires the full installed Python-unavailable gate.
+
+The [2026-09-11 local R6 audit](docs/testing/R6_PYTHON_DEPENDENCY_AUDIT.md)
+separates retained legacy/oracle code from actual native dependencies. Local
+no-sudo work adds 51-alias launcher conformance, 45 actual Rust executable
+tests with Python masked in isolated namespaces, cached shell IPC reads and
+native-aware installer picker reporting. These are local candidates, not
+published/installed frontend acceptance. Remaining concrete work includes a
+Python-free first-install composition, final native frontend distribution,
+headless file-import/support boundaries and real login/package/authorization/
+Python-unavailable gates. Do not describe this remainder as merely deleting
+`backend.py`, and do not start TUI production before R6.
 
 ## 3. The new global sequence
 
