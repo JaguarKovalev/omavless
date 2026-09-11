@@ -687,7 +687,7 @@ Panel {
       var targets = page === "settings" ? [nativeSettingsBack, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeRule, nativeGlobal, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeRefresh]
         : page === "subscriptions" ? [nativeSettingsBack, nativeRefresh, nativeSubscriptionAdd, nativeSubscriptionRefreshAll]
         : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionTest, nativeSubscriptionSort, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
-        : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativePingTest, nativeModeSetting, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
+        : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativeGlobal, nativeRule, nativeDirect, nativePingTest, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
       targets = targets.concat([nativeBatchCheck, nativeBatchCancel, nativeBatchDismiss, nativeBatchAbandon])
       if (page === "settings") targets.push(nativeProvidersRefresh.focusTarget)
       if (page === "settings") targets.push(nativeSupportSetting.focusTarget)
@@ -2031,7 +2031,18 @@ Panel {
             visible: root.page === "main"
             Layout.fillWidth: true
             PlainText { Layout.fillWidth: true; text: root.textFor("native.main.modeLabel"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-            Button { id: nativeModeSetting; text: root.nativeModeLabel(root.nativeView.mode); focusable: true; bordered: false; foreground: root.foreground; onClicked: root.openSettings() }
+            PlainText { text: root.nativeModeLabel(root.nativeView.mode); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+          }
+          // Primary connection controls stay on the main page, like the
+          // reference frontend. Settings reuses this same action surface.
+          RowLayout {
+            id: nativeModeButtons
+            visible: root.page === "main" || root.page === "settings"
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+            Button { id: nativeGlobal; Layout.fillWidth: true; Layout.preferredWidth: 1; text: root.nativeModeLabel("global"); foreground: root.nativeView.mode === "global" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "global"; onClicked: vless.requestNativeAction("mode", "", "global") }
+            Button { id: nativeRule; Layout.fillWidth: true; Layout.preferredWidth: 1; text: root.nativeModeLabel("rule"); foreground: root.nativeView.mode === "rule" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "rule"; onClicked: vless.requestNativeAction("mode", "", "rule") }
+            Button { id: nativeDirect; Layout.fillWidth: true; Layout.preferredWidth: 1; text: root.nativeModeLabel("direct"); foreground: root.nativeView.mode === "direct" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "direct"; onClicked: vless.requestNativeAction("mode", "", "direct") }
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.setup_startup"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow {
@@ -2086,7 +2097,6 @@ Panel {
             actionEnabled: vless.nativeStartupAvailable
             onAction: startupPrompt.openWith(vless.nativeSnapshot.startup)
           }
-          PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.main.modeLabel"); foreground: root.foreground; fontFamily: root.fontFamily }
           ColumnLayout {
             id: nativeTrafficSection
             Layout.fillWidth: true
@@ -2128,13 +2138,6 @@ Panel {
             }
             PlainText { Layout.fillWidth: true; text: root.textFor("native.ping." + (vless.nativePingStatus || "unavailable")); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
             PlainText { Layout.fillWidth: true; visible: vless.nativeTrafficFresh; text: root.textFor("traffic.native_note"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-          }
-          RowLayout {
-            visible: root.page === "settings"
-            Layout.fillWidth: true
-            Button { id: nativeRule; Layout.fillWidth: true; text: root.nativeModeLabel("rule"); foreground: root.nativeView.mode === "rule" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "rule"; onClicked: vless.requestNativeAction("mode", "", "rule") }
-            Button { id: nativeGlobal; Layout.fillWidth: true; text: root.nativeModeLabel("global"); foreground: root.nativeView.mode === "global" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "global"; onClicked: vless.requestNativeAction("mode", "", "global") }
-            Button { id: nativeDirect; Layout.fillWidth: true; text: root.nativeModeLabel("direct"); foreground: root.nativeView.mode === "direct" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "direct"; onClicked: vless.requestNativeAction("mode", "", "direct") }
           }
           PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.settings.modeHelp"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           SettingsActionRow {
@@ -2258,94 +2261,110 @@ Panel {
           }
           Button { id: nativeReconcile; visible: vless.nativeOutcomeUnknown; text: root.textFor("native.reconcile"); focusable: true; bordered: true; enabled: !vless.nativeActionRunning; onClicked: vless.reconcileNativeAction() }
           Button { id: nativeAcceptState; visible: vless.nativeOutcomeUnknown; text: root.textFor("native.acceptState"); focusable: true; bordered: true; enabled: vless.nativeFactsCurrent && !vless.nativeActionRunning; onClicked: vless.acceptRefreshedNativeState() }
-          TextField {
-            id: nativeSearch
+          BorderSurface {
+            id: nativeProfilesFrame
             Layout.fillWidth: true
             visible: root.page === "main" || root.page === "subscription"
-            maximumLength: 128
-            placeholderText: root.textFor("profiles.search")
-            text: root.profileFilter
-            color: root.foreground
-            placeholderTextColor: root.dim
-            font.family: root.fontFamily
-            selectByMouse: true
-            onTextChanged: { root.profileFilter = text; root.nativeCursor = -1 }
-            Keys.onPressed: function(event) {
-              if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
-                root.focusPanelControl((event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Backtab ? -1 : 1)
-                event.accepted = true
-              }
-            }
-            Keys.onEscapePressed: function(event) { root.profileFilter = ""; keyCatcher.forceActiveFocus(); event.accepted = true }
-          }
-          PlainText { Layout.fillWidth: true; visible: (root.page === "main" || root.page === "subscription") && root.nativeRows.length === 0; text: root.textFor("native.main.empty"); color: root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          Repeater {
-            id: nativeProfiles
-            model: root.page === "main" || root.page === "subscription" ? root.nativeRows : []
-            delegate: ColumnLayout {
-              id: nativeRow
-              required property int index
-              required property var modelData
-              readonly property bool isProfile: modelData.kind === "profile"
-              readonly property var profile: isProfile ? modelData.profile : null
-              readonly property bool selected: isProfile && root.nativeSelectedProfile === profile.id
-              readonly property var record: isProfile ? root.nativeRecord(profile) : null
-              property var focusTargets: isProfile ? [nativeChoose, rowRename, rowPin, rowDelete, rowQr, rowExport, rowEdit, rowDetails, rowDetailsRefresh] : [nativeGroup]
-              Layout.fillWidth: true
-              spacing: Style.space(4)
-              RowLayout {
-                visible: !nativeRow.isProfile
+            implicitHeight: nativeProfilesContent.implicitHeight + Style.space(20)
+            color: "transparent"
+            radius: 0
+            borderSpec: Border.flat(Util.alpha(root.foreground, 0.38), Style.normalBorderWidth)
+            ColumnLayout {
+              id: nativeProfilesContent
+              x: Style.space(10)
+              y: Style.space(10)
+              width: Math.max(0, nativeProfilesFrame.width - Style.space(20))
+              spacing: Style.space(8)
+              TextField {
+                id: nativeSearch
                 Layout.fillWidth: true
-                PanelActionButton { id: nativeGroup; size: Style.space(24); foreground: root.nativeCursor === nativeRow.index ? Color.accent : root.foreground; iconText: nativeRow.isProfile ? "" : nativeRow.modelData.expanded ? "󰅀" : "󰅂"; tooltipText: root.textFor("native.subscriptions.browse"); focusable: true; onClicked: root.toggleNativeSubscription(nativeRow.modelData.subscription.id) }
-                PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? "" : nativeRow.modelData.subscription.name; textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
-                  MouseArea { anchors.fill: parent; onClicked: root.toggleNativeSubscription(nativeRow.modelData.subscription.id) }
+                visible: root.page === "main" || root.page === "subscription"
+                maximumLength: 128
+                placeholderText: root.textFor("profiles.search")
+                text: root.profileFilter
+                color: root.foreground
+                placeholderTextColor: root.dim
+                font.family: root.fontFamily
+                selectByMouse: true
+                onTextChanged: { root.profileFilter = text; root.nativeCursor = -1 }
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+                    root.focusPanelControl((event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Backtab ? -1 : 1)
+                    event.accepted = true
+                  }
                 }
-                PlainText { text: nativeRow.isProfile ? "" : String(nativeRow.modelData.count); color: root.dim; font.family: root.fontFamily }
+                Keys.onEscapePressed: function(event) { root.profileFilter = ""; keyCatcher.forceActiveFocus(); event.accepted = true }
               }
-              RowLayout {
-                visible: nativeRow.isProfile
-                Layout.fillWidth: true
-                PanelActionButton { id: nativeChoose; size: Style.space(24); iconText: nativeRow.selected ? "●" : "○"; tooltipText: root.textFor("common.select"); focusable: true; enabled: nativeRow.isProfile; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
-                PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? nativeRow.profile.name : ""; textFormat: Text.PlainText; color: nativeRow.isProfile && nativeRow.profile.id === root.nativeView.activeId ? Color.accent : root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
-                  MouseArea { anchors.fill: parent; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
-                }
-                PlainText { visible: !nativeRow.selected; text: nativeRow.isProfile ? nativeRow.profile.protocol : ""; color: root.dim; font.family: root.fontFamily }
-              Row {
-                visible: nativeRow.selected
-                Layout.alignment: Qt.AlignVCenter
-                spacing: Style.space(2)
-                PanelActionButton { id: rowRename; size: Style.space(24); iconText: "󰑕"; tooltipText: root.textFor("common.rename"); focusable: true; enabled: vless.nativeCanAct && nativeRow.record !== null && !nativeRow.record.managed; onClicked: root.requestRename(nativeRow.record) }
-                PanelActionButton { id: rowPin; size: Style.space(24); iconText: nativeRow.isProfile && nativeRow.profile.favorite ? "󰓎" : "󰓒"; tooltipText: root.textFor(nativeRow.isProfile && nativeRow.profile.favorite ? "native.unpin" : "native.pin"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: vless.toggleFavorite(nativeRow.record) }
-                PanelActionButton { id: rowDelete; size: Style.space(24); iconText: "󰆴"; tooltipText: root.textFor("common.delete"); focusable: true; enabled: vless.nativeCanAct && nativeRow.record !== null && !nativeRow.record.managed; onClicked: root.requestDelete(nativeRow.record) }
-                PanelActionButton { id: rowQr; size: Style.space(24); iconText: "󰐲"; tooltipText: root.textFor("native.main.qr"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: vless.showQr(nativeRow.record) }
-                PanelActionButton { id: rowExport; size: Style.space(24); iconText: "󰈔"; tooltipText: root.textFor("native.fileExport.title"); focusable: true; enabled: vless.nativeCanAct && vless.nativeFileExportProcess === null && nativeRow.isProfile; onClicked: root.requestFileExport(nativeRow.record) }
-                PanelActionButton { id: rowEdit; size: Style.space(24); iconText: "󰏫"; tooltipText: root.textFor("native.editor.open"); focusable: true; enabled: vless.nativeCanAct && vless.nativeEditorDraft === null && !vless.nativeEditorRunning && nativeRow.record !== null && !nativeRow.record.managed; onClicked: { if (root.handOffToEditor(nativeRow.record)) root.close() } }
-                PanelActionButton { id: rowDetails; size: Style.space(24); iconText: "󰋽"; tooltipText: root.textFor("native.details.open"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: root.nativeExpandedDetailsId = root.nativeExpandedDetailsId === nativeRow.profile.id ? "" : nativeRow.profile.id }
-              }
-              }
-              PlainText { Layout.fillWidth: true; visible: nativeRow.isProfile && vless.probeResult(nativeRow.profile.id) !== null; text: nativeRow.isProfile ? root.nativeProbeLabel(nativeRow.profile.id) : ""; textFormat: Text.PlainText; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-              ColumnLayout {
-                Layout.fillWidth: true
-                visible: nativeRow.selected && root.nativeExpandedDetailsId === nativeRow.profile.id
-                RowLayout {
+              PlainText { Layout.fillWidth: true; visible: (root.page === "main" || root.page === "subscription") && root.nativeRows.length === 0; text: root.textFor("native.main.empty"); color: root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+              Repeater {
+                id: nativeProfiles
+                model: root.page === "main" || root.page === "subscription" ? root.nativeRows : []
+                delegate: ColumnLayout {
+                  id: nativeRow
+                  required property int index
+                  required property var modelData
+                  readonly property bool isProfile: modelData.kind === "profile"
+                  readonly property var profile: isProfile ? modelData.profile : null
+                  readonly property bool selected: isProfile && root.nativeSelectedProfile === profile.id
+                  readonly property var record: isProfile ? root.nativeRecord(profile) : null
+                  property var focusTargets: isProfile ? [nativeChoose, rowRename, rowPin, rowDelete, rowQr, rowExport, rowEdit, rowDetails, rowDetailsRefresh] : [nativeGroup]
                   Layout.fillWidth: true
-                  PlainText { Layout.fillWidth: true; text: root.textFor("native.details.private"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-                  OmaNavigationButton { id: rowDetailsRefresh; iconText: "󰑓"; tooltipText: root.textFor("common.refresh"); focusable: true; enabled: vless.nativeCanAct && !vless.nativeProfileDetailsBusy; onClicked: vless.refreshNativeProfileDetails() }
-                }
-                PlainText { Layout.fillWidth: true; visible: vless.nativeProfileDetailsStatus !== ""; text: vless.nativeProfileDetailsStatus !== "" ? root.textFor("native.details." + vless.nativeProfileDetailsStatus) : ""; color: vless.nativeProfileDetailsStatus === "failed" ? root.urgent : root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
-                GridLayout {
-                  Layout.fillWidth: true
-                  columns: 1
-                  visible: vless.nativeProfileDetails !== null
-                  rowSpacing: Style.spacing.labelGap
-                  DetailPair { label: root.textFor("metric.server"); value: vless.nativeProfileDetails ? vless.nativeProfileDetails.server : "--" }
-                  DetailPair { label: root.textFor("import.protocol"); value: vless.nativeProfileDetails ? vless.nativeProfileDetails.protocol : "--" }
-                  DetailPair { label: root.textFor("metric.transport"); value: vless.nativeProfileDetails ? vless.nativeProfileDetails.transport + " / " + vless.nativeProfileDetails.security : "--" }
-                  DetailPair { label: "SNI"; value: vless.nativeProfileDetails ? root.detailText(vless.nativeProfileDetails.sni) : "--" }
+                  spacing: Style.space(4)
+                  RowLayout {
+                    visible: !nativeRow.isProfile
+                    Layout.fillWidth: true
+                    PanelActionButton { id: nativeGroup; size: Style.space(24); foreground: root.nativeCursor === nativeRow.index ? Color.accent : root.foreground; iconText: nativeRow.isProfile ? "" : nativeRow.modelData.expanded ? "󰅀" : "󰅂"; tooltipText: root.textFor("native.subscriptions.browse"); focusable: true; onClicked: root.toggleNativeSubscription(nativeRow.modelData.subscription.id) }
+                    PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? "" : nativeRow.modelData.subscription.name; textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
+                      MouseArea { anchors.fill: parent; onClicked: root.toggleNativeSubscription(nativeRow.modelData.subscription.id) }
+                    }
+                    PlainText { text: nativeRow.isProfile ? "" : String(nativeRow.modelData.count); color: root.dim; font.family: root.fontFamily }
+                  }
+                  RowLayout {
+                    visible: nativeRow.isProfile
+                    Layout.fillWidth: true
+                    PanelActionButton { id: nativeChoose; size: Style.space(24); iconText: nativeRow.selected ? "●" : "○"; tooltipText: root.textFor("common.select"); focusable: true; enabled: nativeRow.isProfile; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
+                    PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? nativeRow.profile.name : ""; textFormat: Text.PlainText; color: nativeRow.isProfile && nativeRow.profile.id === root.nativeView.activeId ? Color.accent : root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
+                      MouseArea { anchors.fill: parent; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
+                    }
+                    PlainText { visible: !nativeRow.selected; text: nativeRow.isProfile ? nativeRow.profile.protocol : ""; color: root.dim; font.family: root.fontFamily }
+                  Row {
+                    visible: nativeRow.selected
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: Style.space(2)
+                    PanelActionButton { id: rowRename; size: Style.space(24); iconText: "󰑕"; tooltipText: root.textFor("common.rename"); focusable: true; enabled: vless.nativeCanAct && nativeRow.record !== null && !nativeRow.record.managed; onClicked: root.requestRename(nativeRow.record) }
+                    PanelActionButton { id: rowPin; size: Style.space(24); iconText: nativeRow.isProfile && nativeRow.profile.favorite ? "󰓎" : "󰓒"; tooltipText: root.textFor(nativeRow.isProfile && nativeRow.profile.favorite ? "native.unpin" : "native.pin"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: vless.toggleFavorite(nativeRow.record) }
+                    PanelActionButton { id: rowDelete; size: Style.space(24); iconText: "󰆴"; tooltipText: root.textFor("common.delete"); focusable: true; enabled: vless.nativeCanAct && nativeRow.record !== null && !nativeRow.record.managed; onClicked: root.requestDelete(nativeRow.record) }
+                    PanelActionButton { id: rowQr; size: Style.space(24); iconText: "󰐲"; tooltipText: root.textFor("native.main.qr"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: vless.showQr(nativeRow.record) }
+                    PanelActionButton { id: rowExport; size: Style.space(24); iconText: "󰈔"; tooltipText: root.textFor("native.fileExport.title"); focusable: true; enabled: vless.nativeCanAct && vless.nativeFileExportProcess === null && nativeRow.isProfile; onClicked: root.requestFileExport(nativeRow.record) }
+                    PanelActionButton { id: rowEdit; size: Style.space(24); iconText: "󰏫"; tooltipText: root.textFor("native.editor.open"); focusable: true; enabled: vless.nativeCanAct && vless.nativeEditorDraft === null && !vless.nativeEditorRunning && nativeRow.record !== null && !nativeRow.record.managed; onClicked: { if (root.handOffToEditor(nativeRow.record)) root.close() } }
+                    PanelActionButton { id: rowDetails; size: Style.space(24); iconText: "󰋽"; tooltipText: root.textFor("native.details.open"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: root.nativeExpandedDetailsId = root.nativeExpandedDetailsId === nativeRow.profile.id ? "" : nativeRow.profile.id }
+                  }
+                  }
+                  PlainText { Layout.fillWidth: true; visible: nativeRow.isProfile && vless.probeResult(nativeRow.profile.id) !== null; text: nativeRow.isProfile ? root.nativeProbeLabel(nativeRow.profile.id) : ""; textFormat: Text.PlainText; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+                  ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: nativeRow.selected && root.nativeExpandedDetailsId === nativeRow.profile.id
+                    RowLayout {
+                      Layout.fillWidth: true
+                      PlainText { Layout.fillWidth: true; text: root.textFor("native.details.private"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+                      OmaNavigationButton { id: rowDetailsRefresh; iconText: "󰑓"; tooltipText: root.textFor("common.refresh"); focusable: true; enabled: vless.nativeCanAct && !vless.nativeProfileDetailsBusy; onClicked: vless.refreshNativeProfileDetails() }
+                    }
+                    PlainText { Layout.fillWidth: true; visible: vless.nativeProfileDetailsStatus !== ""; text: vless.nativeProfileDetailsStatus !== "" ? root.textFor("native.details." + vless.nativeProfileDetailsStatus) : ""; color: vless.nativeProfileDetailsStatus === "failed" ? root.urgent : root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+                    GridLayout {
+                      Layout.fillWidth: true
+                      columns: 1
+                      visible: vless.nativeProfileDetails !== null
+                      rowSpacing: Style.spacing.labelGap
+                      DetailPair { label: root.textFor("metric.server"); value: vless.nativeProfileDetails ? vless.nativeProfileDetails.server : "--" }
+                      DetailPair { label: root.textFor("import.protocol"); value: vless.nativeProfileDetails ? vless.nativeProfileDetails.protocol : "--" }
+                      DetailPair { label: root.textFor("metric.transport"); value: vless.nativeProfileDetails ? vless.nativeProfileDetails.transport + " / " + vless.nativeProfileDetails.security : "--" }
+                      DetailPair { label: "SNI"; value: vless.nativeProfileDetails ? root.detailText(vless.nativeProfileDetails.sni) : "--" }
+                    }
+                  }
                 }
               }
-            }
-          }
+            } // nativeProfilesContent
+          } // nativeProfilesFrame
         }
       }
 

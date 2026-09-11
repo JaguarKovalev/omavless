@@ -191,4 +191,25 @@ test('native latency sort is opt-in, preserves active/favorite and puts failed c
  assert(source.includes('id: nativeSubscriptionTest'));assert(source.includes('id: nativeSubscriptionSort'));
  assert(source.includes('root.nativeProbeLabel(nativeRow.profile.id)'));
 });
+test('main has immediate equal-width mode actions before traffic and profiles',()=>{
+  const modes=source.slice(source.indexOf('id: nativeModeButtons'),source.indexOf('PanelSectionHeader',source.indexOf('id: nativeModeButtons')));
+  assert.match(modes,/visible: root.page === "main" \|\| root.page === "settings"/);
+  assert(source.indexOf('id: nativeModeButtons')<source.indexOf('id: nativeTrafficSection'));
+  for(const [id,mode] of [['nativeGlobal','global'],['nativeRule','rule'],['nativeDirect','direct']]) {
+    const line=modes.split('\n').find(s=>s.includes('id: '+id+';'));
+    assert(line);assert(line.includes('Layout.preferredWidth: 1'));assert(line.includes('focusable: true'));
+    assert(line.includes('enabled: vless.nativeCanAct && root.nativeView.mode !== "'+mode+'"'));
+    assert(line.includes('onClicked: vless.requestNativeAction("mode", "", "'+mode+'")'));
+  }
+  assert(!source.includes('nativeModeSetting'));
+  assert.match(source,/nativePowerControl, nativeGlobal, nativeRule, nativeDirect/);
+});
+test('profile frame is square padded content under the existing single scroller',()=>{
+  const frame=source.slice(source.indexOf('id: nativeProfilesFrame'),source.indexOf('AdvancedDiagnostics {'));
+  assert.match(frame,/radius: 0/);assert.match(frame,/borderSpec: Border.flat/);
+  assert.match(frame,/implicitHeight: nativeProfilesContent.implicitHeight \+ Style.space\(20\)/);
+  assert.match(frame,/nativeProfilesFrame.width - Style.space\(20\)/);
+  assert(frame.includes('id: nativeSearch'));assert(frame.includes('id: nativeProfiles'));
+  assert(!/Flickable\s*\{|ScrollView\s*\{/.test(frame));
+});
 console.log('native main panel: '+count+' passed');
