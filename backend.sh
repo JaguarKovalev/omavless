@@ -207,4 +207,8 @@ else
   legacy_without_native || blocked
 fi
 case "${1-}" in native-*) blocked ;; esac
-exec python3 "$(dirname "$0")/backend.py" "$@"
+# Native-only frontend distributions deliberately omit the legacy payload.
+# Missing native ownership must not even launch an interpreter for that tree.
+legacy_backend="$(dirname "$0")/backend.py"
+[ -f "$legacy_backend" ] && [ ! -L "$legacy_backend" ] && [ -r "$legacy_backend" ] || blocked
+exec python3 "$legacy_backend" "$@"

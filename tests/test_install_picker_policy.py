@@ -63,20 +63,66 @@ printf 'synthetic-private-owner-error\\n' >&2
 exit "$TEST_OWNER_EXIT"
 ''')
 
-    def run_install(self):
+    def run_install(self, *arguments):
         self.trace.unlink(missing_ok=True)
         result = subprocess.run(
-            ["/bin/bash", str(INSTALLER)], env=self.env,
+            ["/bin/bash", str(INSTALLER), *arguments], env=self.env,
             stdin=subprocess.DEVNULL, capture_output=True, text=True,
             timeout=15, check=False,
         )
         self.assertEqual(result.returncode, 0, "isolated installer failed")
         self.assertEqual(result.stderr, "")
         self.assertTrue((self.target / "manifest.json").is_file())
-        self.assertTrue((self.target / "backend.py").is_file())  # oracle retained
+        self.assertEqual((self.target / "backend.py").is_file(), "--native-only" not in arguments)
+        self.assertEqual((self.target / "uninstall.sh").is_file(), "--native-only" not in arguments)
         self.assertNotIn("synthetic-private", result.stdout)
         self.assertIn("no tunnel was started", result.stdout)
         return result.stdout, self.trace.read_text().splitlines()
+
+    def test_native_only_omits_legacy_payload_and_never_probes_python(self):
+        (self.target / "backend.py").write_text("synthetic old backend")
+        (self.target / "uninstall.sh").write_text("synthetic old remover")
+        (self.bin / "python3").unlink()
+        output, calls = self.run_install("--native-only")
+        self.assert_missing(output)
+        self.assertEqual(calls, ["native:plugin:target", "omarchy:plugin:validate", "native:plugin:target"])
+        self.assertTrue((self.target / "plugin/Panel.qml").is_file())
+        self.assertEqual(list(self.target.rglob("*.py")), [])
+
+    def test_native_only_refuses_unknown_failed_legacy_and_missing_owner_before_writes(self):
+        sentinel = self.target / "sentinel"
+        sentinel.write_text("preserved")
+        for owner, code in (("legacy", "0"), ("unknown", "0"), ("rust\nlegacy", "0"), ("rust", "1")):
+            self.env["TEST_OWNER"], self.env["TEST_OWNER_EXIT"] = owner, code
+            result = subprocess.run(["/bin/bash", str(INSTALLER), "--native-only"], env=self.env,
+                                    capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("synthetic-private", result.stderr)
+            self.assertEqual(list(self.target.iterdir()), [sentinel])
+        (self.bin / "omavless").unlink()
+        result = subprocess.run(["/bin/bash", str(INSTALLER), "--native-only"], env=self.env,
+                                capture_output=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(sentinel.read_text(), "preserved")
+
+    def test_native_only_rechecks_owner_after_staging_and_preserves_old_tree(self):
+        sentinel = self.target / "sentinel"
+        sentinel.write_text("preserved")
+        self.stub("omavless", '''
+if [ -f "$TEST_TRACE" ]; then printf 'legacy\\n'; else printf 'rust\\n'; fi
+''')
+        result = subprocess.run(["/bin/bash", str(INSTALLER), "--native-only"], env=self.env,
+                                capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(list(self.target.iterdir()), [sentinel])
+        self.assertEqual(list(self.target.parent.glob(".kdk.omavless.install.*")), [])
+
+    def test_install_rejects_unknown_arguments_before_effects(self):
+        for arguments in [("--unknown",), ("--native-only", "extra")]:
+            result = subprocess.run(["/bin/bash", str(INSTALLER), *arguments], env=self.env,
+                                    capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(self.trace.exists())
 
     def assert_missing(self, output):
         self.assertIn(MISSING, output)

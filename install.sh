@@ -3,6 +3,24 @@
 # Copyright (c) 2026 OmaVLESS contributors
 set -euo pipefail
 
+native_only=false
+case "$#:${1-}" in
+  0:) ;;
+  1:--native-only) native_only=true ;;
+  *) echo 'Usage: ./install.sh [--native-only]' >&2; exit 2 ;;
+esac
+
+require_native_owner() {
+  local selected
+  if ! command -v omavless >/dev/null 2>&1 \
+      || ! selected=$(omavless plugin target </dev/null 2>/dev/null) \
+      || [[ "$selected" != rust ]]; then
+    echo 'Native-only frontend requires an already committed Rust owner. Nothing was installed.' >&2
+    exit 1
+  fi
+}
+if [[ "$native_only" == true ]]; then require_native_owner; fi
+
 plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 plugins_dir="$HOME/.config/omarchy/plugins"
 target="$plugins_dir/kdk.omavless"
@@ -30,8 +48,6 @@ trap cleanup EXIT
 
 cp -a \
   "$plugin_dir/backend.sh" \
-  "$plugin_dir/backend.py" \
-  "$plugin_dir/uninstall.sh" \
   "$plugin_dir/manifest.json" \
   "$plugin_dir/preview.png" \
   "$plugin_dir/LICENSE" \
@@ -39,12 +55,20 @@ cp -a \
   "$plugin_dir/README.md" \
   "$plugin_dir/CHANGELOG.md" \
   "$stage/"
+if [[ "$native_only" == false ]]; then
+  cp -a "$plugin_dir/backend.py" "$plugin_dir/uninstall.sh" "$stage/"
+  chmod 755 "$stage/backend.py" "$stage/uninstall.sh"
+fi
 cp -a "$plugin_dir/plugin" "$stage/plugin"
 mkdir -p "$stage/templates"
 cp -a "$plugin_dir/templates/." "$stage/templates/"
 mkdir -p "$stage/docs"
 cp -a "$plugin_dir/docs/user" "$stage/docs/user"
-chmod 755 "$stage/backend.sh" "$stage/backend.py" "$stage/uninstall.sh"
+chmod 755 "$stage/backend.sh"
+
+# Refuse a revoked owner before replacing the installed tree. This does not
+# activate ownership; every later launcher invocation still checks canonically.
+if [[ "$native_only" == true ]]; then require_native_owner; fi
 
 if [[ -e "$target" ]]; then
   backup="${stage}.backup"
@@ -102,6 +126,7 @@ echo "OmaVLESS is installed or updated; no tunnel was started."
 # is conservative too; this read must not activate, repair, or switch owners.
 legacy_picker_owner() {
   local owner_target state_base remaining current component artifact
+  [[ "$native_only" == false ]] || return 1
   if command -v omavless >/dev/null 2>&1; then
     owner_target=$(omavless plugin target </dev/null 2>/dev/null) || return 1
     [[ "$owner_target" == legacy ]]

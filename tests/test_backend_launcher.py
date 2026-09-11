@@ -53,6 +53,40 @@ exit 99
             capture_output=True, text=True, timeout=5, check=False,
         )
 
+    def test_native_only_tree_never_launches_python_when_owner_becomes_legacy_or_disappears(self):
+        launcher = self.base / "backend.sh"
+        launcher.write_text(LAUNCHER.read_text())
+        for available in (True, False):
+            if available:
+                self.native(target="legacy")
+            else:
+                (self.bin / "omavless").unlink()
+            for command in ("status", "connect", "cleanup-runtime"):
+                self.trace.unlink(missing_ok=True)
+                result = subprocess.run(["/bin/sh", str(launcher), command], env=self.env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 71)
+                self.assertEqual(result.stdout, "")
+                self.assertNotIn("python", self.calls())
+
+    def test_legacy_backend_symlink_and_directory_are_not_executed(self):
+        launcher = self.base / "backend.sh"
+        launcher.write_text(LAUNCHER.read_text())
+        backend = self.base / "backend.py"
+        for kind in ("symlink", "directory"):
+            if kind == "symlink":
+                backend.symlink_to(LAUNCHER.parent / "backend.py")
+            else:
+                backend.mkdir()
+            result = subprocess.run(["/bin/sh", str(launcher), "status"], env=self.env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 71)
+            self.assertNotIn("python", self.calls())
+            if kind == "symlink":
+                backend.unlink()
+            else:
+                backend.rmdir()
+
     def calls(self):
         return self.trace.read_text().splitlines() if self.trace.exists() else []
 
