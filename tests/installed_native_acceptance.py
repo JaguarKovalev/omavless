@@ -21,6 +21,9 @@ import uuid
 _spec = importlib.util.spec_from_file_location("native_gate", Path(__file__).with_name("native_service_acceptance.py"))
 gate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gate)
+_auth_spec = importlib.util.spec_from_file_location("human_authorization", Path(__file__).with_name("human_authorization.py"))
+auth = importlib.util.module_from_spec(_auth_spec)
+_auth_spec.loader.exec_module(auth)
 BINARY = "/usr/bin/omavless"
 UNIT = "omavless-runtime.service"
 LEGACY = "omavless.service"
@@ -160,6 +163,8 @@ def counters(tun):
 
 
 def run_gate():
+    authorization = auth.HumanAuthorization()
+    authorization.require_terminal()  # refuse headless batches before host access
     binary = Path(BINARY).lstat()
     gate.require(stat.S_ISREG(binary.st_mode) and binary.st_uid == 0 and not binary.st_mode & 0o022, "installed_binary_unsafe")
     home = Path.home()
@@ -188,9 +193,15 @@ def run_gate():
                  and not os.path.lexists(runtime / "omavless/mihomo.sock"), "service_baseline")
     passed = False
     try:
-        start = time.monotonic()
-        action("connect", profile["id"], "global")
-        elapsed = round((time.monotonic() - start) * 1000)
+        elapsed = 0
+        def connect_once():
+            nonlocal elapsed
+            start = time.monotonic()
+            try:
+                return action("connect", profile["id"], "global")
+            finally:
+                elapsed = round((time.monotonic() - start) * 1000)
+        authorization.step("connect", connect_once)
         observed = cli("runtime", "observation")["result"]
         gate.require(observed["lastKnownActual"] == "connected" and observed["facts"]["ownedControllerConfigVerified"], "controller_config")
         cores = {p for p, name in gate.processes().items() if name == b"mihomo"}
@@ -208,7 +219,8 @@ def run_gate():
         rows = listener_rows(gate.bounded(Path("/proc/net/tcp"), LIMIT), gate.bounded(Path("/proc/net/tcp6"), LIMIT))
         gate.emit(authorization_required="read_only_socket_pid_attribution")
         # Explicit opt-in above; no deadline on ordinary human polkit dialogs.
-        proof = command(["/usr/bin/pkexec", "/usr/bin/ss", "-H", "-ltnpe"], timeout=None)
+        proof = authorization.step("socket_inspection", lambda: command(
+            ["/usr/bin/pkexec", "/usr/bin/ss", "-H", "-ltnpe"], timeout=None))
         classify_listeners(baseline, rows, mixed_port, addresses, proof, core)
         before = counters(tun)
         result = subprocess.run(probe_args(tun), capture_output=True, timeout=25)
@@ -219,7 +231,11 @@ def run_gate():
         gate.require(probe and used, "https_probe_failed")
         passed = True
     finally:
-        action("disconnect")
+        if authorization.blocked:
+            gate.emit(passed=False, cleanup=False, reason="human_authorization_unsettled",
+                      recovery="inspect_host_before_any_further_transition")
+            raise auth.AuthorizationUnsettled()
+        authorization.step("disconnect", lambda: action("disconnect"))
         observed = cli("runtime", "observation")["result"]
         gate.require(observed["lastKnownActual"] == "disconnected" and not tuns()
                      and not any(name == b"mihomo" for name in gate.processes().values())
@@ -227,7 +243,7 @@ def run_gate():
                      and unit(LEGACY, "ActiveState") == "inactive" and unit(LEGACY, "MainPID") == "0"
                      and not os.path.lexists(runtime / "omavless/mihomo.sock"), "manual_recovery_required")
         if cli("plugin", "snapshot")["result"]["desired"]["mode"] != original_mode:
-            action("mode", original_mode)
+            authorization.step("restore_mode", lambda: action("mode", original_mode))
         restored = cli("plugin", "snapshot")["result"]["desired"]
         gate.require(not restored["connected"] and restored["mode"] == original_mode, "manual_recovery_required")
         gate.emit(disconnect=True, cleanup=True, mode_restored=True, passed=passed)
@@ -247,7 +263,9 @@ def main(argv=None):
     except Exception as error:
         allowed = {"fixture_unavailable", "unexpected_tcp_listener", "proxy_listener_count", "tcp_attribution_failed",
                    "tcp_attribution_unavailable", "https_probe_failed", "manual_recovery_required", "baseline_not_disconnected"}
-        code = str(error) if isinstance(error, gate.Failure) and str(error) in allowed else "installed_gate_failed_check_safe_state"
+        code = ("human_authorization_unsettled" if isinstance(error, auth.AuthorizationUnsettled)
+                else str(error) if isinstance(error, gate.Failure) and str(error) in allowed
+                else "installed_gate_failed_check_safe_state")
         gate.emit(passed=False, classification="FIXTURE UNAVAILABLE" if code == "fixture_unavailable" else code)
         return 1
 

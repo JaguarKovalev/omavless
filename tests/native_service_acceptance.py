@@ -5,7 +5,10 @@
 Opt in with --run --binary /absolute/exact/build/omavless. No installed unit,
 private source store or persistent network configuration is changed. The default synthetic no-auto-route TUN
 still exercises Mihomo/resolved and may show the NORMAL Omarchy polkit dialogs.
-Allow human authorization; command waits are 120 seconds, cleanup 600 seconds.
+Requires an attended terminal and explicit ready/settled acknowledgements before
+and after EACH start, connect, disconnect and stop. Human waits never expire;
+command waits are 120 seconds, cleanup 600 seconds. Refusing an acknowledgement
+stops further host actions and retains the fixture for manual recovery.
 The runtime's own unary deadline is unchanged. This is not VPN interoperability
 or packaged installation evidence. Do not run concurrently with any VPN test.
 All captured command output stays in private synthetic fixture files, never
@@ -17,6 +20,7 @@ bound to the generated TUN. Real-fixture command captures remain private.
 import argparse
 import hashlib
 import http.client
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -29,6 +33,13 @@ import subprocess
 import tempfile
 import time
 import uuid
+
+
+_auth_spec = importlib.util.spec_from_file_location(
+    "human_authorization", Path(__file__).with_name("human_authorization.py")
+)
+auth = importlib.util.module_from_spec(_auth_spec)
+_auth_spec.loader.exec_module(auth)
 
 
 class Failure(Exception):
@@ -261,7 +272,41 @@ def security_facts(pid):
             "effective_capabilities": int(fields[b"CapEff"].strip(), 16)}
 
 
+def cleanup_owned_fixture(authorization, disconnect, stop, verify):
+    """Fixed cleanup order with a fresh human barrier for each host effect.
+
+    A failed disconnect may be followed by the fixture-unit stop ONLY after
+    the human explicitly confirms its dialogs settled and approves that next
+    action. Refusal never becomes an automatic retry/compensating transition.
+    """
+    if authorization.blocked:
+        raise auth.AuthorizationUnsettled()
+    try:
+        authorization.step("disconnect", disconnect)
+    except auth.AuthorizationUnsettled:
+        raise
+    except KeyboardInterrupt:
+        authorization.blocked = True
+        raise auth.AuthorizationUnsettled() from None
+    except Exception:
+        # HumanAuthorization.step has already required 'settled', including
+        # after a command error. Stop still needs its own separate 'ready'.
+        pass
+    try:
+        authorization.step("service_stop", stop)
+        return verify()
+    except auth.AuthorizationUnsettled:
+        raise
+    except KeyboardInterrupt:
+        authorization.blocked = True
+        raise auth.AuthorizationUnsettled() from None
+    except Exception:
+        return False
+
+
 def acceptance(options):
+    authorization = auth.HumanAuthorization()
+    authorization.require_terminal()  # before private fixtures or host access
     private_source = getattr(options, "private_vless_store", None)
     real = private_source is not None
     require(not real or options.mode == "global", "private_fixture_requires_full_vpn")
@@ -280,6 +325,8 @@ def acceptance(options):
 
     def command(args, env=None, timeout=120, checked=True):
         nonlocal captures
+        if authorization.blocked:
+            raise auth.AuthorizationUnsettled()
         result = subprocess.run(args, env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout)
         require(len(result.stdout) + len(result.stderr) <= 1048576, "command_output_oversized")
         if root is not None:
@@ -288,6 +335,11 @@ def acceptance(options):
             private_write(root / f"capture-{captures}.stderr", result.stderr)
         require(not checked or result.returncode == 0, "command_rejected")
         return result
+
+    def timed_command(args):
+        start = time.monotonic()
+        command(args, env)
+        return round((time.monotonic() - start) * 1000)
 
     def tuns():
         links = json.loads(command(["ip", "-d", "-j", "link", "show"]).stdout)
@@ -323,8 +375,13 @@ def acceptance(options):
         args += ["--setenv=" + key + "=" + value for key, value in overrides.items()]
         emit(binary_sha256=binary_hash, mode=options.mode, private_fixture=real,
              family="vless", authorization="normal_polkit_dialogs_may_appear")
-        started = True  # Even a failed/timed-out start can leave a unit to clean.
-        command(args + [str(binary), "daemon"])
+        def start_fixture():
+            nonlocal started
+            # Only mark after 'ready'. Even a failed/timed-out start can leave
+            # an owned unit, but no new cleanup starts until 'settled'.
+            started = True
+            command(args + [str(binary), "daemon"])
+        authorization.step("service_start", start_fixture)
         control = runtime / "omavless/control.sock"
         deadline = time.monotonic() + 30
         while not control.exists() and time.monotonic() < deadline:
@@ -340,9 +397,8 @@ def acceptance(options):
         daemon_security = security_facts(pid)
         require(daemon_security == {"nnp": 0, "effective_capabilities": 0}, "daemon_privilege_policy")
         for index in range(options.repetitions):
-            connect_started = time.monotonic()
-            command([str(binary), "connect", profile, options.mode], env)
-            connect_ms = round((time.monotonic() - connect_started) * 1000)
+            connect_ms = authorization.step("connect", lambda: timed_command(
+                [str(binary), "connect", profile, options.mode]))
             require(json.loads(command([str(binary), "status"], env).stdout)["result"]["actual"] == "connected", "connect_state")
             members = set(map(int, bounded(cgroup / "cgroup.procs").split()))
             cores = {member for member, name in processes().items() if name == b"mihomo"}
@@ -368,9 +424,8 @@ def acceptance(options):
                 emit(case=index + 1, family="vless", https_probe=probe_passed,
                      tun_probe_evidence=tun_used, classification=probe_class)
                 require(probe_passed and tun_used, probe_class)
-            disconnect_started = time.monotonic()
-            command([str(binary), "disconnect"], env)
-            disconnect_ms = round((time.monotonic() - disconnect_started) * 1000)
+            disconnect_ms = authorization.step("disconnect", lambda: timed_command(
+                [str(binary), "disconnect"]))
             require(json.loads(command([str(binary), "status"], env).stdout)["result"]["actual"] == "disconnected", "disconnect_state")
             require(not tuns() and not any(name == b"mihomo" for name in processes().values()), "disconnect_resources")
             require(set(map(int, bounded(cgroup / "cgroup.procs").split())) == {pid}, "disconnect_helpers")
@@ -385,22 +440,29 @@ def acceptance(options):
         passed = True
     finally:
         clean = not started
-        if started:
-            # A failed connect/probe can leave an owned core. Always request its
-            # semantic shutdown, then independently stop and verify the unit.
-            try:
-                command([str(binary), "disconnect"], env, checked=False)
-            except Exception:
-                pass  # Unit cleanup below is mandatory even on IPC failure.
-            try:
-                command(["systemctl", "--user", "stop", unit], timeout=600, checked=False)
-                active = command(["systemctl", "--user", "is-active", "--quiet", unit], checked=False)
-                clean = active.returncode in (3, 4) and not tuns() and not any(
-                    name in (b"mihomo", b"omavless") for name in processes().values())
-                if cgroup is not None and cgroup.exists():
-                    clean = clean and not bounded(cgroup / "cgroup.procs").strip()
-            except Exception:
-                clean = False
+        try:
+            if authorization.blocked:
+                raise auth.AuthorizationUnsettled()
+            if started:
+                def verify_cleanup():
+                    # Read-only proof after the stop's human 'settled' barrier.
+                    active = command(["systemctl", "--user", "is-active", "--quiet", unit], checked=False)
+                    empty = active.returncode in (3, 4) and not tuns() and not any(
+                        name in (b"mihomo", b"omavless") for name in processes().values())
+                    if cgroup is not None and cgroup.exists():
+                        empty = empty and not bounded(cgroup / "cgroup.procs").strip()
+                    return empty
+                clean = cleanup_owned_fixture(
+                    authorization,
+                    lambda: command([str(binary), "disconnect"], env, checked=False),
+                    lambda: command(["systemctl", "--user", "stop", unit], timeout=600, checked=False),
+                    verify_cleanup,
+                )
+        except auth.AuthorizationUnsettled:
+            emit(cleanup=False, diagnostic_files_retained=True,
+                 classification="human_authorization_unsettled",
+                 recovery="manual_cleanup_required_inspect_host_before_any_further_transition")
+            raise
         emit(cleanup=clean, diagnostic_files_retained=not (passed and clean))
         if passed and clean:
             shutil.rmtree(root)
@@ -424,5 +486,8 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        emit(result="FAIL", classification=str(error) if isinstance(error, Failure) else "host_probe_failed")
+        classification = ("human_authorization_unsettled"
+                          if isinstance(error, auth.AuthorizationUnsettled)
+                          else str(error) if isinstance(error, Failure) else "host_probe_failed")
+        emit(result="FAIL", classification=classification)
         raise SystemExit(1)

@@ -36,6 +36,15 @@ class InstalledNativeAcceptanceTests(unittest.TestCase):
                     self.assertEqual(subject.main(args), 0)
                 self.assertIn("NOT RUN", output.getvalue())
 
+    def test_no_terminal_refuses_even_explicit_optins_before_any_host_read(self):
+        output = io.StringIO()
+        with patch.object(subject.auth.sys, "stdin", io.StringIO("ready\nsettled\n")), \
+                patch.object(subject, "command", side_effect=AssertionError("host access")), \
+                patch.object(subject, "Path", side_effect=AssertionError("filesystem access")), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(subject.main(["--run", "--authorize-socket-inspection"]), 1)
+        self.assertIn("human_authorization_unsettled", output.getvalue())
+
     def test_supported_policy_and_fail_closed_unsupported_templates(self):
         self.assertEqual(subject.template_policy(TEMPLATE), 7890)
         for config in (TEMPLATE + b"mixed-port: 1234\n", TEMPLATE.replace(b"false", b"true"),

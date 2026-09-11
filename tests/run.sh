@@ -5,10 +5,12 @@ here="$(cd "$(dirname "$0")" && pwd)"
 python3 -m unittest -v \
   "$here/test_backend.py" \
   "$here/test_backend_launcher.py" \
+  "$here/test_native_launcher_no_python.py" \
   "$here/test_native_uninstall_guard.py" \
   "$here/test_mihomo_validation_effects.py" \
   "$here/test_local_arch_package.py" \
   "$here/test_installed_native_acceptance.py" \
+  "$here/test_human_authorization.py" \
   "$here/test_control_protocol.py" \
   "$here/test_control_protocol_probe.py" \
   "$here/test_native_service_acceptance.py" \
@@ -30,6 +32,7 @@ if command -v node >/dev/null 2>&1; then
   node "$here/test-native-onboarding.js"
   node "$here/test-native-main-panel.js"
   node "$here/test-native-ipc-controls.js"
+  node "$here/test-native-no-python.js"
   node "$here/test-native-connection-test.js"
   node "$here/test-native-import.js"
   node "$here/test-native-subscriptions.js"
