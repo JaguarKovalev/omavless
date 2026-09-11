@@ -151,3 +151,36 @@ session are not substituted for those gates.
 Next bounded work: fix and regress cross-page native scroll reset; isolate and
 fix UI export completion; repeat the affected installed paths. Preserve the
 authorization pause and separate host DNS/login/R6 gates.
+# Local fix continuation — 2026-09-11
+
+Candidate `81622be406c345a7f35063c601d9b86358208d03` is installed locally;
+all 22 tracked frontend/launcher identity files match byte-for-byte. Installed
+Rust binary remains the previously recorded `9de33cd` build. No remote writes,
+VPN transitions or authorization requests were initiated in this continuation.
+
+- Native reopen scroll reset: fixed and visually verified by scrolling Settings,
+  closing and reopening the main panel. Header and search return to the top.
+  The executable handler regression preserves the existing search text.
+- Export root cause: `Component.createObject` converts its initial property map
+  through QVariant, copying the JS context object. The exact-object admission
+  fence therefore rejects the otherwise successful export read. Assigning the
+  context after construction preserves identity for profile/report readers and
+  the writer without weakening revision, instance or admission checks.
+- `node tests/test-native-file-export-qml.js` reproduces failure before the fix
+  and succeeds afterward using the actual extracted Quickshell Process component
+  and service functions, synthetic reader response and stdin-checking writer.
+  It is opt-in and requires installed Quickshell; it accesses no private store,
+  socket or VPN. Existing Node export tests now model initial-property copying.
+- Local validation: 405 Python tests passed (4 expected skips), all JS/QML
+  contracts passed, including 21 main-panel and 9 export checks; the real-QML
+  export test also passed. Compile, shell syntax, manifest, plugin validation
+  and diff checks passed.
+- **Remaining UI gate:** an actual installed profile export through destination
+  confirmation and private 0600 file verification must still be repeated. This
+  short continuation did not obtain a stable visible destination dialog after
+  the export click; no successful UI export or file roundtrip is claimed.
+
+Final observation: Routing, disconnected, no manual recovery, Mihomo/auxiliary/
+TUN counts 0/0/0; plugin enabled. The prior auth-helper caveat remains in force.
+Raw captures stay private outside Git. These changes are local-only by owner
+instruction; this report does not declare full migration/UI acceptance.
