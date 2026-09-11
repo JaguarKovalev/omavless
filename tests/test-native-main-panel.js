@@ -219,6 +219,7 @@ test('main HTTPS Test is presentation-hidden without removing Ping or its probe 
   assert.match(source,/if \(page === "main" && showMainConnectionTest\) targets.push\(nativeTestButton\)/);
   assert(block.includes('onClicked: vless.startNativeConnectionTest()'));
   assert(source.includes('id: nativePingTest;'));
+  assert.match(source,/RowLayout \{\s+Layout.fillWidth: true\s+spacing: Style.space\(12\)\s+DetailPair \{\s+Layout.fillWidth: true\s+label: root.textFor\("metric.ping"\)/);
 });
 test('settings sections group related controls in a stable visual order',()=>{
   const region=source.slice(source.indexOf('id: nativeColumn'),source.indexOf('AdvancedDiagnostics {'));

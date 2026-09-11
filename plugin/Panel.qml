@@ -2007,7 +2007,7 @@ Panel {
             id: nativeRoutingPresetSetting
             Layout.fillWidth: true
             visible: root.page === "settings"
-            title: root.textFor("settings.routing_profile")
+            title: root.textFor("settings.routing_profile_label")
             description: vless.nativeSnapshot && vless.nativeSnapshot.routing.storedPreset !== ""
               ? root.textFor("settings.routing_selected", {name: root.routingPresetCountryText(vless.routingPresetById(vless.nativeSnapshot.routing.storedPreset))})
               : root.textFor("settings.routing_choose")
@@ -2148,6 +2148,7 @@ Panel {
             }
             RowLayout {
               Layout.fillWidth: true
+              spacing: Style.space(12)
               DetailPair {
                 Layout.fillWidth: true
                 label: root.textFor("metric.ping")
