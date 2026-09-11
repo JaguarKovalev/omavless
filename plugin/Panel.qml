@@ -1969,12 +1969,6 @@ Panel {
           PlainText { Layout.fillWidth: true; visible: vless.nativeImportBusy; text: root.textFor("native.importBusy"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           PlainText { Layout.fillWidth: true; visible: vless.nativeImportCode !== ""; text: vless.nativeImportCode ? root.textFor("native.importError." + vless.nativeImportCode) : ""; color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           Button { id: nativeRecoveryDisconnect; visible: root.nativeView.state !== "disconnected" && !root.nativeView.connected; text: root.textFor("action.disconnect"); focusable: true; bordered: true; enabled: vless.nativeCanAct; onClicked: vless.requestNativeAction("disconnect", "", "") }
-          RowLayout {
-            visible: root.page === "main"
-            Layout.fillWidth: true
-            PlainText { Layout.fillWidth: true; text: root.textFor("native.main.modeLabel"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-            PlainText { text: root.nativeModeLabel(root.nativeView.mode); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-          }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.connections"); foreground: root.foreground; fontFamily: root.fontFamily }
           // Primary connection controls stay on the main page, like the
           // reference frontend. Settings reuses this same action surface.

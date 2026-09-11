@@ -192,12 +192,15 @@ test('native latency sort is opt-in, preserves active/favorite and puts failed c
  assert(source.includes('root.nativeProbeLabel(nativeRow.profile.id)'));
 });
 test('main has immediate equal-width mode actions before traffic and profiles',()=>{
+  assert(!source.includes('root.textFor("native.main.modeLabel")'));
+  assert(!source.includes('text: root.nativeModeLabel(root.nativeView.mode)'));
   const modes=source.slice(source.indexOf('id: nativeModeButtons'),source.indexOf('PanelSectionHeader',source.indexOf('id: nativeModeButtons')));
   assert.match(modes,/visible: root.page === "main" \|\| root.page === "settings"/);
   assert(source.indexOf('id: nativeModeButtons')<source.indexOf('id: nativeTrafficSection'));
   for(const [id,mode] of [['nativeGlobal','global'],['nativeRule','rule'],['nativeDirect','direct']]) {
     const line=modes.split('\n').find(s=>s.includes('id: '+id+';'));
     assert(line);assert(line.includes('Layout.preferredWidth: 1'));assert(line.includes('focusable: true'));
+    assert(line.includes('foreground: root.nativeView.mode === "'+mode+'" ? Color.accent : root.foreground'));
     assert(line.includes('enabled: vless.nativeCanAct && root.nativeView.mode !== "'+mode+'"'));
     assert(line.includes('onClicked: vless.requestNativeAction("mode", "", "'+mode+'")'));
   }
