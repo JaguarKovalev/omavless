@@ -95,10 +95,51 @@ fi
 trap - EXIT
 
 echo "OmaVLESS is installed or updated; no tunnel was started."
+
+# GTK/Python is a legacy-only picker fallback. The Rust desktop helper reports
+# gtk4FallbackAvailable=false, so a successful Python probe must never promise
+# a picker the selected native owner cannot actually launch. Unknown ownership
+# is conservative too; this read must not activate, repair, or switch owners.
+legacy_picker_owner() {
+  local owner_target state_base remaining current component artifact
+  if command -v omavless >/dev/null 2>&1; then
+    owner_target=$(omavless plugin target </dev/null 2>/dev/null) || return 1
+    [[ "$owner_target" == legacy ]]
+    return
+  fi
+
+  # Same missing-reader proof as backend.sh: only absent ownership artifacts
+  # permit the marketplace-only legacy path. Missing/dangling/unreadable
+  # ancestors must not be confused with a safely absent native marker.
+  if [[ ${XDG_STATE_HOME+x} == x ]]; then
+    state_base=$XDG_STATE_HOME
+  else
+    case "${HOME-}" in /*) ;; *) return 1 ;; esac
+    state_base=$HOME/.local/state
+  fi
+  case "$state_base" in /*) ;; *) return 1 ;; esac
+  [[ ${#state_base} -le 4096 ]] || return 1
+  remaining=${state_base#/}/omavless
+  current=
+  while [[ -n "$remaining" ]]; do
+    component=${remaining%%/*}
+    case "$remaining" in */*) remaining=${remaining#*/} ;; *) remaining= ;; esac
+    case "$component" in '') continue ;; .|..) return 1 ;; esac
+    current=$current/$component
+    [[ ! -L "$current" ]] || return 1
+    if [[ ! -e "$current" ]]; then return 0; fi
+    [[ -d "$current" && -r "$current" && -x "$current" ]] || return 1
+  done
+  for artifact in ownership.json frontend-bridge.target; do
+    [[ ! -e "$current/$artifact" && ! -L "$current/$artifact" ]] || return 1
+  done
+}
+
 if ! command -v zenity >/dev/null 2>&1 \
     && ! command -v kdialog >/dev/null 2>&1 \
     && ! command -v yad >/dev/null 2>&1 \
-    && ! python3 -c 'import gi; gi.require_version("Gtk", "4.0"); from gi.repository import Gtk; assert hasattr(Gtk, "FileChooserNative")' >/dev/null 2>&1; then
+    && ! (legacy_picker_owner \
+      && python3 -c 'import gi; gi.require_version("Gtk", "4.0"); from gi.repository import Gtk; assert hasattr(Gtk, "FileChooserNative")' >/dev/null 2>&1); then
   echo 'File import unavailable — file picker missing. Run “omarchy pkg add zenity”'
   echo "Clipboard import remains available; kdialog and yad are also supported."
 fi
