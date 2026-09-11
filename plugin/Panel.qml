@@ -20,6 +20,8 @@ Panel {
   ipcTarget: "kdk.omavless"
   manageIpc: false
 
+  // Presentation switch only: the bounded runtime probe remains available.
+  readonly property bool showMainConnectionTest: false
   property string focusSection: "header"
   property string page: "main"
   property int subscriptionIndex: 0
@@ -684,20 +686,12 @@ Panel {
   function panelTabTargets() {
     if (page === "diagnostics") return advancedDiagnosticsPage.focusTargets
     if (vless.nativeOwner) {
-      var targets = page === "settings" ? [nativeSettingsBack, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeRule, nativeGlobal, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeRefresh]
+      var targets = page === "settings" ? [nativeSettingsBack, nativeRefresh, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeGlobal, nativeRule, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeProvidersRefresh.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeCoreSetupRow.focusTarget, nativeOnboardingSetting.focusTarget, nativeStartupSummaryRow.focusTarget, nativeHelpersRefresh.focusTarget, nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeSupportSetting.focusTarget, nativeSupportExportSetting.focusTarget, nativeExitIpSetting.focusTarget, nativeQuitSetting.focusTarget]
         : page === "subscriptions" ? [nativeSettingsBack, nativeRefresh, nativeSubscriptionAdd, nativeSubscriptionRefreshAll]
         : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionTest, nativeSubscriptionSort, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
         : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativeGlobal, nativeRule, nativeDirect, nativePingTest, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
       targets = targets.concat([nativeBatchCheck, nativeBatchCancel, nativeBatchDismiss, nativeBatchAbandon])
-      if (page === "settings") targets.push(nativeProvidersRefresh.focusTarget)
-      if (page === "settings") targets.push(nativeSupportSetting.focusTarget)
-      if (page === "settings") targets = targets.concat([nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeHelpersRefresh.focusTarget])
-      if (page === "settings") targets.splice(1, 0, nativeCoreSetupRow.focusTarget, nativeStartupSummaryRow.focusTarget)
-      if (page === "main") targets.push(nativeTestButton)
-      if (page === "settings") targets.splice(2, 0, nativeOnboardingSetting.focusTarget)
-      if (page === "settings") targets.push(nativeExitIpSetting.focusTarget)
-      if (page === "settings") targets.push(nativeSupportExportSetting.focusTarget)
-      if (page === "settings") targets.push(nativeQuitSetting.focusTarget)
+      if (page === "main" && showMainConnectionTest) targets.push(nativeTestButton)
       for (var s = 0; s < nativeSubscriptions.count; s++) {
         var subscriptionRow = nativeSubscriptions.itemAt(s)
         if (subscriptionRow) targets = targets.concat(subscriptionRow.focusTargets)
@@ -1941,15 +1935,16 @@ Panel {
             visible: vless.nativeFileExportStatus !== ""
             text: vless.nativeFileExportStatus !== "" ? root.textFor((vless.nativeFileExportKind === "report" ? "native.supportExport." : "native.fileExport.") + vless.nativeFileExportStatus) : ""
             color: vless.nativeFileExportStatus === "failed" ? root.urgent : root.dim
-            font.family: root.fontFamily
+            font.family: root.fontFamily; font.pixelSize: Style.font.body
             wrapMode: Text.Wrap
           }
           ColumnLayout {
-            visible: root.page === "main" && root.nativeView.connected
+            id: nativeConnectionTestSection
+            visible: root.showMainConnectionTest && root.page === "main" && root.nativeView.connected
             Layout.fillWidth: true
             RowLayout {
               Layout.fillWidth: true
-              PlainText { Layout.fillWidth: true; text: root.textFor("native.test.title"); color: root.foreground; font.family: root.fontFamily }
+              PlainText { Layout.fillWidth: true; text: root.textFor("native.test.title"); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body }
               Button { id: nativeTestButton; text: root.textFor(vless.nativeTestProcess ? "common.loading" : "action.test"); bordered: true; focusable: true; enabled: vless.nativeCanAct && vless.nativeTestProcess === null; onClicked: vless.startNativeConnectionTest() }
             }
             PlainText {
@@ -1959,7 +1954,7 @@ Panel {
                 + (vless.nativeTestResult && vless.nativeTestResult.https && vless.showExitIp ? "\n" + root.textFor("settings.observed_exit_ip") + ": " + vless.nativeTestResult.observedIp : "")
                 + "\n" + root.textFor("native.test.scope")
               color: vless.nativeTestStatus === "failed" ? root.urgent : root.dim
-              font.family: root.fontFamily
+              font.family: root.fontFamily; font.pixelSize: Style.font.body
               wrapMode: Text.Wrap
             }
           }
@@ -1970,44 +1965,6 @@ Panel {
             OmaNavigationButton { id: nativeSettingsBack; iconText: "󰁍"; tooltipText: root.textFor("common.back"); focusable: true; onClicked: { if (root.page === "subscription") root.openSubscriptions(); else root.page = "main"; nativeFlick.contentY = 0 } }
             PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: root.page === "subscription" ? (root.nativeSubscription ? root.nativeSubscription.name : "") : root.textFor(root.page === "subscriptions" ? "settings.subscriptions" : "settings.title"); elide: Text.ElideRight; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.title }
             OmaNavigationButton { id: nativeRefresh; visible: root.page !== "subscription"; iconText: "󰑓"; tooltipText: root.textFor("common.refresh"); focusable: true; enabled: !vless.statusProcessRunning && !vless.nativeActionRunning; onClicked: vless.refresh() }
-          }
-          SettingsActionRow {
-            id: nativeCoreSetupRow
-            Layout.fillWidth: true
-            visible: root.page === "settings"
-            title: root.textFor("settings.mihomo_core")
-            description: root.nativeCoreSetupDescription()
-            actionText: root.textFor("common.refresh")
-            actionEnabled: !vless.nativeCoreSetupBusy
-            onAction: vless.refreshNativeCoreSetup()
-          }
-          SettingsActionRow {
-            id: nativeOnboardingSetting
-            Layout.fillWidth: true
-            visible: root.page === "settings"
-            title: root.textFor("onboarding.title")
-            description: root.textFor("native.onboarding.scope")
-            actionText: root.textFor("common.open")
-            actionEnabled: vless.nativeSnapshot !== null && !vless.nativeSnapshotFailed && !vless.nativePending
-            onAction: root.openOnboarding(1)
-          }
-          PlainText {
-            Layout.fillWidth: true
-            visible: root.page === "settings" && vless.nativeCoreSetupFacts !== null
-            text: vless.nativeCoreSetupFacts === null ? "" : root.textFor("native.core.tun." + vless.nativeCoreSetupFacts.tunDevice)
-              + "\n" + root.textFor("native.core.capabilities." + vless.nativeCoreSetupFacts.fileNetworkCapabilities)
-            color: root.dim
-            font.family: root.fontFamily
-            wrapMode: Text.Wrap
-          }
-          PlainText {
-            Layout.fillWidth: true
-            visible: root.page === "settings"
-            text: root.textFor("native.core.scope")
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.Wrap
           }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.appearance"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow { id: nativeLanguageRow; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.language"); description: root.textFor("settings.language_description"); actionText: root.languageSettingLabel(); onAction: root.cycleLanguageSetting() }
@@ -2020,12 +1977,12 @@ Panel {
             actionText: root.textFor(vless.showBarThroughput ? "common.on" : "common.off")
             onAction: root.setWidgetSetting("showBarThroughput", !vless.showBarThroughput, true)
           }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeSnapshotFailed; text: root.textFor("native.refreshFailed"); textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeActionRunning; text: root.textFor("native.pending"); textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeOutcomeUnknown; text: root.textFor("native.unknownOutcome"); textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeActionCode !== ""; text: vless.nativeActionCode ? root.textFor("error." + vless.nativeActionCode) : ""; textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeImportBusy; text: root.textFor("native.importBusy"); color: root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeImportCode !== ""; text: vless.nativeImportCode ? root.textFor("native.importError." + vless.nativeImportCode) : ""; color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeSnapshotFailed; text: root.textFor("native.refreshFailed"); textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeActionRunning; text: root.textFor("native.pending"); textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeOutcomeUnknown; text: root.textFor("native.unknownOutcome"); textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeActionCode !== ""; text: vless.nativeActionCode ? root.textFor("error." + vless.nativeActionCode) : ""; textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeImportBusy; text: root.textFor("native.importBusy"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeImportCode !== ""; text: vless.nativeImportCode ? root.textFor("native.importError." + vless.nativeImportCode) : ""; color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           Button { id: nativeRecoveryDisconnect; visible: root.nativeView.state !== "disconnected" && !root.nativeView.connected; text: root.textFor("action.disconnect"); focusable: true; bordered: true; enabled: vless.nativeCanAct; onClicked: vless.requestNativeAction("disconnect", "", "") }
           RowLayout {
             visible: root.page === "main"
@@ -2033,6 +1990,7 @@ Panel {
             PlainText { Layout.fillWidth: true; text: root.textFor("native.main.modeLabel"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
             PlainText { text: root.nativeModeLabel(root.nativeView.mode); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
           }
+          PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.connections"); foreground: root.foreground; fontFamily: root.fontFamily }
           // Primary connection controls stay on the main page, like the
           // reference frontend. Settings reuses this same action surface.
           RowLayout {
@@ -2044,7 +2002,81 @@ Panel {
             Button { id: nativeRule; Layout.fillWidth: true; Layout.preferredWidth: 1; text: root.nativeModeLabel("rule"); foreground: root.nativeView.mode === "rule" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "rule"; onClicked: vless.requestNativeAction("mode", "", "rule") }
             Button { id: nativeDirect; Layout.fillWidth: true; Layout.preferredWidth: 1; text: root.nativeModeLabel("direct"); foreground: root.nativeView.mode === "direct" ? Color.accent : root.foreground; focusable: true; bordered: true; enabled: vless.nativeCanAct && root.nativeView.mode !== "direct"; onClicked: vless.requestNativeAction("mode", "", "direct") }
           }
+          PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.settings.modeHelp"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+          SettingsActionRow {
+            id: nativeRoutingPresetSetting
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("settings.routing_profile")
+            description: vless.nativeSnapshot && vless.nativeSnapshot.routing.storedPreset !== ""
+              ? root.textFor("settings.routing_selected", {name: root.routingPresetCountryText(vless.routingPresetById(vless.nativeSnapshot.routing.storedPreset))})
+              : root.textFor("settings.routing_choose")
+            actionText: root.textFor("common.configure")
+            actionEnabled: vless.nativeCanAct
+            onAction: routingPresetPrompt.openWith(vless.nativeSnapshot ? vless.nativeSnapshot.routing.storedPreset : "")
+          }
+          SettingsActionRow {
+            id: nativeRoutingToolsSetting
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("settings.routing_tools")
+            description: root.textFor("settings.routing_tools_description", {count: root.localizedCount("custom_rule", vless.nativeSnapshot ? vless.nativeSnapshot.routing.customRuleCount : 0)})
+            actionText: root.textFor("common.open")
+            onAction: root.openRoutingTools()
+          }
+          PlainText { Layout.fillWidth: true; visible: root.page === "settings" && vless.nativeRoutingErrorCode !== ""; text: root.textFor(vless.nativeRoutingErrorCode); color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          SettingsActionRow { id: nativeProvidersRefresh; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.remote_rules"); description: root.nativeProviderUpdateDescription(); actionText: root.textFor("common.refresh"); actionEnabled: vless.nativeCanAct && !vless.nativeBatchBusy; onAction: vless.refreshRuleProviders() }
+          SettingsActionRow { id: nativeSubscriptionsSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.subscriptions"); description: root.localizedCount("provider", root.nativeView.subscriptions.length); actionText: root.textFor("common.open"); onAction: root.openSubscriptions() }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.setup_startup"); foreground: root.foreground; fontFamily: root.fontFamily }
+          SettingsActionRow {
+            id: nativeCoreSetupRow
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("settings.mihomo_core")
+            description: root.nativeCoreSetupDescription()
+            actionText: root.textFor("common.refresh")
+            actionEnabled: !vless.nativeCoreSetupBusy
+            onAction: vless.refreshNativeCoreSetup()
+          }
+          PlainText {
+            Layout.fillWidth: true
+            visible: root.page === "settings" && vless.nativeCoreSetupFacts !== null
+            text: vless.nativeCoreSetupFacts === null ? "" : root.textFor("native.core.tun." + vless.nativeCoreSetupFacts.tunDevice)
+              + "\n" + root.textFor("native.core.capabilities." + vless.nativeCoreSetupFacts.fileNetworkCapabilities)
+            color: root.dim
+            font.family: root.fontFamily; font.pixelSize: Style.font.caption
+            wrapMode: Text.Wrap
+          }
+          PlainText {
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            text: root.textFor("native.core.scope")
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.Wrap
+          }
+          SettingsActionRow {
+            id: nativeOnboardingSetting
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("settings.setup_assistant")
+            description: root.textFor("native.onboarding.scope")
+            actionText: root.textFor("common.open")
+            actionEnabled: vless.nativeSnapshot !== null && !vless.nativeSnapshotFailed && !vless.nativePending
+            onAction: root.openOnboarding(1)
+          }
+          SettingsActionRow {
+            id: nativeStartupSummaryRow
+            Layout.fillWidth: true
+            visible: root.page === "settings"
+            title: root.textFor("settings.start_at_login")
+            description: root.nativeStartupSummaryText() + "\n" + root.textFor(vless.nativeStartupAvailable ? "native.startup.configure_scope" : "native.startup.scope")
+            actionVisible: vless.nativeStartupAvailable
+            actionText: root.textFor("common.edit")
+            actionEnabled: vless.nativeStartupAvailable
+            onAction: startupPrompt.openWith(vless.nativeSnapshot.startup)
+          }
           SettingsActionRow {
             id: nativeHelpersRefresh
             Layout.fillWidth: true
@@ -2085,17 +2117,6 @@ Panel {
             actionText: root.textFor(vless.nativeDesktopCapabilities && vless.nativeDesktopCapabilities.qrEncoderAvailable ? "common.ready" : "common.copy_command")
             actionEnabled: !!vless.nativeDesktopCapabilities && !vless.nativeDesktopCapabilities.qrEncoderAvailable && vless.nativeDesktopCapabilities.clipboardWriteAvailable && !vless.copying
             onAction: vless.copyText(root.qrEncoderInstallCommand)
-          }
-          SettingsActionRow {
-            id: nativeStartupSummaryRow
-            Layout.fillWidth: true
-            visible: root.page === "settings"
-            title: root.textFor("settings.start_at_login")
-            description: root.nativeStartupSummaryText() + "\n" + root.textFor(vless.nativeStartupAvailable ? "native.startup.configure_scope" : "native.startup.scope")
-            actionVisible: vless.nativeStartupAvailable
-            actionText: root.textFor("common.edit")
-            actionEnabled: vless.nativeStartupAvailable
-            onAction: startupPrompt.openWith(vless.nativeSnapshot.startup)
           }
           ColumnLayout {
             id: nativeTrafficSection
@@ -2139,39 +2160,13 @@ Panel {
             PlainText { Layout.fillWidth: true; text: root.textFor("native.ping." + (vless.nativePingStatus || "unavailable")); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
             PlainText { Layout.fillWidth: true; visible: vless.nativeTrafficFresh; text: root.textFor("traffic.native_note"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           }
-          PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.settings.modeHelp"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-          SettingsActionRow {
-            id: nativeRoutingPresetSetting
-            Layout.fillWidth: true
-            visible: root.page === "settings"
-            title: root.textFor("settings.routing_profile")
-            description: vless.nativeSnapshot && vless.nativeSnapshot.routing.storedPreset !== ""
-              ? root.textFor("settings.routing_selected", {name: root.routingPresetCountryText(vless.routingPresetById(vless.nativeSnapshot.routing.storedPreset))})
-              : root.textFor("settings.routing_choose")
-            actionText: root.textFor("common.configure")
-            actionEnabled: vless.nativeCanAct
-            onAction: routingPresetPrompt.openWith(vless.nativeSnapshot ? vless.nativeSnapshot.routing.storedPreset : "")
-          }
-          SettingsActionRow {
-            id: nativeRoutingToolsSetting
-            Layout.fillWidth: true
-            visible: root.page === "settings"
-            title: root.textFor("settings.routing_tools")
-            description: root.textFor("settings.routing_tools_description", {count: root.localizedCount("custom_rule", vless.nativeSnapshot ? vless.nativeSnapshot.routing.customRuleCount : 0)})
-            actionText: root.textFor("common.open")
-            onAction: root.openRoutingTools()
-          }
-          PlainText { Layout.fillWidth: true; visible: root.page === "settings" && vless.nativeRoutingErrorCode !== ""; text: root.textFor(vless.nativeRoutingErrorCode); color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.connections"); foreground: root.foreground; fontFamily: root.fontFamily }
-          SettingsActionRow { id: nativeSubscriptionsSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.subscriptions"); description: root.localizedCount("provider", root.nativeView.subscriptions.length); actionText: root.textFor("common.open"); onAction: root.openSubscriptions() }
           PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.diagnostics_privacy"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow { id: nativeDiagnosticsSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.live_diagnostics"); description: root.textFor("settings.live_diagnostics_description"); actionText: root.textFor("common.open"); onAction: root.openAdvancedDiagnostics() }
-          SettingsActionRow { id: nativeProvidersRefresh; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("settings.remote_rules"); description: root.nativeProviderUpdateDescription(); actionText: root.textFor("common.refresh"); actionEnabled: vless.nativeCanAct && !vless.nativeBatchBusy; onAction: vless.refreshRuleProviders() }
-          PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.state." + root.nativeView.state) + "\n" + root.nativeLocalStatus(); color: root.foreground; font.family: root.fontFamily; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.state." + root.nativeView.state) + "\n" + root.nativeLocalStatus(); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           PlainText { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("native.settings.healthScope"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
           SettingsActionRow { id: nativeSupportSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("native.support.title"); description: root.textFor("native.support.scope"); actionText: root.textFor("native.support.copy"); actionEnabled: vless.nativeFactsCurrent && !vless.nativeSupportBusy && !vless.copying; onAction: vless.copyNativeConfigurationReport() }
           SettingsActionRow { id: nativeSupportExportSetting; Layout.fillWidth: true; visible: root.page === "settings"; title: root.textFor("native.support.export"); description: root.textFor("native.support.scope"); actionText: root.textFor("common.export"); actionEnabled: vless.nativeCanAct && vless.nativeFileExportProcess === null; onAction: root.requestReportExport() }
-          PlainText { Layout.fillWidth: true; visible: root.page === "settings" && vless.nativeSupportStatus !== ""; text: vless.nativeSupportStatus !== "" ? root.textFor("native.support." + vless.nativeSupportStatus) : ""; color: vless.nativeSupportStatus === "failed" ? root.urgent : root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: root.page === "settings" && vless.nativeSupportStatus !== ""; text: vless.nativeSupportStatus !== "" ? root.textFor("native.support." + vless.nativeSupportStatus) : ""; color: vless.nativeSupportStatus === "failed" ? root.urgent : root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           SettingsActionRow {
             id: nativeExitIpSetting
             Layout.fillWidth: true
@@ -2181,6 +2176,7 @@ Panel {
             actionText: root.textFor(vless.showExitIp ? "common.on" : "common.off")
             onAction: root.setWidgetSetting("showExitIp", !vless.showExitIp, true)
           }
+          PanelSectionHeader { Layout.fillWidth: true; visible: root.page === "settings"; text: root.textFor("settings.application"); foreground: root.foreground; fontFamily: root.fontFamily }
           SettingsActionRow {
             id: nativeQuitSetting
             Layout.fillWidth: true
@@ -2198,9 +2194,9 @@ Panel {
           ColumnLayout {
             Layout.fillWidth: true
             visible: vless.nativeBatchJob !== null
-            PlainText { Layout.fillWidth: true; text: vless.nativeBatchJob ? root.textFor(vless.nativeBatchJob.kind === "probe" ? "action.test" : "native.batch." + vless.nativeBatchJob.kind) + " · " + root.textFor("native.batch." + (vless.nativeBatchUnknown ? "unknown" : vless.nativeBatchJob.state)) : ""; color: root.foreground; font.family: root.fontFamily; wrapMode: Text.Wrap }
-            PlainText { Layout.fillWidth: true; text: vless.nativeBatchJob ? root.textFor("native.batch.progress", {completed:vless.nativeBatchJob.completed,total:vless.nativeBatchJob.total}) : ""; color: root.dim; font.family: root.fontFamily }
-            PlainText { Layout.fillWidth: true; visible: vless.nativeBatchErrorCode !== "" || (vless.nativeBatchJob !== null && vless.nativeBatchJob.errorCode !== ""); text: root.textFor(vless.nativeBatchErrorCode !== "" ? vless.nativeBatchErrorCode : "error." + (vless.nativeBatchJob ? vless.nativeBatchJob.errorCode : "capability_unavailable")); color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
+            PlainText { Layout.fillWidth: true; text: vless.nativeBatchJob ? root.textFor(vless.nativeBatchJob.kind === "probe" ? "action.test" : "native.batch." + vless.nativeBatchJob.kind) + " · " + root.textFor("native.batch." + (vless.nativeBatchUnknown ? "unknown" : vless.nativeBatchJob.state)) : ""; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+            PlainText { Layout.fillWidth: true; text: vless.nativeBatchJob ? root.textFor("native.batch.progress", {completed:vless.nativeBatchJob.completed,total:vless.nativeBatchJob.total}) : ""; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+            PlainText { Layout.fillWidth: true; visible: vless.nativeBatchErrorCode !== "" || (vless.nativeBatchJob !== null && vless.nativeBatchJob.errorCode !== ""); text: root.textFor(vless.nativeBatchErrorCode !== "" ? vless.nativeBatchErrorCode : "error." + (vless.nativeBatchJob ? vless.nativeBatchJob.errorCode : "capability_unavailable")); color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
             Flow {
               Layout.fillWidth: true
               spacing: Style.space(8)
@@ -2210,8 +2206,8 @@ Panel {
               Button { id: nativeBatchAbandon; visible: vless.nativeBatchAbandonable; text: root.textFor("native.acceptState"); focusable: true; bordered: true; onClicked: vless.abandonNativeBatch() }
             }
           }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeSubscriptionCode !== ""; text: root.textFor("native.subscription." + vless.nativeSubscriptionCode); color: vless.nativeSubscriptionCode === "saved" ? root.dim : root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: root.page === "subscriptions" && root.nativeView.subscriptions.length === 0; text: root.textFor("native.subscriptions.empty"); color: root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeSubscriptionCode !== ""; text: root.textFor("native.subscription." + vless.nativeSubscriptionCode); color: vless.nativeSubscriptionCode === "saved" ? root.dim : root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: root.page === "subscriptions" && root.nativeView.subscriptions.length === 0; text: root.textFor("native.subscriptions.empty"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           Repeater {
             id: nativeSubscriptions
             model: root.page === "subscriptions" ? root.nativeView.subscriptions : []
@@ -2230,7 +2226,7 @@ Panel {
               }
             }
           }
-          PlainText { Layout.fillWidth: true; visible: root.page === "subscription" && root.nativeSubscription !== null; text: root.nativeSubscription ? root.localizedCount("managed_profile", root.nativeSubscription.profileCount) + " · " + root.subscriptionAge(root.nativeSubscription.updatedAt) : ""; color: root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: root.page === "subscription" && root.nativeSubscription !== null; text: root.nativeSubscription ? root.localizedCount("managed_profile", root.nativeSubscription.profileCount) + " · " + root.subscriptionAge(root.nativeSubscription.updatedAt) : ""; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           Flow {
             visible: root.page === "subscription" && root.nativeSubscription !== null
             Layout.fillWidth: true
@@ -2245,13 +2241,13 @@ Panel {
             visible: root.page === "main"
             Layout.fillWidth: true
             spacing: Style.space(6)
-            PlainText { Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; text: root.textFor("profiles.title"); color: root.foreground; font.family: root.fontFamily }
+            PlainText { Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; text: root.textFor("profiles.title"); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body }
             OmaNavigationButton { id: nativeSubscriptionsButton; iconText: "󰒍"; tooltipText: root.textFor("settings.subscriptions"); focusable: true; Layout.alignment: Qt.AlignVCenter; onClicked: root.openSubscriptions() }
             OmaNavigationButton { id: nativeImportClipboard; iconText: "󰅍"; tooltipText: root.textFor("native.importClipboard"); focusable: true; Layout.alignment: Qt.AlignVCenter; enabled: vless.nativeCanAct && !vless.nativeImportBusy; onClicked: vless.startNativeImport("clipboard") }
             OmaNavigationButton { id: nativeImportFile; iconText: "󰉓"; tooltipText: root.textFor("native.importFile"); focusable: true; Layout.alignment: Qt.AlignVCenter; enabled: vless.nativeCanAct && !vless.nativeImportBusy; onClicked: { root.close(); vless.startNativeImport("file") } }
           }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeEditorCode !== ""; text: vless.nativeEditorCode ? root.textFor("native.editor." + vless.nativeEditorCode) : ""; textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; wrapMode: Text.Wrap }
-          PlainText { Layout.fillWidth: true; visible: vless.nativeEditorDraft !== null; text: root.textFor("native.editor.privateDraft"); textFormat: Text.PlainText; color: root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeEditorCode !== ""; text: vless.nativeEditorCode ? root.textFor("native.editor." + vless.nativeEditorCode) : ""; textFormat: Text.PlainText; color: root.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
+          PlainText { Layout.fillWidth: true; visible: vless.nativeEditorDraft !== null; text: root.textFor("native.editor.privateDraft"); textFormat: Text.PlainText; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
           Flow {
             visible: vless.nativeEditorDraft !== null
             Layout.fillWidth: true
@@ -2295,7 +2291,7 @@ Panel {
                 }
                 Keys.onEscapePressed: function(event) { root.profileFilter = ""; keyCatcher.forceActiveFocus(); event.accepted = true }
               }
-              PlainText { Layout.fillWidth: true; visible: (root.page === "main" || root.page === "subscription") && root.nativeRows.length === 0; text: root.textFor("native.main.empty"); color: root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+              PlainText { Layout.fillWidth: true; visible: (root.page === "main" || root.page === "subscription") && root.nativeRows.length === 0; text: root.textFor("native.main.empty"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
               Repeater {
                 id: nativeProfiles
                 model: root.page === "main" || root.page === "subscription" ? root.nativeRows : []
@@ -2314,10 +2310,10 @@ Panel {
                     visible: !nativeRow.isProfile
                     Layout.fillWidth: true
                     PanelActionButton { id: nativeGroup; size: Style.space(24); foreground: root.nativeCursor === nativeRow.index ? Color.accent : root.foreground; iconText: nativeRow.isProfile ? "" : nativeRow.modelData.expanded ? "󰅀" : "󰅂"; tooltipText: root.textFor("native.subscriptions.browse"); focusable: true; onClicked: root.toggleNativeSubscription(nativeRow.modelData.subscription.id) }
-                    PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? "" : nativeRow.modelData.subscription.name; textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
+                    PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? "" : nativeRow.modelData.subscription.name; textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body; elide: Text.ElideRight
                       MouseArea { anchors.fill: parent; onClicked: root.toggleNativeSubscription(nativeRow.modelData.subscription.id) }
                     }
-                    PlainText { text: nativeRow.isProfile ? "" : String(nativeRow.modelData.count); color: root.dim; font.family: root.fontFamily }
+                    PlainText { text: nativeRow.isProfile ? "" : String(nativeRow.modelData.count); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body }
                   }
                   RowLayout {
                     visible: nativeRow.isProfile
@@ -2326,7 +2322,7 @@ Panel {
                     PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? nativeRow.profile.name : ""; textFormat: Text.PlainText; color: nativeRow.isProfile && nativeRow.profile.id === root.nativeView.activeId ? Color.accent : root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
                       MouseArea { anchors.fill: parent; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
                     }
-                    PlainText { visible: !nativeRow.selected; text: nativeRow.isProfile ? nativeRow.profile.protocol : ""; color: root.dim; font.family: root.fontFamily }
+                    PlainText { visible: !nativeRow.selected; text: nativeRow.isProfile ? nativeRow.profile.protocol : ""; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body }
                   Row {
                     visible: nativeRow.selected
                     Layout.alignment: Qt.AlignVCenter
@@ -2349,7 +2345,7 @@ Panel {
                       PlainText { Layout.fillWidth: true; text: root.textFor("native.details.private"); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
                       OmaNavigationButton { id: rowDetailsRefresh; iconText: "󰑓"; tooltipText: root.textFor("common.refresh"); focusable: true; enabled: vless.nativeCanAct && !vless.nativeProfileDetailsBusy; onClicked: vless.refreshNativeProfileDetails() }
                     }
-                    PlainText { Layout.fillWidth: true; visible: vless.nativeProfileDetailsStatus !== ""; text: vless.nativeProfileDetailsStatus !== "" ? root.textFor("native.details." + vless.nativeProfileDetailsStatus) : ""; color: vless.nativeProfileDetailsStatus === "failed" ? root.urgent : root.dim; font.family: root.fontFamily; wrapMode: Text.Wrap }
+                    PlainText { Layout.fillWidth: true; visible: vless.nativeProfileDetailsStatus !== ""; text: vless.nativeProfileDetailsStatus !== "" ? root.textFor("native.details." + vless.nativeProfileDetailsStatus) : ""; color: vless.nativeProfileDetailsStatus === "failed" ? root.urgent : root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body; wrapMode: Text.Wrap }
                     GridLayout {
                       Layout.fillWidth: true
                       columns: 1

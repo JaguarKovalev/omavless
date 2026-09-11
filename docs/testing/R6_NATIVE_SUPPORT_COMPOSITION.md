@@ -103,7 +103,7 @@ checks are successful CLI/projection integration, not GUI clipboard acceptance.
 The same executable passed 55 synthetic CLI cases with Python masked; the
 separate real empty-user Off/login gate above used the prior `82a4444` binary.
 
-**GUI copy remains unconfirmed.** Settings and the Copy report focus target
+**Initial automated GUI copy was unconfirmed.** Settings and the Copy report focus target
 were reached through actual keyboard navigation. Synthetic activation did not
 yield a readable report in the clipboard; the panel was subsequently closed.
 One shell restart did not resolve this result. The evidence does not yet
@@ -112,6 +112,11 @@ not justify calling the button PASS or blaming stale QML caching. A direct
 human click/status observation was requested. Private screenshots remain outside
 Git and are not shareable captures. No production timeout, privilege or focus
 behavior was changed to force this smoke to pass.
+
+**Owner follow-up, 2026-09-11: Copy report PASS.** The owner confirmed that the
+installed Copy report action works. This resolves the above GUI acceptance gap
+for the installed `46b4413c6626eec677fbcc7d9cd6627934d8d99e` frontend/runtime.
+The private clipboard contents were not posted or committed.
 
 Final observed native state after the restart was Routing/disconnected,
 manualRecoveryRequired false, core/auxiliary/TUN counts 0/0/0. No VPN transition

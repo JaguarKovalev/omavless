@@ -212,4 +212,34 @@ test('profile frame is square padded content under the existing single scroller'
   assert(frame.includes('id: nativeSearch'));assert(frame.includes('id: nativeProfiles'));
   assert(!/Flickable\s*\{|ScrollView\s*\{/.test(frame));
 });
+test('main HTTPS Test is presentation-hidden without removing Ping or its probe implementation',()=>{
+  assert.match(source,/readonly property bool showMainConnectionTest: false/);
+  const block=source.slice(source.indexOf('id: nativeConnectionTestSection'),source.indexOf('id: nativeSettingsBack'));
+  assert.match(block,/visible: root.showMainConnectionTest && root.page === "main" && root.nativeView.connected/);
+  assert.match(source,/if \(page === "main" && showMainConnectionTest\) targets.push\(nativeTestButton\)/);
+  assert(block.includes('onClicked: vless.startNativeConnectionTest()'));
+  assert(source.includes('id: nativePingTest;'));
+});
+test('settings sections group related controls in a stable visual order',()=>{
+  const region=source.slice(source.indexOf('id: nativeColumn'),source.indexOf('AdvancedDiagnostics {'));
+  const order=['settings.appearance','id: nativeLanguageRow','settings.connections','id: nativeModeButtons','id: nativeRoutingPresetSetting','id: nativeRoutingToolsSetting','id: nativeProvidersRefresh','id: nativeSubscriptionsSetting','settings.setup_startup','id: nativeCoreSetupRow','native.core.scope','id: nativeOnboardingSetting','id: nativeStartupSummaryRow','id: nativeHelpersRefresh','settings.diagnostics_privacy','id: nativeDiagnosticsSetting','id: nativeSupportSetting','id: nativeSupportExportSetting','id: nativeExitIpSetting','settings.application','id: nativeQuitSetting'];
+  let previous=-1;for(const marker of order){const at=region.indexOf(marker);assert(at>previous,marker);previous=at;}
+});
+test('native Settings Tab order follows visual action order without hidden Test',()=>{
+  const from=source.indexOf('  function panelTabTargets()'),to=source.indexOf('\n  function availablePanelTabTargets()',from);
+  const names=Array.from(new Set(source.slice(from,to).match(/\bnative[A-Z]\w*/g)));
+  const c=vm.createContext({page:'settings',vless:{nativeOwner:true},showMainConnectionTest:false});
+  for(const name of names)c[name]={focusTarget:name,count:0};
+  c.nativeSettingsBack='back';c.nativeRefresh='refresh';c.nativeGlobal='global';c.nativeRule='rule';c.nativeDirect='direct';
+  vm.runInContext(source.slice(from,to),c);
+  const result=Array.from(c.panelTabTargets());
+  assert.deepEqual(result.slice(0,23),['back','refresh','nativeLanguageRow','nativeThroughputSetting','global','rule','direct','nativeRoutingPresetSetting','nativeRoutingToolsSetting','nativeProvidersRefresh','nativeSubscriptionsSetting','nativeCoreSetupRow','nativeOnboardingSetting','nativeStartupSummaryRow','nativeHelpersRefresh','nativeFileImportRow','nativeProfileEditorRow','nativeQrExportRow','nativeDiagnosticsSetting','nativeSupportSetting','nativeSupportExportSetting','nativeExitIpSetting','nativeQuitSetting']);
+  assert(!result.includes(c.nativeTestButton));
+});
+test('native text uses explicit theme font roles rather than the oversized default',()=>{
+  const region=source.slice(source.indexOf('id: nativeColumn'),source.indexOf('AdvancedDiagnostics {'));
+  const texts=region.match(/PlainText \{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)||[];
+  assert(texts.length>20);
+  for(const block of texts){assert(block.includes('font.family: root.fontFamily'));assert.match(block,/font.pixelSize: Style.font\.(body|caption|title|display)/);}
+});
 console.log('native main panel: '+count+' passed');
