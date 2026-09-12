@@ -15,9 +15,11 @@ No main publication or production TUI start is authorized by this ledger.
   `9a47a60bbf6d7a5802d2881d1bf25a2988182945`.
 - Installed executable SHA-256:
   `c765289019c22aff46e0a2e590c556470fb605361c856bf369479e5dbac15f02`.
-- The already running daemon is still the previously accepted `46b4413` binary.
+- At the original pause the running daemon was still the accepted `46b4413` binary.
   Updating the disk executable/frontend does **not** upgrade that running process.
-  The existing Routing connection is deliberately preserved during this pass.
+  That pass preserved the existing Routing connection. On the subsequent resume,
+  read-only inspection instead found Routing/disconnected, core/TUN 0/0 and the
+  running daemon digest equal to the installed `9a47a60` executable above.
 
 The owner requested automatic work with no password dialogs or manual clicks.
 The [host-authorization barrier](HOST_AUTHORIZATION_ACCEPTANCE.md) still applies:
@@ -119,6 +121,37 @@ Raw logs and screenshots stay outside Git in `/tmp/omavless-r6-final-local`.
 These temporary artifacts may disappear at reboot; this sanitized summary is
 the durable evidence. Generated Cargo cache was cleaned to recover disk space;
 source, installed program and the existing package archive were preserved.
+
+## Human-attended installed cycle on resume
+
+Tooling head `7a2da4060a2724a5a30343d87905c3b6821a15e2`; installed package,
+disk binary and running daemon identify source `9a47a60` and the digest above.
+The owner explicitly resumed availability for host authorization. The checked-in
+installed gate ran in a visible normal Omarchy terminal with separate human
+`ready`/`settled` acknowledgements, not an agent-fed pseudo-terminal. No repeated
+cycle, security-policy alteration or unattended authorization retry occurred.
+
+| Check | Result |
+| --- | --- |
+| Initial native state | Routing/disconnected, startup Off, manual recovery false, core/TUN 0/0 |
+| Full VPN transition | PASS; local command 237 ms (not human authorization duration) |
+| Runtime ownership | PASS; one Mihomo child owned by native service, one TUN |
+| Controller | PASS; authenticated owned private Unix controller, actual global mode |
+| TCP listener classification | PASS; PID/inode attribution permits only expected loopback proxy and system-TUN forwarder, no TCP controller config |
+| TUN-bound public HTTPS | FAIL: `probe_timeout`; successful TUN use not demonstrated |
+| Disconnect and restoration | PASS; all per-action human barriers completed, disconnected Routing restored, no core/TUN/auxiliary core, manual recovery false |
+| Same public HTTPS destination after disconnect | HTTP 200, about 215 ms; not VPN evidence |
+
+The entire installed gate **FAILS** because HTTPS failed. Lifecycle/cleanup and
+controller evidence remain useful and distinct. This single attended cycle is
+not a repeated churn gate, a proof of DNS/route restoration, or the complete
+Python-unavailable installed application matrix. Timeout alone does not identify
+DNS, provider interoperability or VM networking as the cause. No production
+protocol change or timeout relaxation was made to turn this result green.
+Private fixture data was kept in memory; only fixed public results were emitted.
+The last read-only observation confirms Routing/disconnected with recovery false
+and core/TUN/auxiliary 0/0/0. Runtime remains enabled; no service restart occurred
+during this cycle. Nothing was published to GitHub.
 
 ## Deferred work that does not expand R6
 
