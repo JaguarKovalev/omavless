@@ -1,5 +1,10 @@
 # Selected versus connected profile — bounded UI correction
 
+**Historical layout below is superseded by the fixed-dock follow-up in this
+file.** The owner accepted that corrected main-screen appearance, not the
+initial arrow/inline-management arrangement. Future changes follow the
+[UI/UX contract](../roadmap/UI_UX_CONTRACT.md).
+
 Local candidate `d56b2e2` on `codex/local-native-probe-execution`.
 Try Omarchy ARM64 VM; no push, merge, runtime replacement or R6 completion.
 Installed runtime remains source `7b75b74`; only QML/presentation/catalog change.
@@ -61,10 +66,10 @@ remain distinct checks. Keep the candidate local and R6 open until its existing
 acceptance gates are fulfilled. The owner later noted that the latest agent
 transport interruption likely occurred outside the VM; do not classify that
 message alone as another confirmed VPN failure.
-# Follow-up: fixed action dock and inline connection — 2026-09-13
+## Follow-up: fixed action dock and inline connection — 2026-09-13
 
 Local installed UI candidate: `13717a75264aa2be350bdf741d57b4f1210bcbad`.
-This supersedes the earlier selected-row action layout below, which the owner
+This supersedes the earlier selected-row action layout above, which the owner
 rejected. No GitHub push or publication was authorized or performed.
 
 - Every profile has Connect/Disconnect directly opposite its name, independent

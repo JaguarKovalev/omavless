@@ -227,6 +227,21 @@ When an investigation produces findings that future agents need, store a
 credential-safe report or update canonical documentation in Git rather than
 leaving the result only in chat history.
 
+## UI interaction and presentation work
+
+Before changing plugin layout, controls, labels, selection, focus or scrolling,
+read [`skills/omavless-ui-review/SKILL.md`](skills/omavless-ui-review/SKILL.md)
+and follow the linked [`UI/UX contract`](docs/roadmap/UI_UX_CONTRACT.md).
+This repository-local entry applies to every agent environment; it does not
+depend on a personal Codex skill installation or automatic skill discovery.
+
+Check the intended user action and target **before** composing controls. A
+working callback or green source contract is not UX acceptance. Before calling
+an affected screen ready, inspect the installed rendering and relevant state
+transitions; otherwise explicitly record visual/integration evidence pending.
+Preserve owner-approved layout outside the task. UI review does not authorize
+VPN transitions, credential export or publication beyond the current request.
+
 ## Localization work
 
 For translation, locale formatting or localized-UI review, read

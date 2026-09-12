@@ -270,6 +270,12 @@ visual/contract gates pass.
 
 ### P-U1 — plugin interaction and visual consistency
 
+For UI implementation/review, follow the
+[UI/UX contract](docs/roadmap/UI_UX_CONTRACT.md) and the repository-local skill
+linked from `AGENTS.md`. The contract records the local owner-approved main
+layout separately from the historical delivery state below; it does not claim
+a main merge or complete product acceptance.
+
 State: **source-audited; rendered review and implementation pending**.
 
 The [2026-09-04 audit](docs/testing/CLOUD_UI_ROADMAP_AUDIT_2026-09-04.md)
