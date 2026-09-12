@@ -99,6 +99,12 @@ and the Rust compatibility/runtime bridge are complete.
 
 ### Local-only continuation — pending acceptance, 2026-09-10
 
+For the consolidated current R6 remainder and the 2026-09-12 automatic-test
+checkpoint, start with the [R6 closure ledger](docs/testing/R6_CLOSURE_LEDGER_2026-09-12.md).
+R6 is not closed: installed-binary no-Python conformance passes, while the full
+workspace attempt exposed an unresolved concurrent-status test failure and the
+declared installed-host gates remain distinct. No main publication occurred.
+
 The local Rust candidate has advanced beyond the historical checkpoints below;
 it is not merged or a new marketplace release. Native subscription probes and
 their exact installed evidence are recorded in
