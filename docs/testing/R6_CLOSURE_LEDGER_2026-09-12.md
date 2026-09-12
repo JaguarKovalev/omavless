@@ -131,6 +131,14 @@ the existing private Unix controller, reducing them locally to safe categories
 without exporting destinations or credentials. No logging/security policy was
 changed in this pass.
 
+The subsequent [2026-09-13 isolated diagnosis](R6_NETWORK_DIAGNOSIS_2026-09-13.md)
+reproduces outbound failure without TUN or an installed VPN connection: the
+configured server resolves to a public non-fake IPv4 address but its TCP port
+times out. The same unchanged rendered profile fails in a temporary no-TUN
+Mihomo with `dial tcp` / `i/o timeout`. No production networking change is
+justified by this alone; server/path/filtering/DNS correctness remain separate
+possibilities. This is not a connected-login PASS or proof of VM-specific cause.
+
 Current test-only continuation: **460 reference/policy tests, four skipped**,
 all invoked JS/QML contracts and plugin validation PASS. Focused mask + installed
 lifecycle + package policy suites: **46 PASS**; compile, shell syntax and diff
