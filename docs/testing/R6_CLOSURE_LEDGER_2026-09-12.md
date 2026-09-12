@@ -34,7 +34,7 @@ scenario green. Current connection preservation is not proof of a fresh start.
 | Empty private config preparation and first activation | [Fresh installed account](R6_FRESH_PACKAGE_ACTIVATION_2026-09-11.md) passes real packaged initialize/activate without an old legacy service. Preparation alone is not activation. |
 | Native-only installed frontend | [Payload gate](R6_NATIVE_ONLY_FRONTEND.md): installed frontend omits backend.py and legacy remover. `install.sh --native-only` requires already committed ownership; ordinary compatibility install is not a new automatic cutover. |
 | Primary/IPC file import and profile export | [Installed UI/IPC](R6_NATIVE_IPC_FILE_IMPORT.md), with confirmation and credential-safe private output. |
-| Support report | [Schema-2 composition and owner-confirmed Copy report](R6_NATIVE_SUPPORT_COMPOSITION.md). Explicitly bounded; it does not verify all legacy doctor fields. |
+| Support report | [Schema-3 host/configuration completion](R6_NATIVE_SUPPORT_COMPOSITION.md) at `7b75b74`; installed matching parser/writer passes in the [Python-unavailable bridge](R6_INSTALLED_NO_PYTHON_BRIDGE_2026-09-12.md). No fabricated DNS/internet or aggregate conflict claims. |
 | Login Off without Python | [Actual empty-account user-manager gate](R6_INSTALLED_NO_PYTHON_LOGIN_OFF_2026-09-11.md). Covers a new epoch and same-session disconnected restart, not Last/pinned or connected startup. |
 | Full Quit and plugin disable/remove | [Quit](R5_NATIVE_FULL_QUIT.md), [plugin removal](R5_NATIVE_PLUGIN_REMOVAL.md). Package uninstall and the outstanding authorization/Disconnect correction are separate. |
 | Latest requested main-panel simplification | Duplicate mode caption removed at `6690652`; the three mode buttons remain. Test and latency sections are intentionally hidden, not missing backend implementations. |
@@ -43,20 +43,26 @@ scenario green. Current connection preservation is not proof of a fresh start.
 
 | Gate | What closes it | Current boundary |
 | --- | --- | --- |
-| Installed Python-unavailable application matrix | Exact installed frontend, CLI **and daemon**, with interpreter execution genuinely unavailable, exercising representative import/profile/subscription/routing/diagnostics and lifecycle paths | [Actual installed domain matrix](R6_INSTALLED_NO_PYTHON_DOMAIN_2026-09-12.md): 12 profile/rule/mode/support stages and real service restart PASS under the mask. Graphical/provider/live-VPN paths remain. Compiled conformance and Off/login are additional subsets, not substitutes. |
+| Installed Python-unavailable live lifecycle | Actual installed connection/disconnection with interpreter execution genuinely unavailable and normal host authorization | [Actual installed QML bridge](R6_INSTALLED_NO_PYTHON_BRIDGE_2026-09-12.md): 12 domain + 16 real QML/HTTP/profile/routing/support stages and real service restart PASS. Live connection is the remaining distinct path; repeated graphical locale/chooser combinations and private-provider interoperability are not new requirements. |
 | Login Last/pinned | Real fresh user-manager epoch with valid existing fixture; intended mode/profile selected once; explicit Disconnect then same-epoch restart does not reconnect | Saving these preferences and ordinary restart already have evidence. Fresh connected login remains distinct and can invoke host authorization. |
 | Disconnect/DNS cleanup correction | One observed transition at a time, all authorization resolved, fresh owned cleanup facts and `manualRecoveryRequired=false` | [Correction](R5_NATIVE_DISCONNECT_PROCESS_EXIT.md); the earlier unattended twenty-cycle result is not complete acceptance. No automatic retry storm or security-policy relaxation. |
 | Upgrade, rollback/recovery and package removal | Disposable installed-account/package route; preserve and validate private store/ownership; use supported recovery commands; prove no duplicate owner/core/TUN | Plugin removal is not package removal. Archive inspection is not package-manager recovery. Do not delete markers/receipts to manufacture success or test removal on the owner's connected session. |
-| Support contract completion | Implement/test the missing promised host report coverage, or obtain explicit acceptance of the documented narrower report as its replacement | Schema-2 reports truthfully mark unverified DNS/routes/service/login fields. Do not silently promote them or call the narrower report complete legacy doctor parity. |
 
-The Save As UI checkpoint now has owner-confirmed and automated English/Russian
+The Save As UI checkpoint has owner-confirmed and automated English/Russian
 report-write evidence, private-file validation and simple cancellation passes.
-The owner confirmed manually saving during the Russian cancel-after-edit attempt,
-so that cancellation test is invalidated and needs a repeat, not a product-bug claim;
-isolated overwrite confirmation and profile cases still need concrete evidence recorded
-in [the export report](R6_SAVE_AS_UI_CHECKPOINT_2026-09-12.md); seeing a
-chooser alone is not proof of a successful write. This is a bounded regression gate,
-not an invitation to redesign the UI again.
+Manual owner saves invalidated two attempted cancel-after-edit checks, not the
+working save path. The owner explicitly stopped further file-dialog automation
+to prioritize R6. Additional cancel/overwrite experiments remain UI follow-ups,
+not new Rust retirement gates. The actual native profile/report writer now also
+passes through installed Service under the Python mask. Preserve the limits in
+[the export report](R6_SAVE_AS_UI_CHECKPOINT_2026-09-12.md); do not relabel an
+unrun cancellation or overwrite interaction PASS.
+
+Schema-3 completes the actual legacy support intent with bounded setup, service,
+file and configured-policy facts. The old Python report never established DNS,
+routes or internet connectivity. A literal `doctor` command, fabricated aggregate
+conflict count, loaded-controller counts and solving the separately deferred
+DNS/provider issue are not prerequisites manufactured by this ledger.
 
 ## Automatic checkpoint before the owner-requested pause
 
