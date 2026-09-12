@@ -1,8 +1,8 @@
 # R6 installed Arch package recovery gate
 
-Status: **partially executed; downgrade, upgrade and removal PASS; final
-reinstallation is BLOCKED at human authorization**. The separate attempts below
-must not be cited as one uninterrupted successful package-recovery sequence.
+Status: **downgrade, upgrade, removal and final reinstallation/recovery PASS
+across separately attended invocations**. The interruptions below remain part of
+the evidence; this was not one uninterrupted successful sequence.
 
 `tests/installed_native_package.py` is a developer acceptance tool. Python runs
 the observer, not OmaVLESS; this is a real installed-package recovery gate,
@@ -136,11 +136,23 @@ retained outside `/tmp`. Its archive SHA-256 is
    archive. It stopped at the **pre-install** human barrier. It executed no
    installation or service start. No further windows/effects were attempted.
 
-Current endpoint: the package is **absent**, the plugin files/private state are
-retained, and native daemon/core/TUN counts are **0/0/0**. Final reinstallation
-and service enablement/recovery verification are **NOT RUN**, not PASS. The
-owner was informed immediately; continue with a new attended recovery of the
-retained exact current archive after clarifying terminal/authentication state.
+Endpoint at that interruption: the package was absent, the plugin files/private
+state remained, and native daemon/core/TUN counts were 0/0/0. Final reinstall
+was then NOT RUN. The owner was informed; no unattended compensation was used.
+
+4. After the owner confirmed no pending authentication, a new recovery-only run
+   was launched in a persistent ordinary Foot window. The window was observed
+   mapped and visible; no acknowledgement or password was injected. Normal
+   installation of the retained current archive and service start completed.
+   **Recovery PASS**: actual executable matches `7b75b74`, private bytes/modes
+   unchanged within this run, native ownership, startup Off, persistent service
+   enablement and clean disconnected state all verified. The script emitted
+   `package_recovery` with every asserted boolean true. Actual daemon PID was
+   193116; this is session evidence, not a future fixed-PID assumption.
+
+The completed package gate ends installed/enabled and disconnected, with one
+native daemon and zero core/TUN. Later login-preference preparation is separately
+recorded in the R6 ledger and does not retroactively change this Off endpoint.
 
 Private-state equality was checked within each individual invocation; baseline
 hashes were not persisted publicly or retrospectively equated across interrupted

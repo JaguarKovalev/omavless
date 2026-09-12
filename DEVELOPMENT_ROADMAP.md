@@ -106,6 +106,15 @@ workspace pass. An earlier intermittent post-drain mutation test failure remains
 unexplained, and declared installed-host gates remain distinct. No main
 publication occurred.
 
+Latest local continuation: compatible native-package downgrade/upgrade/removal/
+recovery is exercised; the installed no-Python Full VPN lifecycle and guarded
+Disconnect/cleanup pass. Its HTTPS probe still times out and remains a separate
+open network finding, not an overall live-network PASS. The remaining host
+migration gate is genuine Last/pinned fresh login plus disconnected same-epoch
+restart. Last/Routing is prepared for the next real login; current desired state
+remains disconnected. Settings keyboard-scroll polish is installed and visually
+checked. See the ledger for exact runtime/frontend identities and restoration.
+
 The local Rust candidate has advanced beyond the historical checkpoints below;
 it is not merged or a new marketplace release. Native subscription probes and
 their exact installed evidence are recorded in

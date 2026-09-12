@@ -43,32 +43,38 @@ scenario green. Current connection preservation is not proof of a fresh start.
 
 | Gate | What closes it | Current boundary |
 | --- | --- | --- |
-| Installed Python-unavailable live lifecycle | Actual installed connection/disconnection with interpreter execution genuinely unavailable and normal host authorization | [Actual installed QML bridge](R6_INSTALLED_NO_PYTHON_BRIDGE_2026-09-12.md): 12 domain + 16 real QML/HTTP/profile/routing/support stages and real service restart PASS. Live connection is the remaining distinct path; repeated graphical locale/chooser combinations and private-provider interoperability are not new requirements. |
+| Installed Python-unavailable live lifecycle | Actual installed connection/disconnection with interpreter execution genuinely unavailable and normal host authorization | DONE for lifecycle: [attended installed cycle](R6_ATTENDED_PYTHON_ABSENCE.md) proves Full VPN/core/TUN/controller, Disconnect and restoration without Python. HTTPS timed out; overall network gate remains FAIL, not a fabricated interoperability PASS. The earlier 12 domain + 16 real QML/HTTP stages remain valid. |
 | Login Last/pinned | Real fresh user-manager epoch with valid existing fixture; intended mode/profile selected once; explicit Disconnect then same-epoch restart does not reconnect | Saving these preferences and ordinary restart already have evidence. Fresh connected login remains distinct and can invoke host authorization. |
-| Disconnect/DNS cleanup correction | One observed transition at a time, all authorization resolved, fresh owned cleanup facts and `manualRecoveryRequired=false` | [Correction](R5_NATIVE_DISCONNECT_PROCESS_EXIT.md); the earlier unattended twenty-cycle result is not complete acceptance. No automatic retry storm or security-policy relaxation. |
-| Upgrade, rollback/recovery and package removal | Disposable installed-account/package route; preserve and validate private store/ownership; use supported recovery commands; prove no duplicate owner/core/TUN | Plugin removal is not package removal. Archive inspection is not package-manager recovery. Do not delete markers/receipts to manufacture success or test removal on the owner's connected session. |
+| Attended Disconnect/recovery correction | One observed transition at a time, all authorization resolved, fresh owned cleanup facts and `manualRecoveryRequired=false` | DONE for guarded cleanup in the installed no-Python cycle. No claim of DNS/route-restoration correctness; that separate investigation remains deferred. The earlier unattended twenty-cycle result is still not complete acceptance. |
+| Upgrade, rollback/recovery and package removal | Real installed package route; preserve and validate private store/ownership; use supported recovery commands; prove no duplicate owner/core/TUN | DONE across [separately attended package runs](R6_INSTALLED_PACKAGE_RECOVERY_2026-09-12.md), including final current-archive recovery. Compatible native-package rollback only; not ownership rollback to Python. |
 
-### Latest continuation: package recovery must finish first
+### Latest continuation: fresh Last/pinned login remains
 
-The candidate/history above remains historical, not the current installed state.
-The [attended package gate](R6_INSTALLED_PACKAGE_RECOVERY_2026-09-12.md) now proves
-native downgrade/restart, re-upgrade/restart and package removal in separately
-attended invocations. Final reinstall stopped **before installation** at the
-human authorization barrier. The current native package is absent; private
-state and frontend remain, runtime/core/TUN are 0/0/0. Do not start another host
-test or call R6 complete before explicit attended recovery restores the retained
-`7b75b74` package and verifies its actual running executable and private state.
+Package recovery is complete. Installed and running package is
+`omavless 0.0.0.r492.g7b75b747883d-1`, source `7b75b74`, executable digest
+`fe04fba32d4e135d56e929350cd0296d3f89168e06d6ebba9a6de089aec4b786`.
+The [attended no-Python cycle](R6_ATTENDED_PYTHON_ABSENCE.md) completed lifecycle
+and cleanup, with the HTTPS timeout preserved separately. The interpreter was
+restored; no mask remains. No full daemon restart is needed for later QML/docs
+changes. PID 193116 survived a shell-only reload during UI acceptance.
 
-The optional [attended Python-absence lifecycle tool](R6_ATTENDED_PYTHON_ABSENCE.md)
-is implemented and deterministically tested, **not executed**. It preserves the
-normal graphical authorization path using an explicitly VM-wide temporary
-interpreter restriction with an independent restoration watchdog. It is not a
-production helper, package dependency or authorization bypass. No Python mask
-is currently installed. Fresh Last/pinned login remains unexecuted: a lingering
-test account alone has no graphical/session-scoped authentication agent. Do not
-spoof a manager epoch, edit receipts, or substitute a manual connection for that
-gate. An owner-session restart or a separately validated disposable PAM session
-with a real session-scoped agent is required.
+Fresh Last/pinned login is the remaining host migration gate. The owner approved
+using real logout/login instead of extending a disposable-session authorization
+harness. Linger is currently off. The existing bundled template and all 23
+required private rule-cache files passed read-only presence/bounds checks.
+The actual native `startup-configure` then accepted **Last / Routing / enabled**,
+including its production offline validator. Desired state stayed disconnected
+in Routing; this is preparation, **not a fresh-login PASS**.
+
+A private mode-0600 observer checkpoint and fixed `login-last-check.py` remain
+outside Git in the session's `r6-installed-final` artifact directory. They record
+the before-manager epoch, expected opaque profile ID and previous Off preference;
+no actual ownership/login receipt is edited. After genuine logout/login, the
+read-only `verify` phase requires a different real manager epoch, the intended
+profile/mode, one owned core/TUN and the responsive peer-verified Unix controller.
+Then an attended Disconnect and same-epoch restart must stay disconnected.
+Repeat with pinned selection in a second fresh session, and restore the original
+Off preference afterward. Do not substitute manual Connect or delete receipts.
 
 Current test-only continuation: **460 reference/policy tests, four skipped**,
 all invoked JS/QML contracts and plugin validation PASS. Focused mask + installed
@@ -77,6 +83,25 @@ check PASS. The prior **957 Rust tests / 0 failed / 10 ignored**, fmt/Clippy and
 R0 parity remain applicable: this continuation changed no Rust production code.
 The actual installed Python-unavailable domain/QML evidence remains 12 + 16
 stages PASS; it is not invalidated by later test-tool/documentation changes.
+
+### UI polish retained in this session
+
+At `d0a715b8bf3aa07fc71c3b99b981ad37da914521`, keyboard navigation now scrolls
+an entire Settings card into view, not just its action button; oversized cards
+still keep the action reachable. Support-copy/save actions use the same rule.
+Actual installed Russian captures before/after show the previously clipped
+startup heading now fully visible. Main layout and English/Russian Settings
+were reviewed locally: consistent card typography, separate scrollbar gutter,
+bounded long labels and no duplicate main mode caption. Full reference suite
+still passes 460 tests/four skips; native-main JS now has 30 cases, QML contracts
+and plugin validation pass. Native runtime source is unchanged.
+
+Installation required a shell-only restart to discard stale hot-reload state;
+the daemon PID survived. System locale was restored; plugin remains enabled.
+The owner clarified that UI polish is **not deferred**: the human may operate
+the Files dialog, and the agent verifies the result. No further automated
+chooser-cancel experiment or new Save As defect was introduced by this pass.
+Captures are private outside Git, not publishable fixture screenshots.
 
 The Save As UI checkpoint has owner-confirmed and automated English/Russian
 report-write evidence, private-file validation and simple cancellation passes.

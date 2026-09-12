@@ -1,7 +1,8 @@
 # R6 attended installed Python-absence lifecycle gate
 
-Status: **test tooling; live execution NOT RUN**. This is not permission to
-change the production runtime or an assertion that R6 is complete.
+Status: **installed Python-unavailable lifecycle executed; lifecycle/cleanup
+PASS, HTTPS probe FAIL (`probe_timeout`)**. This is not an overall network PASS
+or an assertion that R6 is complete.
 
 The installed disposable-account QML/domain matrix already passes with Python
 inaccessible. Its account has no normal graphical polkit session. Reusing the
@@ -69,3 +70,37 @@ while VPN or authorization recovery remains unresolved.
 Deterministic policy tests exercise refusal, post-wait mask guards, negative
 controls, exception/expiry cleanup and owned-mount restoration using synthetic
 accessors. They never run sudo, mount, package, service or VPN effects.
+
+## Installed execution — 2026-09-12
+
+Try Omarchy ARM64 VM, tool `b878bc4`, native package source
+`7b75b747883d66a05f1f2b321d42f194c6040b5c`, executable SHA-256
+`fe04fba32d4e135d56e929350cd0296d3f89168e06d6ebba9a6de089aec4b786`.
+The exact existing installed gate ran in a visible real terminal, with normal
+human pre/post authorization. The mask context entered only after actual kernel
+refusal of interpreter execution; each mutation checked it after human waiting.
+
+| Check | Actual result |
+| --- | --- |
+| Real installed Full VPN transition without executable Python | PASS, 141 ms local command time, excluding human authorization |
+| Native service ownership, single Mihomo and single TUN | PASS |
+| Owned private Unix controller, actual global mode | PASS |
+| PID/inode TCP attribution | PASS; only expected loopback proxy/system-TUN forwarder, no TCP controller config |
+| Fixed bounded HTTPS probe bound to the TUN | FAIL: `probe_timeout`; successful TUN-carried HTTPS not demonstrated |
+| Finally Disconnect, Routing restoration, fresh no-recovery/empty core/TUN/auxiliary facts | PASS; human barriers settled |
+| Interpreter identity/hash/execution restored, temporary guardian directory removed | PASS |
+
+The installed gate exited with `https_probe_failed` after successful cleanup.
+It did not emit an overall Python-free network PASS. Context restoration
+preserved the original error (not a mask-expiry/restoration error), and the
+outer observer independently verified restored interpreter bytes and execution.
+The useful no-Python lifecycle evidence is distinct from the failed network
+probe and from still-unrun Last/pinned fresh-login acceptance. Do not diagnose
+DNS, the provider or virtualization from this timeout alone. No retries or
+production timeout/security changes were made to obtain a green result.
+
+The owner explicitly kept the existing DNS/provider investigation separate from
+Rust retirement. This record closes the observed no-Python lifecycle/guarded
+cleanup path, not internet interoperability or DNS/route-restoration correctness.
+Raw fixed-result logs remain outside Git; private fixture input was not printed
+or committed.
