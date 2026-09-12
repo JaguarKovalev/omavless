@@ -118,3 +118,42 @@ therefore produced a generic refusal; retrying with the actual installed
 This resolves the write portion of the earlier automation gap. It does not
 establish an isolated overwrite-confirmation/cancel test, Russian acceptance or
 profile export. Those remain separate from this successful report write.
+
+### Further installed EN/RU checks
+
+Installed package/runtime remains `9a47a60`; all 19 tracked frontend files match
+the local candidate byte-for-byte. No product code or installed file changed.
+The screenshot/keyboard checks followed the project localization workflow,
+with private captures and System locale restored afterward.
+
+The automated focus guard initially assumed zenity owned the visible window.
+Actual inspection instead found `xdg-desktop-portal-gtk` presenting zenity's
+request. The corrected local test checks one zenity child of the fixed installed
+`omavless desktop pick-report-export` command, the actual executable identities,
+the expected localized title, a unique matching window and active focus. It
+accepts both the launcher's bare `omavless` argv[0] and its absolute path while
+requiring the actual executable to remain `/usr/bin/omavless`. No unverified
+window receives input; this was an automation correction, not a plugin change.
+
+| Case | Evidence |
+| --- | --- |
+| English report save to new private temporary destination | PASS: automated write, current-user regular file, 1515 bytes, mode0600, accepted by installed public-schema parser |
+| English cancellation | PASS: chooser closed and the intended cancellation target did not exist |
+| English overwrite | Atomic replacement of the test report observed (inode changed, valid report and mode0600 retained); isolated confirmation interaction remains unconfirmed |
+| Russian report save | PASS: exact Russian request title observed, automated write and same file/schema/privacy checks |
+| Russian immediate cancellation | PASS: chooser closed, pre-existing default report's modification time unchanged |
+| Russian cancellation after typing a destination | NOT PASS: the intended cancelled file exists; concurrent human input versus input-automation/product behavior has not been established |
+| Profile-specific Save As completion | Still pending; focusing its action is not export evidence |
+
+GTK portal-owned labels such as Cancel, Name and OK follow the running host's
+English locale, independently of the plugin's Russian choice. The plugin sent
+its Russian title and showed Russian surrounding UI; no OS locale or portal
+service was restarted to translate system-owned controls. An early capture was
+during animation and is not a settled-layout PASS for every chooser element.
+The locale-setting command once timed out waiting for shell IPC, but the stored
+value, request title and subsequent shell ping proved the requested state; no
+restart was needed and no VPN operation occurred.
+
+These results supersede the blanket earlier unconfirmed-write statement, not
+the narrower remaining cancellation/overwrite/profile cases. Raw captures and
+generated reports stay outside Git; only this redacted matrix is recorded.
