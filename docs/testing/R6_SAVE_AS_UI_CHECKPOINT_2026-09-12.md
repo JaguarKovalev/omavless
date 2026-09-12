@@ -142,7 +142,7 @@ window receives input; this was an automation correction, not a plugin change.
 | English overwrite | Atomic replacement of the test report observed (inode changed, valid report and mode0600 retained); isolated confirmation interaction remains unconfirmed |
 | Russian report save | PASS: exact Russian request title observed, automated write and same file/schema/privacy checks |
 | Russian immediate cancellation | PASS: chooser closed, pre-existing default report's modification time unchanged |
-| Russian cancellation after typing a destination | NOT PASS: the intended cancelled file exists; concurrent human input versus input-automation/product behavior has not been established |
+| Russian cancellation after typing a destination | INVALIDATED: the owner confirmed manually pressing Save during this attempt. The resulting file is not evidence of a cancel defect; repeat without concurrent input before claiming cancellation PASS |
 | Profile-specific Save As completion | Still pending; focusing its action is not export evidence |
 
 GTK portal-owned labels such as Cancel, Name and OK follow the running host's
@@ -157,3 +157,9 @@ restart was needed and no VPN operation occurred.
 These results supersede the blanket earlier unconfirmed-write statement, not
 the narrower remaining cancellation/overwrite/profile cases. Raw captures and
 generated reports stay outside Git; only this redacted matrix is recorded.
+
+Owner clarification after this run: the manual Save action explains the file
+created during the intended Russian cancel-after-edit test. This removes that
+incident as evidence of a product defect, but does not turn the interrupted
+cancellation test into a pass. The successful save and immediate-cancel cases
+remain separate evidence.

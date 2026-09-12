@@ -51,7 +51,8 @@ scenario green. Current connection preservation is not proof of a fresh start.
 
 The Save As UI checkpoint now has owner-confirmed and automated English/Russian
 report-write evidence, private-file validation and simple cancellation passes.
-One Russian cancel-after-edit attempt left a file and remains unclassified;
+The owner confirmed manually saving during the Russian cancel-after-edit attempt,
+so that cancellation test is invalidated and needs a repeat, not a product-bug claim;
 isolated overwrite confirmation and profile cases still need concrete evidence recorded
 in [the export report](R6_SAVE_AS_UI_CHECKPOINT_2026-09-12.md); seeing a
 chooser alone is not proof of a successful write. This is a bounded regression gate,
