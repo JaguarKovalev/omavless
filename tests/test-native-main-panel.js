@@ -11,13 +11,14 @@ function context(){
   const c=vm.createContext({NativePresentation:presentation,subscriptionSortModes:{},profileFilter:'',nativeExpanded:{},nativeSelectedProfile:'local',nativeSubscriptionId:'',pendingSubscriptionDelete:null,
     nativeView:{state:'disconnected',connected:false,mode:'rule',lastProfileId:'local',profiles:[standalone,managed],subscriptions:[{id:'sub',name:'Synthetic'}]},
     vless:{nativeCanAct:true,nativeOwner:true,refreshNativeDesktopCapabilities:()=>calls.push(['desktop-capabilities']),requestNativeAction:(...args)=>calls.push(args),nativeSnapshot:{instanceId:'instance',revision:4}},page:'main',nativeFlick:{contentY:90},
-    nativeCursor:-1,nativeProfiles:{itemAt:()=>null},Qt:{callLater:f=>f()}});
+    nativeCursor:-1,nativeExpandedDetailsId:'',nativeProfiles:{itemAt:()=>null},Qt:{callLater:f=>f()}});
   c.root=c;c.calls=calls;
-  for(const name of ['nativeRecord','nativeActivateProfile','nativeHeaderQrRecord','buildNativeRows','sortNativeProbeProfiles','sortNativeProbeResults','subscriptionSortMode','toggleNativeSubscription','nativeToggleConnection','openSettings','openSubscriptions','browseNativeSubscription','moveNativeCursor','activateNativeCursor','requestNativeSubscriptionDelete','editSubscription']){
+  for(const name of ['nativeRecord','nativeActivateProfile','toggleNativeProfileDetails','buildNativeRows','sortNativeProbeProfiles','sortNativeProbeResults','subscriptionSortMode','toggleNativeSubscription','nativeToggleConnection','openSettings','openSubscriptions','browseNativeSubscription','moveNativeCursor','activateNativeCursor','requestNativeSubscriptionDelete','editSubscription']){
     const start=source.indexOf('  function '+name+'('),end=source.indexOf('\n  }',start)+4;
     assert(start>=0&&end>start);vm.runInContext(source.slice(start,end),c);
   }
   Object.defineProperty(c,'nativeRows',{get:()=>c.buildNativeRows()});
+  Object.defineProperty(c,'nativeActionProfile',{get:()=>c.nativeView.profiles.find(p=>p.id===c.nativeSelectedProfile)||null});
   Object.defineProperty(c,'nativeSubscription',{get:()=>c.nativeView.subscriptions.find(s=>s.id===c.nativeSubscriptionId)||null});
   return c;
 }
@@ -25,9 +26,9 @@ let count=0;function test(name,f){try{f();count++;}catch(e){e.message=name+': '+
 test('selection is not connection; explicit row action alone switches the target',()=>{
   const c=context();Object.assign(c.nativeView,{connected:true,state:'connected',activeId:'managed'});
   c.nativeSelectedProfile='local';assert.equal(presentation.activeProfile(c.nativeView).id,'managed');
-  const line=source.split('\n').find(s=>s.includes('id: nativeChoose;'));
+  const line=source.slice(source.indexOf('id: nativeChoose\n'),source.indexOf('id: rowConnect;'));
   c.nativeRow={profile:standalone,index:0};
-  vm.runInContext(line.match(/onClicked: (\{.*\}) \}$/)[1],c);
+  vm.runInContext(line.match(/onClicked: (\{[^\n]*\})/)[1],c);
   assert.equal(c.calls.length,0);assert.equal(c.nativeView.activeId,'managed');
   assert(!line.includes('●'));assert(line.includes('native.profile.selectActions'));
   c.nativeActivateProfile('local');assert.deepEqual(c.calls.pop(),['connect','local','rule']);
@@ -40,15 +41,47 @@ test('active identity survives collapsed groups, filtering, and a different sele
   assert.equal(presentation.activeProfile(c.nativeView).id,'managed');
   assert.match(source,/id: nativeConnectedIdentity[\s\S]*?textFormat: Text.PlainText/);
   assert(source.includes('root.nativeActiveProfile.subscriptionId === nativeRow.modelData.subscription.id'));
-  assert(source.includes('nativeRow.connected ? "native.profile.connected" : "native.profile.selectedOnly"'));
+  assert(source.includes('nativeRow.connected ? "action.disconnect" : "action.connect"'));
 });
-test('header QR describes the connected profile, row QR remains selected-profile scoped',()=>{
+test('one fixed dock uses the explicit selected profile, never the active fallback',()=>{
   const c=context();Object.assign(c.nativeView,{connected:true,state:'connected',activeId:'managed'});
-  assert.equal(c.nativeHeaderQrRecord().uuid,'managed');
-  c.nativeView.connected=false;c.nativeView.state='unavailable';assert.equal(c.nativeHeaderQrRecord(),null);
-  c.nativeView.state='disconnected';c.nativeSelectedRecord=()=>({uuid:'local'});assert.equal(c.nativeHeaderQrRecord().uuid,'local');
-  assert(source.includes('onClicked: vless.showQr(root.nativeHeaderQrRecord())'));
-  assert(source.includes('onClicked: vless.showQr(nativeRow.record)'));
+  assert.equal(c.nativeActionProfile.id,'local');
+  c.nativeSelectedProfile='removed';assert.equal(c.nativeActionProfile,null);
+  assert(!source.includes('nativeHeaderQrRecord'));
+  assert(source.includes('onClicked: vless.showQr(nativeProfileActions.record)'));
+  const dock=source.slice(source.indexOf('id: nativeProfileActions\n'),source.indexOf('AdvancedDiagnostics {'));
+  assert(dock.includes('anchors.bottom: parent.bottom'));
+  assert(dock.includes('record !== null'));
+  assert(dock.includes('native.profile.chooseActions'));
+  assert(dock.includes('textFormat: Text.PlainText'));
+  assert(dock.includes('Keys.onPressed: function(event) { root.handleNativeNavigationKey(event) }'));
+  const rows=source.slice(source.indexOf('id: nativeProfiles\n'),source.indexOf('// nativeProfilesFrame'));
+  for(const id of ['rowRename','rowPin','rowDelete','rowQr','rowExport','rowEdit','rowDetails']) {
+    assert(!rows.includes('id: '+id+';'));assert.equal(source.split('id: '+id+';').length,2);
+  }
+  assert(source.includes('anchors.bottom: nativeProfileActions.visible ? nativeProfileActions.top : parent.bottom'));
+});
+test('dock actions address its named selection, independent of the connected target',()=>{
+  for(const id of ['rowPin','rowRename','rowQr','rowExport','rowEdit','rowDelete']) {
+    const calls=[],record={uuid:'selected',managed:false};
+    const c=vm.createContext({nativeProfileActions:{record},root:{requestRename:r=>calls.push(r),requestFileExport:r=>calls.push(r),handOffToEditor:r=>{calls.push(r);return false},requestDelete:r=>calls.push(r)},vless:{toggleFavorite:r=>calls.push(r),showQr:r=>calls.push(r)}});
+    const line=source.split('\n').find(s=>s.includes('id: '+id+';'));
+    const code=line.slice(line.indexOf('onClicked: ')+11,line.lastIndexOf(' }'));
+    vm.runInContext(code,c);assert.equal(calls.length,1);assert.equal(calls[0],record);
+  }
+});
+test('connect is always in the name row, not dependent on action selection',()=>{
+  const row=source.slice(source.indexOf('id: nativeProfileIdentityRow'),source.indexOf('PlainText { Layout.fillWidth: true; visible: nativeRow.isProfile && vless.probeResult'));
+  assert(row.includes('nativeRow.profile.name'));assert(row.includes('id: rowConnect;'));
+  assert(!row.includes('visible: nativeRow.selected'));
+  assert(row.includes('!nativeRow.profile.missing'));
+});
+test('details dock reveals selected hidden profile without connecting',()=>{
+  const c=context();c.nativeSelectedProfile='managed';c.profileFilter='Local';
+  assert(c.toggleNativeProfileDetails());assert.equal(c.profileFilter,'');
+  assert.equal(c.nativeExpanded.sub,true);assert.equal(c.nativeExpandedDetailsId,'managed');
+  assert.equal(c.calls.length,0);assert(c.toggleNativeProfileDetails());assert.equal(c.nativeExpandedDetailsId,'');
+  c.nativeSelectedProfile='deleted';assert.equal(c.toggleNativeProfileDetails(),false);
 });
 test('power and explicit actions reject removed or missing selections without fallback',()=>{
   const c=context();c.nativeSelectedProfile='removed';assert.equal(c.nativeToggleConnection(),false);
@@ -72,6 +105,8 @@ test('keyboard scrolling keeps complete settings cards visible and bounds oversi
   flick.contentY=250;c.scrollPanelControlIntoView(item(260,30));assert.equal(flick.contentY,250);
   flick.contentY=100;c.scrollPanelControlIntoView(item(0,30));assert.equal(flick.contentY,0);
   flick.contentY=500;c.scrollPanelControlIntoView(item(990,10));assert.equal(flick.contentY,700);
+  flick.contentY=100;target=item(900,30);target.parent={parent:null};
+  c.scrollPanelControlIntoView(target);assert.equal(flick.contentY,100);
   assert.match(source,/id: actionButton\s+readonly property Item focusScrollItem: settingRow/);
   for (const id of ['nativeSupportCopy','nativeSupportSave'])
     assert(source.includes('id: '+id+'; readonly property Item focusScrollItem: nativeSupportSetting;'));
@@ -109,24 +144,24 @@ test('settings opens and reads helper inventory without runtime mutation, locale
 test('familiar header, truthful states, same-height focusable controls and no outer power box',()=>{
   const section=source.slice(source.indexOf('id: nativeHeader'),source.indexOf('id: nativeSettingsBack'));
   assert.match(section,/PanelHero/);assert.match(section,/title: "OmaVLESS"/);assert.match(section,/native.state./);
-  assert.equal((section.match(/size: nativeHeader.controlHeight/g)||[]).length,2);
+  assert.equal((section.match(/size: nativeHeader.controlHeight/g)||[]).length,1);
   assert.match(section,/height: nativeHeader.controlHeight/);assert.match(section,/cursorRing: false/);assert.match(section,/Keys.onReturnPressed/);
   assert(!source.includes('vless.nativeOwner ? "?"'));
 });
 test('private names stay plaintext and selected row exposes managed-safe actions',()=>{
   const section=source.slice(source.indexOf('id: nativeProfiles'),source.indexOf('AdvancedDiagnostics {'));
   assert.match(section,/subscription.name; textFormat: Text.PlainText/);
-  assert.match(section,/profile.name : ""; textFormat: Text.PlainText/);
+  assert.match(section,/profile.name : ""\s+textFormat: Text.PlainText/);
   for(const id of ['rowRename','rowPin','rowDelete','rowQr','rowEdit'])assert(section.includes('id: '+id));
   assert.equal(context().nativeRecord(managed).managed,true);assert.equal(context().nativeRecord(standalone).managed,false);
-  assert.match(section,/visible: nativeRow.selected/);
+  assert.match(section,/nativeProfileActions.canAct && !nativeProfileActions.record.managed/);
 });
-test('compact import and inline actions retain labels and keyboard targets',()=>{
+test('compact import and dock actions retain tooltips and keyboard targets',()=>{
   for(const id of ['nativeImportClipboard','nativeImportFile'])
     assert.match(source,new RegExp('OmaNavigationButton \\{ id: '+id+';[^\\n]*tooltipText:[^\\n]*focusable: true'));
   for(const id of ['rowRename','rowPin','rowDelete','rowQr','rowEdit'])
-    assert.match(source,new RegExp('PanelActionButton \\{ id: '+id+'; size: Style.space\\(24\\);[^\\n]*tooltipText:[^\\n]*focusable: true'));
-  assert.match(source,/visible: !nativeRow.selected; text: nativeRow.isProfile/);
+    assert.match(source,new RegExp('OmaNavigationButton \\{ id: '+id+';[^\\n]*tooltipText:[^\\n]*focusable: true'));
+  assert(source.includes('[rowPin, rowRename, rowEdit, rowQr, rowExport, rowDetails, rowDelete]'));
 });
 test('subscription detail navigation is local and clears search without changing connection',()=>{
   const c=context();assert(c.openSubscriptions());assert.equal(c.page,'subscriptions');assert.equal(c.nativeFlick.contentY,0);

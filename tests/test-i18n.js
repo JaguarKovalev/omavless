@@ -83,6 +83,9 @@ assert.strictEqual(
 assert.strictEqual(I18n.publicErrorKey("", editorMissingFallback), "")
 assert.strictEqual(I18n.translate("edit.config", "ru"), "Конфигурация")
 assert.strictEqual(I18n.translate("common.delete", "ru"), "Удалить")
+assert.strictEqual(I18n.translate("native.profile.actionsFor", "en", {name:"Synthetic"}), "Profile actions: Synthetic")
+assert.strictEqual(I18n.translate("native.profile.actionsFor", "ru", {name:"Synthetic"}), "Действия с профилем: Synthetic")
+assert.strictEqual(I18n.translate("native.profile.chooseActions", "ru"), "Выберите профиль для действий")
 assert.strictEqual(
   I18n.translate("tooltip.import_file", "en"),
   "Import a profile or subscription link file (i)"

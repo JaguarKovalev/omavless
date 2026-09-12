@@ -63,9 +63,8 @@ test('explicit confirmation UI and Process cleanup guards', () => {
   assert(!panel.includes('id: exportWindow'));
   assert(!panel.includes('QtQuick.Dialogs'));
   assert(source.includes('process.running && !process.picking'));
-  // Other restored profile actions may follow Edit; export must retain its
-  // position without freezing the complete keyboard navigation array.
-  assert(panel.includes('rowQr, rowExport, rowEdit'));
+  // Export lives in the single fixed dock, after QR in the visual/tab order.
+  assert(panel.includes('rowQr, rowExport, rowDetails'));
   const component=source.slice(source.indexOf('id: nativeFileExportComponent'),source.indexOf('id: nativeQrRenderComponent'));
   assert(component.includes('property Timer watchdog: Timer'));
   assert(component.includes('writeAdmitted = root.nativeFileExportCurrent(context)'));

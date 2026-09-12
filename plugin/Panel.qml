@@ -164,12 +164,12 @@ Panel {
   property var nativeExpanded: ({})
   readonly property var nativeView: NativePresentation.project(vless.nativeSnapshot, vless.nativeObservation, vless.nativeSnapshotFailed)
   readonly property var nativeActiveProfile: NativePresentation.activeProfile(nativeView)
+  readonly property var nativeActionProfile: nativeView.profiles.find(function(p) { return p.id === root.nativeSelectedProfile }) || null
   readonly property bool nativeSelectionConnectable: nativeView.profiles.some(function(p) { return p.id === (root.nativeSelectedProfile || nativeView.lastProfileId) && !p.missing })
   readonly property var nativeIpc: NativePresentation.ipc(vless.nativeSnapshot, vless.nativeObservation,
     vless.nativeSnapshotFailed, vless.nativePending, vless.nativeOutcomeUnknown)
   readonly property var nativeRows: buildNativeRows()
   property var nativeSettingsControl: null
-  property var nativeQrControl: null
   property var nativePowerControl: null
 
   function nativeRecord(profile) {
@@ -679,7 +679,7 @@ Panel {
       var targets = page === "settings" ? [nativeSettingsBack, nativeRefresh, nativeLanguageRow.focusTarget, nativeThroughputSetting.focusTarget, nativeGlobal, nativeRule, nativeDirect, nativeRoutingPresetSetting.focusTarget, nativeRoutingToolsSetting.focusTarget, nativeProvidersRefresh.focusTarget, nativeSubscriptionsSetting.focusTarget, nativeCoreSetupRow.focusTarget, nativeOnboardingSetting.focusTarget, nativeStartupSummaryRow.focusTarget, nativeHelpersRefresh.focusTarget, nativeFileImportRow.focusTarget, nativeProfileEditorRow.focusTarget, nativeQrExportRow.focusTarget, nativeDiagnosticsSetting.focusTarget, nativeSupportSetting.focusTarget, nativeSupportSetting.exportFocusTarget, nativeExitIpSetting.focusTarget, nativeQuitSetting.focusTarget]
         : page === "subscriptions" ? [nativeSettingsBack, nativeRefresh, nativeSubscriptionAdd, nativeSubscriptionRefreshAll]
         : page === "subscription" ? [nativeSettingsBack, nativeSubscriptionTest, nativeSubscriptionSort, nativeSubscriptionRefresh, nativeSubscriptionEdit, nativeSubscriptionDelete, nativeSearch]
-        : [nativeSettingsControl, nativeQrControl, nativePowerControl, nativeGlobal, nativeRule, nativeDirect, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
+        : [nativeSettingsControl, nativePowerControl, nativeGlobal, nativeRule, nativeDirect, nativeSubscriptionsButton, nativeImportClipboard, nativeImportFile, nativeSearch]
       targets = targets.concat([nativeBatchCheck, nativeBatchCancel, nativeBatchDismiss, nativeBatchAbandon])
       if (page === "main" && showMainConnectionTest) targets.push(nativeTestButton)
       if (page === "main" && showMainLatencySection) targets.splice(6, 0, nativePingTest)
@@ -692,6 +692,8 @@ Panel {
         var row = nativeProfiles.itemAt(i)
         if (row) targets = targets.concat(row.focusTargets)
       }
+      if (page === "main" || page === "subscription")
+        targets = targets.concat([rowPin, rowRename, rowEdit, rowQr, rowExport, rowDetails, rowDelete])
       return targets
     }
     if (page === "subscriptions") return [
@@ -733,6 +735,12 @@ Panel {
     var flick = page === "diagnostics" ? advancedDiagnosticsPage.flickable : vless.nativeOwner ? nativeFlick : page === "subscriptions" ? subscriptionsFlick
       : (page === "settings" ? settingsFlick : panelFlick)
     if (!flick || !target) return
+    // A docked control is already visible. Focusing it must not move the list.
+    if (target.parent) {
+      var ancestor = target
+      while (ancestor && ancestor !== flick.contentItem) ancestor = ancestor.parent
+      if (!ancestor) return
+    }
     Qt.callLater(function() {
       if (!target || !flick) return
       var margin = Style.space(8)
@@ -1325,9 +1333,26 @@ Panel {
     return p ? {uuid:p.id, name:p.name, favorite:p.favorite, managed:p.subscriptionId !== ""} : null
   }
 
-  function nativeHeaderQrRecord() {
-    var active = NativePresentation.activeProfile(nativeView)
-    return active ? nativeRecord(active) : nativeView.state === "disconnected" ? nativeSelectedRecord() : null
+  function toggleNativeProfileDetails() {
+    if (!vless.nativeCanAct || !nativeActionProfile) return false
+    var id = nativeActionProfile.id
+    if (nativeExpandedDetailsId === id) { nativeExpandedDetailsId = ""; return true }
+    if (!nativeRows.some(function(row) { return row.kind === "profile" && row.profile.id === id })) {
+      profileFilter = ""
+      if (page === "main" && nativeActionProfile.subscriptionId && !nativeExpanded[nativeActionProfile.subscriptionId])
+        toggleNativeSubscription(nativeActionProfile.subscriptionId)
+    }
+    nativeExpandedDetailsId = id
+    Qt.callLater(function() {
+      for (var i = 0; i < nativeRows.length; i++) {
+        if (nativeRows[i].kind === "profile" && nativeRows[i].profile.id === id) {
+          var item = nativeProfiles.itemAt(i)
+          if (item) scrollPanelControlIntoView(item)
+          break
+        }
+      }
+    })
+    return true
   }
 
   function confirmRename() {
@@ -1714,7 +1739,7 @@ Panel {
     // endpoint can still outgrow it — that is what the tooltip is for.
     contentWidth: panel.fittedContentWidth(Style.space(460))
     contentHeight: panel.fittedContentHeight(
-      root.page === "diagnostics" ? advancedDiagnosticsPage.implicitHeight : vless.nativeOwner ? nativeColumn.implicitHeight : root.page === "subscriptions" ? subscriptionsColumn.implicitHeight
+      root.page === "diagnostics" ? advancedDiagnosticsPage.implicitHeight : vless.nativeOwner ? nativeColumn.implicitHeight + (nativeProfileActions.visible ? nativeProfileActions.height + Style.space(12) : 0) : root.page === "subscriptions" ? subscriptionsColumn.implicitHeight
         : (root.page === "settings" ? settingsColumn.implicitHeight
           : (root.page === "diagnostics"
             ? advancedDiagnosticsPage.implicitHeight : column.implicitHeight)),
@@ -1854,7 +1879,11 @@ Panel {
       Flickable {
         id: nativeFlick
         Keys.onPressed: function(event) { root.handleNativeNavigationKey(event) }
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: nativeProfileActions.visible ? nativeProfileActions.top : parent.bottom
+        anchors.bottomMargin: nativeProfileActions.visible ? Style.space(12) : 0
         visible: vless.nativeOwner && root.page !== "diagnostics"
         clip: true
         contentWidth: width
@@ -1896,19 +1925,6 @@ Panel {
                     Component.onCompleted: root.nativeSettingsControl = this
                     Component.onDestruction: root.nativeSettingsControl = null
                     onClicked: root.openSettings()
-                  }
-                  OmaNavigationButton {
-                    size: nativeHeader.controlHeight
-                    iconText: "󰐲"
-                    focusable: true
-                    tooltipText: root.textFor(root.nativeView.connected ? "native.main.activeQr" : "native.main.qr")
-                    anchors.verticalCenter: parent.verticalCenter
-                    foreground: root.foreground
-                    fontFamily: root.fontFamily
-                    enabled: vless.nativeCanAct && root.nativeHeaderQrRecord() !== null
-                    Component.onCompleted: root.nativeQrControl = this
-                    Component.onDestruction: root.nativeQrControl = null
-                    onClicked: vless.showQr(root.nativeHeaderQrRecord())
                   }
                   ToggleSwitch {
                     activeFocusOnTab: true
@@ -2321,7 +2337,7 @@ Panel {
                   readonly property bool selected: isProfile && root.nativeSelectedProfile === profile.id
                   readonly property var record: isProfile ? root.nativeRecord(profile) : null
                   readonly property bool connected: isProfile && root.nativeView.connected && profile.id === root.nativeView.activeId
-                  property var focusTargets: isProfile ? [nativeChoose, rowRename, rowPin, rowDelete, rowQr, rowExport, rowEdit, rowDetails, rowConnect, rowDetailsRefresh] : [nativeGroup]
+                  property var focusTargets: isProfile ? [nativeChoose, rowConnect, rowDetailsRefresh] : [nativeGroup]
                   Layout.fillWidth: true
                   spacing: Style.space(4)
                   RowLayout {
@@ -2335,31 +2351,34 @@ Panel {
                     PlainText { visible: !nativeRow.isProfile && root.nativeActiveProfile !== null && root.nativeActiveProfile.subscriptionId === nativeRow.modelData.subscription.id; text: root.textFor("native.profile.connected"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
                   }
                   RowLayout {
+                    id: nativeProfileIdentityRow
                     visible: nativeRow.isProfile
                     Layout.fillWidth: true
-                    PanelActionButton { id: nativeChoose; size: Style.space(24); iconText: "󰅂"; foreground: nativeRow.selected ? Color.accent : root.dim; tooltipText: root.textFor("native.profile.selectActions"); focusable: true; enabled: nativeRow.isProfile; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
-                    PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? nativeRow.profile.name : ""; textFormat: Text.PlainText; color: nativeRow.isProfile && nativeRow.profile.id === root.nativeView.activeId ? Color.accent : root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
-                      MouseArea { anchors.fill: parent; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
+                    Button {
+                      id: nativeChoose
+                      Layout.fillWidth: true
+                      Layout.minimumWidth: 0
+                      implicitWidth: 0
+                      implicitHeight: rowConnect.implicitHeight
+                      selected: nativeRow.selected
+                      tooltipText: root.textFor("native.profile.selectActions")
+                      focusable: true
+                      enabled: nativeRow.isProfile
+                      onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index }
+                      PlainText {
+                        anchors.fill: parent
+                        anchors.leftMargin: Style.space(8)
+                        anchors.rightMargin: Style.space(8)
+                        verticalAlignment: Text.AlignVCenter
+                        text: nativeRow.isProfile ? nativeRow.profile.name : ""
+                        textFormat: Text.PlainText
+                        color: nativeRow.connected ? Color.accent : root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.body
+                        elide: Text.ElideRight
+                      }
                     }
-                    PlainText { visible: !nativeRow.selected; text: nativeRow.isProfile ? nativeRow.profile.protocol : ""; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body }
-                  Row {
-                    visible: nativeRow.selected
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: Style.space(2)
-                    PanelActionButton { id: rowRename; size: Style.space(24); iconText: "󰑕"; tooltipText: root.textFor("common.rename"); focusable: true; enabled: vless.nativeCanAct && nativeRow.record !== null && !nativeRow.record.managed; onClicked: root.requestRename(nativeRow.record) }
-                    PanelActionButton { id: rowPin; size: Style.space(24); iconText: nativeRow.isProfile && nativeRow.profile.favorite ? "󰓎" : "󰓒"; tooltipText: root.textFor(nativeRow.isProfile && nativeRow.profile.favorite ? "native.unpin" : "native.pin"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: vless.toggleFavorite(nativeRow.record) }
-                    PanelActionButton { id: rowDelete; size: Style.space(24); iconText: "󰆴"; tooltipText: root.textFor("common.delete"); focusable: true; enabled: vless.nativeCanAct && nativeRow.record !== null && !nativeRow.record.managed; onClicked: root.requestDelete(nativeRow.record) }
-                    PanelActionButton { id: rowQr; size: Style.space(24); iconText: "󰐲"; tooltipText: root.textFor("native.main.qr"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: vless.showQr(nativeRow.record) }
-                    PanelActionButton { id: rowExport; size: Style.space(24); iconText: "󰈔"; tooltipText: root.textFor("native.fileExport.title"); focusable: true; enabled: vless.nativeCanAct && vless.nativeFileExportProcess === null && nativeRow.isProfile; onClicked: root.requestFileExport(nativeRow.record) }
-                    PanelActionButton { id: rowEdit; size: Style.space(24); iconText: "󰏫"; tooltipText: root.textFor("native.editor.open"); focusable: true; enabled: vless.nativeCanAct && vless.nativeEditorDraft === null && !vless.nativeEditorRunning && nativeRow.record !== null && !nativeRow.record.managed; onClicked: { if (root.handOffToEditor(nativeRow.record)) root.close() } }
-                    PanelActionButton { id: rowDetails; size: Style.space(24); iconText: "󰋽"; tooltipText: root.textFor("native.details.open"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: root.nativeExpandedDetailsId = root.nativeExpandedDetailsId === nativeRow.profile.id ? "" : nativeRow.profile.id }
-                  }
-                  }
-                  RowLayout {
-                    visible: nativeRow.isProfile && (nativeRow.selected || nativeRow.connected)
-                    Layout.fillWidth: true
-                    PlainText { Layout.fillWidth: true; text: root.textFor(nativeRow.connected ? "native.profile.connected" : "native.profile.selectedOnly"); color: nativeRow.connected ? Color.accent : root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
-                    Button { id: rowConnect; visible: nativeRow.selected; text: root.textFor(nativeRow.connected ? "action.disconnect" : "action.connect"); bordered: true; focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile && !nativeRow.profile.missing && (root.nativeView.connected || root.nativeView.state === "disconnected"); onClicked: root.nativeActivateProfile(nativeRow.profile.id) }
+                    Button { id: rowConnect; text: root.textFor(nativeRow.connected ? "action.disconnect" : "action.connect"); bordered: true; focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile && !nativeRow.profile.missing && (root.nativeView.connected || root.nativeView.state === "disconnected"); onClicked: root.nativeActivateProfile(nativeRow.profile.id) }
                   }
                   PlainText { Layout.fillWidth: true; visible: nativeRow.isProfile && vless.probeResult(nativeRow.profile.id) !== null; text: nativeRow.isProfile ? root.nativeProbeLabel(nativeRow.profile.id) : ""; textFormat: Text.PlainText; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
                   ColumnLayout {
@@ -2386,6 +2405,51 @@ Panel {
               }
             } // nativeProfilesContent
           } // nativeProfilesFrame
+        }
+      }
+
+      // One fixed action dock, outside the scrolling profile list. Selection
+      // changes its target, never its position or the connected profile.
+      BorderSurface {
+        id: nativeProfileActions
+        Keys.onPressed: function(event) { root.handleNativeNavigationKey(event) }
+        visible: vless.nativeOwner && (root.page === "main" || root.page === "subscription")
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.rightMargin: root.scrollGutter
+        anchors.bottom: parent.bottom
+        height: nativeProfileActionsContent.implicitHeight + Style.space(20)
+        color: "transparent"
+        radius: 0
+        borderSpec: Border.flat(Util.alpha(root.foreground, 0.38), Style.normalBorderWidth)
+        readonly property var record: root.nativeActionProfile ? root.nativeRecord(root.nativeActionProfile) : null
+        readonly property bool canAct: vless.nativeCanAct && record !== null
+        ColumnLayout {
+          id: nativeProfileActionsContent
+          x: Style.space(10); y: Style.space(10)
+          width: Math.max(0, parent.width - Style.space(20))
+          spacing: Style.space(6)
+          PlainText {
+            Layout.fillWidth: true
+            text: root.nativeActionProfile ? root.textFor("native.profile.actionsFor", {name:root.nativeActionProfile.name}) : root.textFor("native.profile.chooseActions")
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            color: root.nativeActionProfile ? root.foreground : root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(8)
+            OmaNavigationButton { id: rowPin; iconText: root.nativeActionProfile && root.nativeActionProfile.favorite ? "󰓎" : "󰓒"; tooltipText: root.textFor(root.nativeActionProfile && root.nativeActionProfile.favorite ? "native.unpin" : "native.pin"); focusable: true; enabled: nativeProfileActions.canAct; onClicked: vless.toggleFavorite(nativeProfileActions.record) }
+            OmaNavigationButton { id: rowRename; iconText: "󰑕"; tooltipText: root.textFor("common.rename"); focusable: true; enabled: nativeProfileActions.canAct && !nativeProfileActions.record.managed; onClicked: root.requestRename(nativeProfileActions.record) }
+            OmaNavigationButton { id: rowEdit; iconText: "󰏫"; tooltipText: root.textFor("native.editor.open"); focusable: true; enabled: nativeProfileActions.canAct && !nativeProfileActions.record.managed && vless.nativeEditorDraft === null && !vless.nativeEditorRunning; onClicked: { if (root.handOffToEditor(nativeProfileActions.record)) root.close() } }
+            OmaNavigationButton { id: rowQr; iconText: "󰐲"; tooltipText: root.textFor("native.main.qr"); focusable: true; enabled: nativeProfileActions.canAct; onClicked: vless.showQr(nativeProfileActions.record) }
+            OmaNavigationButton { id: rowExport; iconText: "󰈔"; tooltipText: root.textFor("native.fileExport.title"); focusable: true; enabled: nativeProfileActions.canAct && vless.nativeFileExportProcess === null; onClicked: root.requestFileExport(nativeProfileActions.record) }
+            OmaNavigationButton { id: rowDetails; iconText: "󰋽"; tooltipText: root.textFor("native.details.open"); focusable: true; enabled: nativeProfileActions.canAct; onClicked: root.toggleNativeProfileDetails() }
+            Item { Layout.fillWidth: true }
+            OmaNavigationButton { id: rowDelete; iconText: "󰆴"; tooltipText: root.textFor("common.delete"); focusable: true; enabled: nativeProfileActions.canAct && !nativeProfileActions.record.managed; onClicked: root.requestDelete(nativeProfileActions.record) }
+          }
         }
       }
 

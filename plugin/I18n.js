@@ -76,6 +76,8 @@ var CATALOG = {
   "native.profile.connected": {"en":"Connected","ru":"Подключён"},
   "native.profile.selectActions": {"en":"Select for actions — does not connect","ru":"Выбрать для действий — без подключения"},
   "native.profile.selectedOnly": {"en":"Selected for actions","ru":"Выбран для действий"},
+  "native.profile.actionsFor": {"en":"Profile actions: {name}","ru":"Действия с профилем: {name}"},
+  "native.profile.chooseActions": {"en":"Select a profile to manage it","ru":"Выберите профиль для действий"},
   "native.main.activeQr": {"en":"Show connected profile QR","ru":"QR-код подключённого профиля"},
   "native.settings.modeHelp": {"en":"Changing mode may require system authorization.","ru":"При смене режима система может запросить авторизацию."},
   "native.settings.healthScope": {"en":"Local checks cover the core and its private controller. They do not prove Internet access, DNS protection or leak prevention.","ru":"Локально проверяются ядро и его закрытый контроллер. Это не подтверждает доступность Интернета, защиту DNS или отсутствие утечек."},
