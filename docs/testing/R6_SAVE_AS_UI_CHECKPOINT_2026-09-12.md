@@ -80,3 +80,25 @@ pinned login, and applicable upgrade/removal/rollback/recovery checks. The
 controlled DNS/auth checklist remains explicit, not dismissed as a VM/provider
 assumption. UI cosmetics and the two intentionally hidden sections must not
 continually expand the migration completion boundary.
+
+## Resumed UI check, 2026-09-12
+
+The installed disk and running daemon now both match the `9a47a60` digest above;
+the earlier retained-process qualification describes the original installation,
+not this resumed run. An attended installed lifecycle cycle and its failed
+TUN-bound HTTPS probe are recorded separately in the
+[closure ledger](R6_CLOSURE_LEDGER_2026-09-12.md#human-attended-installed-cycle-on-resume).
+
+English Settings, the focused Save file button and the prefilled report chooser
+were inspected again. GUI automation refused to send a synthetic destination
+when it could not prove a unique focused chooser. The intended new report in
+the private temporary test directory was not observed, so there is still **no
+automated write/overwrite/cancel PASS**. A chooser/overwrite prompt on a capture
+alone does not establish which interaction saved a file. Russian completion was
+not attempted. Do not misreport this automation/focus gap as a proven exporter
+defect or bypass the focus guard by sending Enter to an unrelated terminal.
+
+System locale selection was restored, only the panel was closed, and final
+inspection found the plugin enabled, Routing/disconnected, one native daemon,
+zero Mihomo/TUN/auxiliary core and `manualRecoveryRequired=false`. No zenity
+process remained. No private screenshots, reports or credentials were committed.
