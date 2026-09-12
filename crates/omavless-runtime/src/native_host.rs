@@ -305,6 +305,13 @@ impl NativeLifecycleHost {
 }
 
 impl LifecycleHost for NativeLifecycleHost {
+    fn support_facts(&self, connected: bool) -> Option<crate::lifecycle::HostSupportFacts> {
+        Some(crate::support_diagnostics::collect_host(
+            &self.paths,
+            self.uid,
+            connected,
+        ))
+    }
     fn auxiliary_slot(&self) -> Option<std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>> {
         Some(std::sync::Arc::clone(&self.auxiliary))
     }

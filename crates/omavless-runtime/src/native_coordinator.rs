@@ -839,6 +839,7 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
                 .map_err(|_| NativeOwnerError::Invariant)?;
             let pending = crate::routing_preset::pending(&desired_paths);
             let observation = owner.host_mut().fresh_observation(&desired).ok();
+            let host = owner.host_mut().support_facts(desired.connected);
             // Preserve one coherent sample even if a non-cooperating writer
             // changes private input during the bounded host read.
             if crate::desired::read_desired_snapshot(&desired_paths, uid)
@@ -851,12 +852,15 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
             {
                 return Err(NativeOwnerError::OwnershipUnavailable);
             }
-            Ok(crate::support_diagnostics::report(
-                store.support_projection(),
-                &desired,
-                owner.actual(),
-                pending,
-                observation,
+            Ok(crate::support_diagnostics::with_host(
+                crate::support_diagnostics::report(
+                    store.support_projection(),
+                    &desired,
+                    owner.actual(),
+                    pending,
+                    observation,
+                ),
+                host,
             ))
         })
     }
@@ -2073,7 +2077,7 @@ mod tests {
         let report = owner
             .support_report(&profile_request("diagnostics.export", json!({})))
             .unwrap();
-        assert_eq!(report["schemaVersion"], 2);
+        assert_eq!(report["schemaVersion"], 3);
         assert_eq!(report["localObservation"]["availability"], "unavailable");
         assert!(report["localObservation"]["facts"].is_null());
         assert_eq!(report["coverage"]["liveHostObservation"], false);

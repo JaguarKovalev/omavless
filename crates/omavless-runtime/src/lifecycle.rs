@@ -10,6 +10,7 @@ use crate::desired::{
     DesiredError, DesiredPaths, DesiredState, MAX_GENERATION, OwnedObservation, ReconcileAction,
     RoutingMode, read_desired, reconcile, write_desired,
 };
+pub use crate::support_diagnostics::HostSupportFacts;
 use omavless_control_protocol::StableErrorCode;
 use std::fmt;
 
@@ -69,6 +70,10 @@ pub struct NativeLocalObservation {
 /// Fixed-purpose package host boundary. Inputs are semantic desired state;
 /// there is no arbitrary argv, shell, service or privileged-command surface.
 pub trait LifecycleHost {
+    /// Bounded, read-only setup/service/file facts; no core execution or probe.
+    fn support_facts(&self, _connected: bool) -> Option<HostSupportFacts> {
+        None
+    }
     fn auxiliary_slot(&self) -> Option<std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>> {
         None
     }

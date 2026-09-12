@@ -450,23 +450,53 @@ function supportObservation(r) {
   return {availability:r.availability, desired:{connected:r.desired.connected, mode:r.desired.mode}, facts:facts,
     verification:{serviceOwnership:false, tunOwnership:false, routes:false, dns:false, internet:false}}
 }
+function supportHost(r) {
+  if (!object(r, ["core", "runtimeService", "loginService", "files", "configuredPolicy"])) return null
+  function nullableBool(v) { return v === null || typeof v === "boolean" }
+  var c = r.core, f = r.files, p = r.configuredPolicy
+  if (c !== null && (!object(c, ["installed", "fileNetworkCapabilities", "tunDevicePresent"])
+      || typeof c.installed !== "boolean" || !nullableBool(c.fileNetworkCapabilities) || !nullableBool(c.tunDevicePresent)
+      || (!c.installed && c.fileNetworkCapabilities !== false))) return null
+  for (var i = 0; i < 2; i++) {
+    var s = i === 0 ? r.runtimeService : r.loginService
+    if (s !== null && (!object(s, ["loaded", "active", "enabled", "ownsCurrentProcess"])
+        || typeof s.loaded !== "boolean" || typeof s.active !== "boolean" || typeof s.enabled !== "boolean"
+        || (i === 0 ? typeof s.ownsCurrentProcess !== "boolean" : s.ownsCurrentProcess !== null)
+        || (!s.loaded && (s.active || s.enabled)) || (s.ownsCurrentProcess && !s.active))) return null
+  }
+  if (f !== null && (!object(f, ["store", "template", "generatedConfig", "runtimeUnit", "loginUnit"])
+      || !Object.keys(f).every(function(k) { return nullableBool(f[k]) }))) return null
+  if (p !== null && (!object(p, ["basis", "rules", "providers"])
+      || ["template", "active_config"].indexOf(p.basis) < 0 || !number(p.rules, 100000) || !number(p.providers, 1024))) return null
+  // Every member is exact typed public vocabulary; do not return a raw envelope.
+  return {core:c === null ? null : {installed:c.installed,fileNetworkCapabilities:c.fileNetworkCapabilities,tunDevicePresent:c.tunDevicePresent},
+    runtimeService:r.runtimeService === null ? null : {loaded:r.runtimeService.loaded,active:r.runtimeService.active,enabled:r.runtimeService.enabled,ownsCurrentProcess:r.runtimeService.ownsCurrentProcess},
+    loginService:r.loginService === null ? null : {loaded:r.loginService.loaded,active:r.loginService.active,enabled:r.loginService.enabled,ownsCurrentProcess:null},
+    files:f === null ? null : {store:f.store,template:f.template,generatedConfig:f.generatedConfig,runtimeUnit:f.runtimeUnit,loginUnit:f.loginUnit},
+    configuredPolicy:p === null ? null : {basis:p.basis,rules:p.rules,providers:p.providers}}
+}
 function configurationReport(raw, revision) {
   try {
     var r = routingResult(raw, revision)
     if (!r) return null
-    var modern = r.schemaVersion === 2
-    if (!(modern ? object(r, ["schemaVersion", "scope", "runtime", "configuration", "coverage", "localObservation"])
+    var extended = r.schemaVersion === 3, modern = extended || r.schemaVersion === 2
+    if (!(modern ? object(r, extended ? ["schemaVersion", "scope", "runtime", "configuration", "coverage", "localObservation", "host"] : ["schemaVersion", "scope", "runtime", "configuration", "coverage", "localObservation"])
         && r.scope === "native_support" : object(r, ["schemaVersion", "scope", "runtime", "configuration", "coverage"])
         && r.schemaVersion === 1 && r.scope === "native_configuration")) return null
     var observation = modern ? supportObservation(r.localObservation) : null
     if (modern && !observation) return null
+    var host = extended ? supportHost(r.host) : null
+    if (extended && !host) return null
+    var coreObserved = !!(host && host.core && host.core.fileNetworkCapabilities !== null && host.core.tunDevicePresent !== null)
+    var servicesObserved = !!(host && host.runtimeService && host.loginService)
+    var filesObserved = !!(host && host.files && Object.keys(host.files).every(function(k) { return host.files[k] !== null }))
     var h = r.runtime, c = r.configuration, v = r.coverage
     if (!object(h, ["implementation", "version", "lastKnownState", "routingTransactionPending"])
         || h.implementation !== "rust" || !text(h.version, 32, false) || !/^\d+\.\d+\.\d+$/.test(h.version)
         || ["disconnected", "starting", "connected", "reconnecting", "stopping", "failed", "manual_recovery_required"].indexOf(h.lastKnownState) < 0
         || typeof h.routingTransactionPending !== "boolean"
         || !(modern ? object(v, ["privateStoreValidated", "liveHostObservation", "controllerQuery", "loginActivationVerified", "coreSetupVerified", "serviceEnablementVerified", "loadedPolicyCounts", "fileReadiness"])
-          && v.coreSetupVerified === false && v.serviceEnablementVerified === false && v.loadedPolicyCounts === false && v.fileReadiness === false
+          && v.coreSetupVerified === coreObserved && v.serviceEnablementVerified === servicesObserved && v.loadedPolicyCounts === false && v.fileReadiness === filesObserved
           : object(v, ["privateStoreValidated", "liveHostObservation", "controllerQuery", "loginActivationVerified"]))
         || v.privateStoreValidated !== true || v.liveHostObservation !== (modern && observation.availability === "observed")
         || v.controllerQuery !== !!(modern && observation.facts && observation.facts.ownedControllerConfigVerified) || v.loginActivationVerified !== false
@@ -490,11 +520,12 @@ function configurationReport(raw, revision) {
       liveHostObservation:v.liveHostObservation, controllerQuery:v.controllerQuery, loginActivationVerified:false}}
     if (modern) {
       report.localObservation = observation
-      report.coverage.coreSetupVerified = false
-      report.coverage.serviceEnablementVerified = false
+      report.coverage.coreSetupVerified = coreObserved
+      report.coverage.serviceEnablementVerified = servicesObserved
       report.coverage.loadedPolicyCounts = false
-      report.coverage.fileReadiness = false
+      report.coverage.fileReadiness = filesObserved
     }
+    if (extended) report.host = host
     return JSON.stringify(report, null, 2) + "\n"
   } catch (_) { return null }
 }

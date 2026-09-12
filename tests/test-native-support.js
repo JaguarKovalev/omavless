@@ -14,7 +14,54 @@ const modernFixture = (observed = true) => {
  return r;
 };
 let count=0;
+const hostFixture = () => {
+ const r = modernFixture(); r.schemaVersion=3;
+ r.host={core:{installed:true,fileNetworkCapabilities:true,tunDevicePresent:true},
+  runtimeService:{loaded:true,active:true,enabled:true,ownsCurrentProcess:true},
+  loginService:{loaded:true,active:false,enabled:true,ownsCurrentProcess:null},
+  files:{store:true,template:true,generatedConfig:true,runtimeUnit:true,loginUnit:true},
+  configuredPolicy:{basis:'active_config',rules:42,providers:3}};
+ Object.assign(r.coverage,{coreSetupVerified:true,serviceEnablementVerified:true,fileReadiness:true});
+ return r;
+};
 function test(name, fn) { try { fn(); count++; } catch(e) { e.message = name + ': ' + e.message; throw e; } }
+test('v3 host facts preserve bounded setup and configured counts without network claims',()=>{
+ const r=hostFixture(), result=JSON.parse(parser.configurationReport(frame(r),7));
+ assert.equal(result.schemaVersion,3); assert.equal(result.host.configuredPolicy.rules,42);
+ assert.equal(result.host.runtimeService.ownsCurrentProcess,true);
+ assert.equal(result.coverage.loadedPolicyCounts,false);
+ assert(Object.values(result.localObservation.verification).every(v=>v===false));
+ assert(JSON.stringify(result).length<4096);
+});
+test('v3 missing host facts remain unavailable not healthy zero',()=>{
+ const r=hostFixture(); Object.keys(r.host).forEach(k=>r.host[k]=null);
+ Object.assign(r.coverage,{coreSetupVerified:false,serviceEnablementVerified:false,fileReadiness:false});
+ const result=JSON.parse(parser.configurationReport(frame(r),7));
+ assert(Object.values(result.host).every(v=>v===null));
+});
+test('v3 rejects unknown nested private data and incorrect coverage',()=>{
+ for(const section of ['host','host.core','host.runtimeService','host.loginService','host.files','host.configuredPolicy']) {
+  const r=hostFixture(); let node=r; for(const p of section.split('.')) node=node[p]; node.private='private-token';
+  assert.equal(parser.configurationReport(frame(r),7),null);
+ }
+ for(const [path,value] of [['host.configuredPolicy.rules',100001],['host.configuredPolicy.providers',1025],
+  ['host.configuredPolicy.basis','private-token'],['host.runtimeService.active',false],['host.loginService.ownsCurrentProcess',true],
+  ['host.core.installed',false],['host.core.fileNetworkCapabilities','yes'],['host.files.store','private-path'],
+  ['coverage.coreSetupVerified',false],['coverage.serviceEnablementVerified',false],['coverage.fileReadiness',false],
+  ['coverage.loadedPolicyCounts',true],['schemaVersion',4]]) {
+  const r=hostFixture(); const parts=path.split('.'); let node=r; for(const p of parts.slice(0,-1)) node=node[p]; node[parts.at(-1)]=value;
+  assert.equal(parser.configurationReport(frame(r),7),null);
+ }
+});
+test('v3 negatively observed core or files do not mean missing observation',()=>{
+ const r=hostFixture(); Object.assign(r.host.core,{installed:false,fileNetworkCapabilities:false,tunDevicePresent:false});
+ Object.keys(r.host.files).forEach(k=>r.host.files[k]=false);
+ const result=JSON.parse(parser.configurationReport(frame(r),7));
+ assert.equal(result.coverage.coreSetupVerified,true); assert.equal(result.host.core.installed,false);
+ assert.equal(result.coverage.fileReadiness,true); assert.equal(result.host.files.store,false);
+ r.host.files.store=null; r.coverage.fileReadiness=false;
+ assert(parser.configurationReport(frame(r),7));
+});
 test('configuration scope and no live claims', () => {
  const report = parser.configurationReport(frame(fixture()),7); assert(report);
  assert.equal(JSON.parse(report).coverage.liveHostObservation,false);

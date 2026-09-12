@@ -391,7 +391,7 @@ fn public_core_version(output: &[u8]) -> Option<String> {
     Some(version.to_owned())
 }
 
-fn file_network_capabilities(output: &[u8]) -> &'static str {
+pub(crate) fn file_network_capabilities(output: &[u8]) -> &'static str {
     let Ok(text) = std::str::from_utf8(output) else {
         return "unknown";
     };

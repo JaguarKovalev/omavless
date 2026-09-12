@@ -4,9 +4,76 @@ Local R6 source checkpoint, 2026-09-11. This extends the fixed
 `omavless diagnostics export` / `diagnostics.export` read; it is not a new
 doctor command, host mutation or declaration of complete R6 acceptance.
 
+## 2026-09-12 host/configuration completion (schema 3)
+
+The current source extends the same ownership-fenced report with a strict
+schema-3 `host` section. The frontend continues to accept schemas 1 and 2;
+older clients fail closed on schema 3. Install the matching frontend/runtime.
+The historical schema-2 evidence below remains valid for its exact source,
+not installed acceptance of this new source.
+
+The added fixed-size projection contains:
+
+- core executable presence, required file-network capabilities and the real
+  `/dev/net/tun` device shape;
+- loaded/active/enabled facts for exactly `omavless-runtime.service` and
+  `omavless-login-prepare.service`, plus whether the runtime service's MainPID
+  is the current daemon (the PID itself is never returned);
+- regular, non-symlink store/template/generated-config and package unit-file
+  presence; private files must also be current-user owned and private-mode;
+- configured-file rule/provider counts with the explicit `template` or
+  `active_config` basis. These are not loaded-controller/provider-download
+  counts and do not change `coverage.loadedPolicyCounts` to true.
+
+Only fixed booleans, nullable booleans, bounded counts and enum literals leave
+the collector. Unavailable service queries or unreadable facts are `null`, not
+false/zero. A successfully observed missing dependency is `false` and therefore
+different from an unavailable observation. The existing `coreSetupVerified`,
+`serviceEnablementVerified` and `fileReadiness` coverage fields mean their
+respective facts were obtained, **not that all values are healthy**. In
+particular passive capabilities do not prove a successful TUN creation or
+authorization, enabled login preparation does not prove an actual autoconnect,
+and daemon MainPID attribution alone does not establish service/core/TUN
+ownership of a healthy VPN connection.
+
+The collector executes no Mihomo command and makes no HTTP/controller/network
+probe. It reuses the existing bounded fixed-child/pipe collector for two exact
+`systemctl --user show` reads and `/usr/bin/getcap` against the already-resolved
+core path, at most 250 ms each. Together with the existing local observation's
+250 ms controller budget, this stays inside the five-second unary protocol
+budget without extending it. No new dependency, IPC method, privilege, service
+mutation, configuration write or lifecycle transition is added.
+
+Reference comparison is actual `backend.diagnostics_payload`,
+`core_setup_status` and `routing_status`, not an invented full DNS diagnostic.
+The legacy report obtains policy counts from files, even while connected;
+the new report names that provenance explicitly. Six credential-free cases
+(all three bundled templates plus empty/basic/nested shapes) compare the Rust
+counts against the actual Python `yaml_top_level_block`, `yaml_sequence_count`
+and `yaml_mapping_count` helpers. Existing configuration-subset parity remains
+unchanged. This test-only oracle does not enter the installed application path.
+
+The old best-effort aggregate `conflictCount` is not recreated by subtracting
+unattributed interfaces. Existing typed visible-core/TUN/owned-auxiliary facts
+remain available and more explicit about what was actually observed. Full
+service/core/TUN ownership, DNS/routes/internet verification and login execution
+remain separate acceptance evidence, not claims made by this support report.
+Neither old Python `diagnostics_payload` nor this support export establishes
+working DNS, routing or internet reachability.
+
+Source checks: 14 Rust tests selected by `cargo test -p omavless-runtime --lib
+support` pass, including the six-case actual-reference comparison, unknown and
+transitioning service facts, duplicate/malformed systemd properties, private
+file/symlink refusal, schema-3 null handling and existing ownership/store/revision
+fences. Sixteen JS report tests pass across schemas 1/2/3, exact nested fields,
+bounds, unavailable versus negative facts, stale clients and clipboard handling.
+Successful projections remain below 4 KiB. Installed schema-3 acceptance must
+still use the rebuilt binary and matching frontend; no live result is inferred
+from these deterministic checks.
+
 ## Schema and consistency
 
-The emitted result is schema version 2, scope `native_support`. It retains the
+The original checkpoint emitted schema version 2, scope `native_support`. It retains the
 accepted counts/preferences configuration subset from
 [the original support checkpoint](R5_SUPPORT_DIAGNOSTICS.md) and adds a bounded
 `localObservation`. The QML clipboard/file report parser accepts both the old
@@ -46,7 +113,7 @@ The existing 26-case differential corpus is preserved unchanged. Native owned
 controller proof is stronger than the old support report's socket-exists check;
 visible TUN count is deliberately not called `tunReady`.
 
-The report does **not** verify service ownership/enablement, TUN ownership,
+That schema-2 report does **not** verify service ownership/enablement, TUN ownership,
 DNS, routes, internet reachability, login activation, core installation/setup,
 file readiness, loaded routing-rule/provider counts or aggregate conflict count.
 Explicit false coverage/verification fields preserve these limitations. Stored

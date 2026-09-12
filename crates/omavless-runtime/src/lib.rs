@@ -5887,7 +5887,7 @@ mod tests {
         let report = call(&paths, method, json!({})).unwrap();
         assert_eq!(report["ok"], true);
         assert_eq!(report["revision"], 0);
-        assert_eq!(report["result"]["schemaVersion"], 2);
+        assert_eq!(report["result"]["schemaVersion"], 3);
         assert_eq!(report["result"]["scope"], "native_support");
         assert_eq!(
             report["result"]["runtime"]["lastKnownState"],
