@@ -2,6 +2,14 @@
 
 Status: active delivery ledger, updated 2026-09-03.
 
+Local owner-approved update, 2026-09-13: **R6 native-path retirement is closed
+locally with explicit deferrals**, not merged/published. See
+[exact closure and evidence](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
+Optional enabled Last/pinned login validation moves to
+[AUTO-1](docs/roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md); startup Off remains default.
+DNS/provider investigation and V0 fixture limits remain open. Historical stage
+entries below keep their original evidence boundaries.
+
 This file is the compact source of truth for **what happens next**, dependency
 order and acceptance state. Detailed contracts live under `docs/roadmap/`.
 
@@ -999,7 +1007,13 @@ Nix support is not inferred from Arch/Try Omarchy evidence.
 
 ### R6 — Python runtime retirement
 
-State: **hard prerequisite for T2**.
+State: **locally closed under owner-revised scope, 2026-09-13; publication pending**.
+
+The [closure record](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md) reconciles the
+requirements below for the native package/frontend. Enabled Last/pinned
+fresh-login validation is explicitly deferred to AUTO-1; it is not a passing
+test. Default Off and no-Python startup/lifecycle evidence remain required and
+recorded. Compatibility/reference Python is not the native product path.
 
 R6 is complete only when:
 
@@ -1014,8 +1028,11 @@ R6 is complete only when:
 - language-neutral regression corpora survive removal of the Python oracle;
 - final removal does not weaken current plugin functionality.
 
-Python can remain in repository history or narrowly scoped developer tooling only
-when there is a concrete reason, but it is not a product runtime dependency.
+Python is not a dependency of the accepted native product path. Reference tests
+and the explicitly separate legacy compatibility payload remain in this local
+checkout for existing distribution/rollback history; their removal or a change
+to the default installer is separate publication work, not silently implied by
+native R6 closure.
 
 ## 9. TUI / application track
 
@@ -1190,8 +1207,8 @@ separately and one host never proves another.
 
 ## 14. Current priority in one sentence
 
-**Complete the remaining frontend, lifecycle/recovery and login gates after the
-bounded combined-candidate Try Omarchy cutover, preserving exact-head evidence
-and the production transaction's fail-closed boundary. Keep V0 / PR #30 Draft and
-fixture-constrained, retire the Python runtime only at R6, and begin the
-Ratatui TUI only after that gate.**
+**Preserve the locally closed native R6 candidate and accepted UI, reconcile and
+review it before any owner-authorized main publication, and track AUTO-1 and
+DNS/provider follow-ups without relabelling their unrun/failed checks. V0 remains
+Draft and fixture-constrained. T2 can be scoped after this local migration gate;
+no implementation or release starts merely because the ledger changed.**

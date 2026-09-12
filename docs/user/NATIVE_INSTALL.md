@@ -145,6 +145,12 @@ preferences and enabling a user unit are distinct actions; neither alone proves
 that an actual fresh-login autoconnect passed. Do not manually run
 `login-prepare` or modify its receipt to simulate a login.
 
+**Current native candidate:** VPN autoconnect is Off by default. Last/pinned
+autoconnect is optional and its connected fresh-login validation is incomplete;
+leave it Off unless deliberately testing that feature. Saving Off does not
+disconnect a currently running VPN. Existing user preferences are not silently
+reset by this documentation or by declaring the migration complete.
+
 ## Verify the installed candidate
 
 Use `omavless plugin target`, `omavless status`, `omavless runtime observation`
@@ -211,13 +217,16 @@ not an ownership rollback to the legacy Python runtime.
 ## Acceptance boundary
 
 This guide describes the available local installation path, not a completed
-release. The [R6 closure ledger](../testing/R6_CLOSURE_LEDGER_2026-09-12.md)
-records exact candidate identities and remaining installed Python-unavailable,
-fresh-login Last/pinned, lifecycle/network and package-recovery evidence.
+release. The [local R6 closure](../testing/R6_LOCAL_CLOSURE_2026-09-13.md)
+records the accepted native Python-unavailable path and exact candidate identities.
+Enabled fresh-login Last/pinned validation and network/DNS limitations remain
+explicit follow-ups, not passing evidence.
 The [package recovery procedure](../testing/R6_INSTALLED_PACKAGE_RECOVERY_2026-09-12.md)
 must have actual executed results before it is called PASS. Static tests,
 an opened file dialog and archive inspection cannot substitute for host gates.
 
 Try Omarchy ARM64 evidence does not claim bare-metal or NixOS acceptance. V0's
 missing protocol fixtures remain a separate maturity gap. Neither this guide
-nor local candidate installation authorizes publication or declares R6 complete.
+nor local candidate installation authorizes publication. Local native migration
+closure is not a marketplace upgrade or a promise that every optional feature
+and every host environment is fully validated.

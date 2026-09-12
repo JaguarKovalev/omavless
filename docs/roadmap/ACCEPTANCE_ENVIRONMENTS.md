@@ -133,6 +133,14 @@ checks in addition to differential tests.
 
 ## 3. R6 Python-absence gate
 
+Owner amendment, 2026-09-13: for the locally accepted native default/manual path,
+enabled Last/pinned fresh-login acceptance is deferred to
+[AUTO-1](LOGIN_AUTOCONNECT_FOLLOWUP.md). The actual startup-Off and native
+Python-absence/lifecycle gates remain required. The
+[local closure](../testing/R6_LOCAL_CLOSURE_2026-09-13.md) records results and
+explicit network/UI limitations; none of its deferred or failed checks is PASS.
+This exception does not change host evidence or publication authority.
+
 R6 is not proven by deleting `requirements.txt` or by observing that one command
 happens to use Rust.
 

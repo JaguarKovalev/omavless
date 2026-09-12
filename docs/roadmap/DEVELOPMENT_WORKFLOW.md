@@ -298,6 +298,14 @@ Never reuse Arch evidence as Nix package proof.
 
 ## 13. R6 special procedure
 
+Apply the 2026-09-13 owner scope amendment in
+[acceptance environments](ACCEPTANCE_ENVIRONMENTS.md#3-r6-python-absence-gate):
+enabled Last/pinned acceptance remains AUTO-1, while proven Off/default/native
+operation closes the local migration gate. Keep the
+[closure record](../testing/R6_LOCAL_CLOSURE_2026-09-13.md) and its failed/unrun
+checks separate from publication readiness. Do not repeat completed host gates
+just to update documents, or claim an unrun gate passed.
+
 R6 must intentionally make Python unavailable to the installed normal
 OmaVLESS path and exercise all required production operations. Merely not
 observing a Python process during one happy-path connect is insufficient.

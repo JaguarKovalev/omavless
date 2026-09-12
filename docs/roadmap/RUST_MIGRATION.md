@@ -8,7 +8,13 @@ Python/Rust parity gates. It complements [`CONTROL_PLANE.md`](CONTROL_PLANE.md),
 [`ARCHITECTURE.md`](ARCHITECTURE.md), [`TUI_APP.md`](TUI_APP.md) and
 [`PLATFORM.md`](PLATFORM.md).
 
-Local-only R6 continuity, 2026-09-11: native config preparation and
+Current local decision, 2026-09-13: [R6 native-path retirement is locally closed](../testing/R6_LOCAL_CLOSURE_2026-09-13.md)
+under the owner's explicit enabled-autoconnect deferral to
+[AUTO-1](LOGIN_AUTOCONNECT_FOLLOWUP.md). Default Off/Python-absence evidence is
+retained; network failures are not relabelled PASS. This is not published main
+acceptance, blanket Python-source deletion or permission to start new work.
+
+Historical local-only R6 continuity, 2026-09-11: native config preparation and
 [strict absent-legacy activation composition](../testing/R6_ABSENT_LEGACY_ACTIVATION.md)
 now have deterministic coverage, including unchanged initial-config parity and
 transaction compensation. The subsequent
@@ -827,6 +833,13 @@ Python remains the installed production owner.
 
 Goal: prove that the product no longer requires Python before TUI implementation
 starts.
+
+Owner-approved scope amendment, 2026-09-13: the native installed default/manual
+path may close R6 using proven startup Off and native lifecycle/Python-absence
+evidence while optional enabled Last/pinned fresh-login acceptance remains
+AUTO-1. Preserve the explicit limitations in the local closure report. Do not
+call enabled autoconnect validated, silently enable it, or use this exception
+to waive normal lifecycle, cleanup, store or no-Python requirements.
 
 Required evidence:
 

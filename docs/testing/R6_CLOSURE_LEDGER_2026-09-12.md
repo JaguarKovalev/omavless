@@ -1,5 +1,13 @@
 # R6 closure ledger — local candidate, 2026-09-12
 
+**Superseded as the active remainder on 2026-09-13:** the owner explicitly
+deferred enabled-autoconnect validation and accepted
+[local native R6 closure](R6_LOCAL_CLOSURE_2026-09-13.md).
+[AUTO-1](../roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md) remains OPEN; no login/network
+failure below is turned into PASS. Startup has now been restored to Off without
+interrupting the running VPN. The remaining text is historical evidence, not
+authority to re-enable startup or restart completed migration work.
+
 This is the current **finite acceptance remainder**, not a release announcement.
 Historical source checkpoints remain valid for their recorded heads; an old
 "not implemented" paragraph does not override its linked later implementation.

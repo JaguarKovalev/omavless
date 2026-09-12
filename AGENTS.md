@@ -89,6 +89,15 @@ semantic runtime. GPUI is not a dependency of the daemon/CLI/TUI path.
 
 ## Current delivery strategy
 
+Local native checkpoint, 2026-09-13: R6 is closed under the explicitly revised
+owner scope in [the local closure](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
+Enabled Last/pinned login acceptance remains [AUTO-1](docs/roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md),
+not PASS. The installed default/manual path is Rust-only; legacy/reference
+sources and the published marketplace snapshot remain separate. This local
+decision is not a main merge, release or authorization to publish/start TUI work.
+Interpret older R6-open checkpoint prose through that evidence, not as a reason
+to repeat completed migration work or hide deferred failures.
+
 Two lanes may proceed in parallel:
 
 1. **Plugin completion lane** — finish bounded current plugin/QML work such as

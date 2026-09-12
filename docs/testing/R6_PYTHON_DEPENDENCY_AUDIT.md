@@ -1,5 +1,10 @@
 # R6 Python dependency and remaining-path audit
 
+Current reconciliation: [2026-09-13 local closure](R6_LOCAL_CLOSURE_2026-09-13.md)
+supersedes the unfinished-checklist status below. Keep this audit's original
+source/evidence boundaries; its historical gaps are not a new implementation
+queue. Enabled-autoconnect validation is separately deferred, not PASS.
+
 Local source audit, 2026-09-11, at
 `6aaebec1a341b8a34001fc28c9a0030919d9ee7a` on
 `codex/local-native-probe-execution`. This report is not installed acceptance,
