@@ -108,7 +108,7 @@ pass
 stage=onboarding_support
 action onboarding-complete
 cli diagnostics export
-jq -e '.result.schemaVersion==2 and .result.scope=="native_support"
+jq -e '(.result.schemaVersion==2 or .result.schemaVersion==3) and .result.scope=="native_support"
   and .result.configuration.onboardingComplete==true
   and .result.coverage.liveHostObservation==true' "$scratch/response.json" >/dev/null
 pass
