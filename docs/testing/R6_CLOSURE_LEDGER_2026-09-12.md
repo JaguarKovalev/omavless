@@ -76,6 +76,37 @@ Then an attended Disconnect and same-epoch restart must stay disconnected.
 Repeat with pinned selection in a second fresh session, and restore the original
 Off preference afterward. Do not substitute manual Connect or delete receipts.
 
+#### Actual reboot: connectivity failure reported by owner
+
+The owner rebooted the VM and observed the plugin immediately show VPN On,
+without a password prompt. Network access in the VM did not work while On and
+returned after disabling VPN. This is **not a successful connected-login or
+network acceptance result**. Do not proceed to pinned-login acceptance merely
+because the UI showed On.
+
+Subsequent read-only inspection confirmed a genuinely different user-manager
+epoch and matching installed/running `7b75b74` binary digest. By inspection time,
+desired and observed state were both disconnected in Routing, with zero Mihomo,
+zero TUN and no manual recovery required. The prepared connected-login verifier
+therefore could not validate its connected-state requirements. This does not
+prove that autostart failed to launch a core earlier, nor establish that the
+earlier UI state was stale.
+
+Startup remains configured Last / Routing / enabled; the original Off preference
+has **not** yet been restored. The current core executable has `CAP_NET_ADMIN`:
+a TUN/route setup need not require a new sudo prompt. That capability alone does
+not establish resolver authorization, correct DNS, routes or internet access.
+The three available native/login user-journal records included service start
+and login-preparation completion, with no matching failure/permission/DNS/timeout
+category. Their absence is not proof of successful networking.
+
+No reconnect, service restart, authorization request, host-policy change or
+network repair was initiated during this read-only investigation. A controlled
+connected-state inspection is needed to distinguish resolver, route, core or
+upstream failure; do not attribute this to virtualization or a provider without
+evidence. The separately recorded earlier HTTPS timeout remains relevant, but
+the same root cause has not been established. R6 remains open; no publication.
+
 Current test-only continuation: **460 reference/policy tests, four skipped**,
 all invoked JS/QML contracts and plugin validation PASS. Focused mask + installed
 lifecycle + package policy suites: **46 PASS**; compile, shell syntax and diff
