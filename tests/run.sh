@@ -11,6 +11,7 @@ python3 -m unittest -v \
   "$here/test_mihomo_validation_effects.py" \
   "$here/test_local_arch_package.py" \
   "$here/test_installed_native_acceptance.py" \
+  "$here/test_installed_native_domain.py" \
   "$here/test_human_authorization.py" \
   "$here/test_control_protocol.py" \
   "$here/test_control_protocol_probe.py" \
