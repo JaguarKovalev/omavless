@@ -39,6 +39,14 @@ every repetition requires new human acknowledgements. The installed gate also
 guards explicit socket-inspection authorization and mode restoration. Human
 waiting is excluded from reported connect/disconnect command durations.
 
+The installed gate additionally requires an explicitly observed disconnected
+result with `manualRecoveryRequired: false` at both baseline and cleanup. A
+disconnected desired flag, cached disconnected actual state or empty process
+inventory cannot substitute for that proof. Missing/null/string recovery flags,
+unavailable facts, nonzero auxiliary counts and booleans used as numeric counts
+refuse acceptance. This closes a test-tool gap; it changes neither the runtime
+recovery policy nor how host authorization is performed.
+
 ## Scope and tests
 
 Deterministic tests inject in-memory terminal streams and harmless callbacks.

@@ -2984,7 +2984,14 @@ mod tests {
             .unwrap();
         assert_eq!(status["ok"], true);
         assert!(started.elapsed() < Duration::from_millis(200));
-        assert_eq!(worker.join().unwrap()["ok"], true);
+        let mutation = worker.join().unwrap();
+        // Distinguish dispatcher responsiveness from post-drain mutation
+        // failure. Emit only the stable public code, never private payloads.
+        assert_eq!(
+            mutation["ok"], true,
+            "post-drain mutation failed: {:?}",
+            mutation["error"]["code"]
+        );
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
         assert!(slot.mutation_safe());
         drop(lease);

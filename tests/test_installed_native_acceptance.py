@@ -1,5 +1,6 @@
 """Deterministic installed-gate policy tests; no host/service/network access."""
 import contextlib
+import copy
 import importlib.util
 import io
 from pathlib import Path
@@ -18,6 +19,32 @@ PROOF = b'LISTEN users:(("mihomo",pid=42,fd=1)) ino:11\nLISTEN users:(("mihomo",
 
 
 class InstalledNativeAcceptanceTests(unittest.TestCase):
+    def test_empty_runtime_requires_fresh_explicit_no_recovery_proof(self):
+        good = {"availability": "observed", "lastKnownActual": "disconnected",
+                "manualRecoveryRequired": False, "desired": {"connected": False},
+                "facts": {"ownedCoreRunning": False, "visibleMihomoCount": 0,
+                          "visibleTunCount": 0, "ownedAuxiliaryMihomoCount": 0}}
+        self.assertTrue(subject.clean_disconnected_observation(good))
+        for path, values in (
+                (("manualRecoveryRequired",), (True, None, 0, "false")),
+                (("availability",), ("unavailable", None)),
+                (("lastKnownActual",), ("manualRecoveryRequired", "connected", None)),
+                (("desired", "connected"), (True, 0, None)),
+                (("facts", "ownedCoreRunning"), (True, 0, None)),
+                *[(("facts", field), (1, False, None, "0")) for field in
+                  ("visibleMihomoCount", "visibleTunCount", "ownedAuxiliaryMihomoCount")]):
+            for value in values:
+                changed = copy.deepcopy(good)
+                node = changed
+                for part in path[:-1]:
+                    node = node[part]
+                node[path[-1]] = value
+                self.assertFalse(subject.clean_disconnected_observation(changed))
+            del node[path[-1]]
+            self.assertFalse(subject.clean_disconnected_observation(changed))
+        for value in (None, {}, [], {**good, "facts": None}, {**good, "desired": None}):
+            self.assertFalse(subject.clean_disconnected_observation(value))
+
     def test_exact_effective_environment_and_absent_home_override(self):
         home, runtime = Path("/home/synthetic"), Path("/run/user/1234")
         self.assertTrue(subject.valid_environment({}, home, runtime))

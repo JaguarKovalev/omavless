@@ -37,6 +37,20 @@ def valid_environment(environment, home, runtime):
             and environment.get("XDG_CONFIG_HOME", str(home / ".config")) == str(home / ".config"))
 
 
+def clean_disconnected_observation(observed):
+    """Empty process inventory alone must never conceal sticky recovery state."""
+    if not isinstance(observed, dict):
+        return False
+    facts, desired = observed.get("facts"), observed.get("desired")
+    return (observed.get("availability") == "observed"
+            and observed.get("lastKnownActual") == "disconnected"
+            and observed.get("manualRecoveryRequired") is False
+            and isinstance(desired, dict) and desired.get("connected") is False
+            and isinstance(facts, dict) and facts.get("ownedCoreRunning") is False
+            and all(type(facts.get(field)) is int and facts[field] == 0 for field in
+                    ("visibleMihomoCount", "visibleTunCount", "ownedAuxiliaryMihomoCount")))
+
+
 def template_policy(config):
     """Accepted fixture POLICY only; never parse credentials or rewrite YAML."""
     gate.require(isinstance(config, bytes) and len(config) <= 5242880, "fixture_unavailable")
@@ -176,8 +190,7 @@ def run_gate():
     gate.require(not state["desired"]["connected"] and state["lastKnownActual"] == "disconnected" and not tuns()
                  and not any(name == b"mihomo" for name in gate.processes().values()), "baseline_not_disconnected")
     initial = cli("runtime", "observation")["result"]
-    gate.require(initial["availability"] == "observed" and initial["facts"]["visibleMihomoCount"] == 0
-                 and initial["facts"]["visibleTunCount"] == 0 and not initial["facts"]["ownedCoreRunning"], "baseline_not_disconnected")
+    gate.require(clean_disconnected_observation(initial), "baseline_not_disconnected")
     profile = next((p for p in state["profiles"] if p["id"] == state["lastProfileId"] and p["protocol"] == "vless" and not p["missing"]), None)
     gate.require(profile is not None, "fixture_unavailable")
     mixed_port = template_policy(gate.bounded(home / ".config/omavless/route-template.yaml", 5242880))
@@ -237,7 +250,7 @@ def run_gate():
             raise auth.AuthorizationUnsettled()
         authorization.step("disconnect", lambda: action("disconnect"))
         observed = cli("runtime", "observation")["result"]
-        gate.require(observed["lastKnownActual"] == "disconnected" and not tuns()
+        gate.require(clean_disconnected_observation(observed) and not tuns()
                      and not any(name == b"mihomo" for name in gate.processes().values())
                      and set(map(int, gate.bounded(cgroup / "cgroup.procs").split())) == {pid}
                      and unit(LEGACY, "ActiveState") == "inactive" and unit(LEGACY, "MainPID") == "0"

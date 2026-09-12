@@ -71,12 +71,15 @@ changing production code or installed files.
 - The full locked Rust workspace attempt **did not pass**: runtime lib reported
   632 passed / 1 failed / 6 ignored. The failing test is
   `tests::auxiliary_reap_does_not_hold_dispatcher_or_hide_status`, at
-  `lib.rs:2987`, where the concurrent `status.get` result had `ok:false`.
+  `lib.rs:2987`, where the **post-drain mutation** result had `ok:false`.
+  Correction on resume: the original checkpoint misidentified this assertion
+  as `status.get`. Status success and its latency assertion at lines 2985–2986
+  had already passed. This is not evidence of a hidden/unresponsive status read.
   The focused unchanged test then passed, and the complete sequential runtime
   lib repeat passed **633 / 0 failed / 6 ignored**. This does not establish the
   cause or turn the interrupted workspace/clippy chain into a full green run.
-  Next session must characterize the contention/failure envelope and distinguish
-  a test synchronization race from a production responsiveness defect; do not
+  Next session must characterize the cleanup/mutation failure envelope and distinguish
+  fixture timing from a production cleanup defect; do not
   simply enlarge deadlines or suppress the failure.
 - Fresh workspace Clippy and subsequent integration groups were not reached
   after that failure. Preserve earlier exact-source evidence, but do not claim
@@ -91,6 +94,26 @@ changing production code or installed files.
   Routing, core/TUN 1/1, manual recovery false. No privileged command or host
   authorization was initiated. A temporarily toggled observed-IP display
   preference was restored to its original enabled boolean.
+
+On resume, an unchanged two-thread runtime-lib repeat also passed 633 tests
+with six ignored. A sandbox-only attempt separately failed to create the Unix
+socket, while the same focused test outside the sandbox passed; that sandbox
+failure is not the original cleanup/mutation failure. The mutation assertion
+now includes only its stable public error code to make any recurrence diagnosable.
+The auxiliary core's bounded stop reserves a TERM grace period followed by
+forced cleanup; timing under load is an investigation target, not yet a proven
+root cause. No production cleanup deadline or ownership proof is weakened.
+
+The resumed full workspace run (same production source, test assertion diagnostic
+only) now passes with `RUST_TEST_THREADS=2`: **952 passed / 0 failed / 10 ignored**
+across 72 Cargo result groups, including runtime lib **633 / 0 / 6**. Formatting,
+workspace Clippy with warnings denied and the two-case R0 parity smoke also pass.
+The reference runner passes **412 tests / 5 skipped**, its JS suites and QML
+contracts. This supersedes the earlier uncompleted static run, but does not
+explain away its intermittent post-drain mutation failure or replace host gates.
+The installed acceptance tool now rejects sticky recovery even when core/TUN
+counts are zero; its deterministic policy suite passes ten tests. No runtime,
+installed file, network or authorization behavior was changed by these checks.
 
 Raw logs and screenshots stay outside Git in `/tmp/omavless-r6-final-local`.
 These temporary artifacts may disappear at reboot; this sanitized summary is
