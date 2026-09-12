@@ -48,6 +48,36 @@ scenario green. Current connection preservation is not proof of a fresh start.
 | Disconnect/DNS cleanup correction | One observed transition at a time, all authorization resolved, fresh owned cleanup facts and `manualRecoveryRequired=false` | [Correction](R5_NATIVE_DISCONNECT_PROCESS_EXIT.md); the earlier unattended twenty-cycle result is not complete acceptance. No automatic retry storm or security-policy relaxation. |
 | Upgrade, rollback/recovery and package removal | Disposable installed-account/package route; preserve and validate private store/ownership; use supported recovery commands; prove no duplicate owner/core/TUN | Plugin removal is not package removal. Archive inspection is not package-manager recovery. Do not delete markers/receipts to manufacture success or test removal on the owner's connected session. |
 
+### Latest continuation: package recovery must finish first
+
+The candidate/history above remains historical, not the current installed state.
+The [attended package gate](R6_INSTALLED_PACKAGE_RECOVERY_2026-09-12.md) now proves
+native downgrade/restart, re-upgrade/restart and package removal in separately
+attended invocations. Final reinstall stopped **before installation** at the
+human authorization barrier. The current native package is absent; private
+state and frontend remain, runtime/core/TUN are 0/0/0. Do not start another host
+test or call R6 complete before explicit attended recovery restores the retained
+`7b75b74` package and verifies its actual running executable and private state.
+
+The optional [attended Python-absence lifecycle tool](R6_ATTENDED_PYTHON_ABSENCE.md)
+is implemented and deterministically tested, **not executed**. It preserves the
+normal graphical authorization path using an explicitly VM-wide temporary
+interpreter restriction with an independent restoration watchdog. It is not a
+production helper, package dependency or authorization bypass. No Python mask
+is currently installed. Fresh Last/pinned login remains unexecuted: a lingering
+test account alone has no graphical/session-scoped authentication agent. Do not
+spoof a manager epoch, edit receipts, or substitute a manual connection for that
+gate. An owner-session restart or a separately validated disposable PAM session
+with a real session-scoped agent is required.
+
+Current test-only continuation: **460 reference/policy tests, four skipped**,
+all invoked JS/QML contracts and plugin validation PASS. Focused mask + installed
+lifecycle + package policy suites: **46 PASS**; compile, shell syntax and diff
+check PASS. The prior **957 Rust tests / 0 failed / 10 ignored**, fmt/Clippy and
+R0 parity remain applicable: this continuation changed no Rust production code.
+The actual installed Python-unavailable domain/QML evidence remains 12 + 16
+stages PASS; it is not invalidated by later test-tool/documentation changes.
+
 The Save As UI checkpoint has owner-confirmed and automated English/Russian
 report-write evidence, private-file validation and simple cancellation passes.
 Manual owner saves invalidated two attempted cancel-after-edit checks, not the

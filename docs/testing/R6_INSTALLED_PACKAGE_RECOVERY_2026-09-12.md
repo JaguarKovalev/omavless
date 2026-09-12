@@ -1,7 +1,8 @@
 # R6 installed Arch package recovery gate
 
-Status: **procedure/tooling, NOT RUN until an attended execution is recorded**.
-This document must not be cited as a successful package rollback/removal result.
+Status: **partially executed; downgrade, upgrade and removal PASS; final
+reinstallation is BLOCKED at human authorization**. The separate attempts below
+must not be cited as one uninterrupted successful package-recovery sequence.
 
 `tests/installed_native_package.py` is a developer acceptance tool. Python runs
 the observer, not OmaVLESS; this is a real installed-package recovery gate,
@@ -105,3 +106,44 @@ refusal, strict disconnected facts, auth stops, absence of implicit recovery and
 the exact dependency-preserving pacman argv. They never execute systemd, sudo,
 pacman, a real package operation or a VPN transition. Passing them is not host
 acceptance.
+
+## Actual local execution, 2026-09-12
+
+Try Omarchy aarch64 VM; checked-in tool at `4712d69`, with separately reviewed
+private local continuation wrappers. These wrappers reuse `PackageGate` checks
+and the normal terminal barriers; they do not script acknowledgements.
+
+| Candidate | Source | Executable SHA-256 |
+| --- | --- | --- |
+| Current/recovery | `7b75b747883d66a05f1f2b321d42f194c6040b5c` | `fe04fba32d4e135d56e929350cd0296d3f89168e06d6ebba9a6de089aec4b786` |
+| Previous native | `9a47a60bbf6d7a5802d2881d1bf25a2988182945` | `c765289019c22aff46e0a2e590c556470fb605361c856bf369479e5dbac15f02` |
+
+The recovery package is `omavless-0.0.0.r492.g7b75b747883d-1-aarch64.pkg.tar.zst`,
+retained outside `/tmp`. Its archive SHA-256 is
+`1a6edabad975d8af7cde768019af15e4dc8fc103db440090f5e27219b7a18b32`.
+
+1. The initial attended run loaded the installed current executable, stopped it,
+   installed the previous native package and started it. **Downgrade/restart
+   PASS**: actual process digest, native ownership, unchanged private bytes and
+   permissions, startup Off and clean disconnected host were verified. The next
+   human barrier stopped that invocation. No automatic compensation followed.
+2. A new explicit attended continuation verified the previous package/daemon and
+   a fresh private baseline. **Upgrade/restart PASS**, followed by **package
+   removal PASS**: normal dependency-checked `pacman -R`, no executable/packaged
+   units/runtime/core/TUN/controller and unchanged private state. The barrier
+   before reinstallation stopped this invocation.
+3. A new recovery-only invocation verified package absence and the retained
+   archive. It stopped at the **pre-install** human barrier. It executed no
+   installation or service start. No further windows/effects were attempted.
+
+Current endpoint: the package is **absent**, the plugin files/private state are
+retained, and native daemon/core/TUN counts are **0/0/0**. Final reinstallation
+and service enablement/recovery verification are **NOT RUN**, not PASS. The
+owner was informed immediately; continue with a new attended recovery of the
+retained exact current archive after clarifying terminal/authentication state.
+
+Private-state equality was checked within each individual invocation; baseline
+hashes were not persisted publicly or retrospectively equated across interrupted
+invocations. This proves compatible native-package behavior, **not** rollback
+of ownership to Python or the published 0.7.0 version. No markers/receipts,
+credentials, privilege rules or package dependencies were removed or rewritten.
