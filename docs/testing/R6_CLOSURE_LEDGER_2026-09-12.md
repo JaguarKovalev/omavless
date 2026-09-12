@@ -107,6 +107,30 @@ upstream failure; do not attribute this to virtualization or a provider without
 evidence. The separately recorded earlier HTTPS timeout remains relevant, but
 the same root cause has not been established. R6 remains open; no publication.
 
+On explicit owner instruction, one ordinary Routing connection was subsequently
+issued for diagnosis, not a formal unattended acceptance run. Before connecting,
+the fixed public HTTPS destination returned HTTP 200. After connecting, fresh
+native observation showed one owned Mihomo/TUN, matching desired profile and
+controller configuration, and no recovery flag. The public IPv4 route selected
+the TUN; configuration enabled DNS, fake IP and DNS hijacking with no TCP
+controller configured. Three bounded probes all timed out: ordinary HTTPS,
+HTTPS with its address resolved before connection, and SOCKS5 remote-DNS HTTPS
+through the configured loopback mixed port. This rules out a failure confined
+solely to the client's system name lookup, but does not identify the underlying
+core/upstream/resolver/route failure or prove the probes took identical paths.
+
+The connection also interrupted the agent's network transport. The owner
+disconnected VPN to restore communication. Do not repeat a remotely orchestrated
+connect-then-inspect sequence: its inspection/recovery cannot depend on the
+chat transport remaining available. Any next connected investigation must be
+prepared as a locally running, bounded diagnostic with an explicit recovery
+path and normal host-authorization handling. No automatic retry was issued.
+The core supervisor intentionally discards child stdout/stderr; an empty user
+journal is not a useful core-network error log. Capture bounded live logs via
+the existing private Unix controller, reducing them locally to safe categories
+without exporting destinations or credentials. No logging/security policy was
+changed in this pass.
+
 Current test-only continuation: **460 reference/policy tests, four skipped**,
 all invoked JS/QML contracts and plugin validation PASS. Focused mask + installed
 lifecycle + package policy suites: **46 PASS**; compile, shell syntax and diff
