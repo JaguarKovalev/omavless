@@ -36,7 +36,28 @@ for interpreter in /usr/bin/python /usr/bin/python3 /usr/bin/python3.*; do
 done
 ! command -v python >/dev/null 2>&1
 ! command -v python3 >/dev/null 2>&1
-[[ -x /usr/bin/node && -x /usr/bin/quickshell ]]
+stage=fixture_dependencies
+# The reviewed host wrapper may stage this machine's already installed Node
+# executable into the disposable account. Never resolve an arbitrary environment
+# executable or PATH alternative; this is a provider test tool, not application.
+fixture_node=/usr/bin/node
+if [[ ! -x $fixture_node ]]; then
+  fixture_node="$HOME/bridge-tools/node"
+  [[ -d $HOME/bridge-tools && ! -L $HOME/bridge-tools &&
+     $(stat -c %u "$HOME/bridge-tools") == "$EUID" &&
+     $(stat -c %a "$HOME/bridge-tools") == 700 &&
+     -f $fixture_node && ! -L $fixture_node && -x $fixture_node &&
+     $(stat -c %u "$fixture_node") == "$EUID" &&
+     $(stat -c %a "$fixture_node") == 700 ]] || {
+    printf '%s\n' 'BRIDGE DEPENDENCY UNAVAILABLE: trusted Node fixture tool'
+    exit 1
+  }
+fi
+[[ -x /usr/bin/quickshell ]] || {
+  printf '%s\n' 'BRIDGE DEPENDENCY UNAVAILABLE: installed Quickshell'
+  exit 1
+}
+stage=installed_plugin_identity
 plugin="$HOME/.config/omarchy/plugins/kdk.omavless"
 [[ -f $plugin/plugin/Service.qml && ! -L $plugin/plugin/Service.qml && -f $plugin/backend.sh ]]
 # Service destruction uses the REAL removal watcher. No fake shell registry is
@@ -49,7 +70,7 @@ jq -e '.id == "kdk.omavless"' "$plugin/manifest.json" >/dev/null
 stage=loopback_fixture
 # This local HTTP server is solely a synthetic provider fixture. Rust still
 # performs its actual production fetch/validation/transaction path.
-/usr/bin/node - "$scratch" >"$scratch/feed.log" 2>&1 <<'JS' &
+"$fixture_node" - "$scratch" >"$scratch/feed.log" 2>&1 <<'JS' &
 const fs = require('fs');
 const http = require('http');
 const path = process.argv[2];
@@ -98,6 +119,8 @@ done
 jq -e '(.schemaVersion == 2 or .schemaVersion == 3) and .scope == "native_support"' "$scratch/report.json" >/dev/null
 [[ $(<"$scratch/profile.txt") == "$(<"$scratch/export.txt")" ]]
 [[ $(<"$scratch/request-count") == 3 ]]
+# Let the unmodified Service destruction watcher finish its two-second grace.
+sleep 3
 /usr/bin/omavless runtime observation >"$scratch/final.json"
 jq -e '.ok==true and .result.availability=="observed" and .result.lastKnownActual=="disconnected"
   and .result.desired.connected==false and .result.manualRecoveryRequired==false

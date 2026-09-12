@@ -13,6 +13,7 @@ python3 -m unittest -v \
   "$here/test_installed_native_acceptance.py" \
   "$here/test_installed_native_domain.py" \
   "$here/test_installed_native_bridge.py" \
+  "$here/test_installed_native_package.py" \
   "$here/test_human_authorization.py" \
   "$here/test_control_protocol.py" \
   "$here/test_control_protocol_probe.py" \

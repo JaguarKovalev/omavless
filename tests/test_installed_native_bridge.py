@@ -49,6 +49,28 @@ class InstalledBridgePolicyTests(unittest.TestCase):
             self.assertIn(expected, source)
         self.assertIn("120000", source)
 
+    def test_host_driver_has_no_privileged_or_network_state_mutation(self):
+        source = SCRIPT.read_text()
+        code = "\n".join(line for line in source.splitlines()
+                         if not line.lstrip().startswith("#"))
+        self.assertNotRegex(code, r"\b(?:sudo|pkexec|systemctl|loginctl|useradd|userdel|nft|resolvectl)\b")
+        self.assertNotRegex(code, r"/usr/bin/omavless\s+(?:connect|disconnect|quit)\b")
+        self.assertIn("sleep 3", source)
+
+    def test_fixture_node_uses_only_two_fixed_guarded_locations(self):
+        source = SCRIPT.read_text()
+        self.assertIn("fixture_node=/usr/bin/node", source)
+        self.assertIn('fixture_node="$HOME/bridge-tools/node"', source)
+        self.assertNotIn("command -v node", source)
+        for guard in ('! -L $HOME/bridge-tools', '-f $fixture_node',
+                      '! -L $fixture_node', '-x $fixture_node',
+                      '$(stat -c %u "$fixture_node") == "$EUID"',
+                      '$(stat -c %a "$fixture_node") == 700'):
+            self.assertIn(guard, source)
+        self.assertLess(source.index("stage=fixture_dependencies"),
+                        source.index("fixture_node=/usr/bin/node"))
+        self.assertIn("BRIDGE DEPENDENCY UNAVAILABLE: trusted Node fixture tool", source)
+
 
 if __name__ == "__main__":
     unittest.main()
