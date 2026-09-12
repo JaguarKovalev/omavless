@@ -726,10 +726,14 @@ Panel {
     if (!flick || !target) return
     Qt.callLater(function() {
       if (!target || !flick) return
-      var point = target.mapToItem(flick.contentItem, 0, 0)
       var margin = Style.space(8)
+      // Keep the setting's explanation visible with its focused action. An
+      // oversized card still scrolls to the action itself, never hiding it.
+      var item = target.focusScrollItem || target
+      if (item.height > flick.height - 2 * margin) item = target
+      var point = item.mapToItem(flick.contentItem, 0, 0)
       var top = point.y
-      var bottom = top + target.height
+      var bottom = top + item.height
       var maxY = Math.max(0, flick.contentHeight - flick.height)
       if (top < flick.contentY + margin)
         flick.contentY = Math.max(0, top - margin)
@@ -2149,8 +2153,8 @@ Panel {
                 Layout.fillWidth: true
                 spacing: Style.space(8)
                 Item { Layout.fillWidth: true }
-                Button { id: nativeSupportCopy; text: root.textFor("native.support.copy"); bordered: true; focusable: true; fontFamily: root.fontFamily; enabled: vless.nativeFactsCurrent && !vless.nativeSupportBusy && !vless.copying; Keys.onPressed: function(event) { root.handlePanelControlKey(event) }; onClicked: vless.copyNativeConfigurationReport() }
-                Button { id: nativeSupportSave; text: root.textFor("native.support.save"); bordered: true; focusable: true; fontFamily: root.fontFamily; enabled: vless.nativeCanAct && vless.nativeFileExportProcess === null; Keys.onPressed: function(event) { root.handlePanelControlKey(event) }; onClicked: root.requestReportExport() }
+                Button { id: nativeSupportCopy; readonly property Item focusScrollItem: nativeSupportSetting; text: root.textFor("native.support.copy"); bordered: true; focusable: true; fontFamily: root.fontFamily; enabled: vless.nativeFactsCurrent && !vless.nativeSupportBusy && !vless.copying; Keys.onPressed: function(event) { root.handlePanelControlKey(event) }; onClicked: vless.copyNativeConfigurationReport() }
+                Button { id: nativeSupportSave; readonly property Item focusScrollItem: nativeSupportSetting; text: root.textFor("native.support.save"); bordered: true; focusable: true; fontFamily: root.fontFamily; enabled: vless.nativeCanAct && vless.nativeFileExportProcess === null; Keys.onPressed: function(event) { root.handlePanelControlKey(event) }; onClicked: root.requestReportExport() }
               }
             }
           }
@@ -4039,6 +4043,7 @@ Panel {
 
       Button {
         id: actionButton
+        readonly property Item focusScrollItem: settingRow
         visible: settingRow.actionVisible
         text: settingRow.actionText
         bordered: true

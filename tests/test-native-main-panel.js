@@ -22,6 +22,25 @@ function context(){
   return c;
 }
 let count=0;function test(name,f){try{f();count++;}catch(e){e.message=name+': '+e.message;throw e;}}
+test('keyboard scrolling keeps complete settings cards visible and bounds oversized rows',()=>{
+  const c=context();c.Style={space:x=>x};
+  const start=source.indexOf('  function scrollPanelControlIntoView(');
+  vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),c);
+  const flick=c.nativeFlick;Object.assign(flick,{height:300,contentHeight:1000,contentItem:{},contentY:250});
+  const item=(y,height)=>({height,mapToItem:()=>({y})});
+  let target=item(290,30);target.focusScrollItem=item(230,130);
+  c.scrollPanelControlIntoView(target);assert.equal(flick.contentY,222);
+  flick.contentY=0;target=item(260,30);target.focusScrollItem=item(220,140);
+  c.scrollPanelControlIntoView(target);assert.equal(flick.contentY,68);
+  flick.contentY=0;target=item(430,30);target.focusScrollItem=item(100,700);
+  c.scrollPanelControlIntoView(target);assert.equal(flick.contentY,168);
+  flick.contentY=250;c.scrollPanelControlIntoView(item(260,30));assert.equal(flick.contentY,250);
+  flick.contentY=100;c.scrollPanelControlIntoView(item(0,30));assert.equal(flick.contentY,0);
+  flick.contentY=500;c.scrollPanelControlIntoView(item(990,10));assert.equal(flick.contentY,700);
+  assert.match(source,/id: actionButton\s+readonly property Item focusScrollItem: settingRow/);
+  for (const id of ['nativeSupportCopy','nativeSupportSave'])
+    assert(source.includes('id: '+id+'; readonly property Item focusScrollItem: nativeSupportSetting;'));
+});
 test('reopening main resets both scrollers without erasing search',()=>{
   const c=context();c.opened=true;c.panelFlick={contentY:210};c.nativeFlick.contentY=470;c.profileFilter='kept';
   c.vless.refresh=()=>{};
