@@ -2,10 +2,10 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(__dirname+'/../plugin/Panel.qml','utf8');
 const calls=[];
-const c=vm.createContext({nativeSelectedProfile:'selected',nativeView:{connected:false,state:'disconnected',lastProfileId:'last',mode:'rule'},vless:{nativeOwner:true,nativeCanAct:true,requestNativeAction:(...args)=>{calls.push(args);return true},toggle:()=>{throw Error('legacy toggle')},disconnectAll:()=>{throw Error('legacy disconnect')}}});
+const c=vm.createContext({nativeSelectedProfile:'selected',nativeView:{connected:false,state:'disconnected',lastProfileId:'last',mode:'rule',profiles:[{id:'selected',missing:false},{id:'last',missing:false}]},vless:{nativeOwner:true,nativeCanAct:true,requestNativeAction:(...args)=>{calls.push(args);return true},toggle:()=>{throw Error('legacy toggle')},disconnectAll:()=>{throw Error('legacy disconnect')}}});
 c.root=c;
 function load(name,indent){const start=source.indexOf(indent+'function '+name+'('),end=source.indexOf('\n'+indent+'}',start)+indent.length+2;assert(start>=0);vm.runInContext(source.slice(start,end).replace(/\): string/g,')'),c);}
-load('nativeToggleConnection','  ');load('toggle','    ');load('down','    ');
+load('nativeActivateProfile','  ');load('nativeToggleConnection','  ');load('toggle','    ');load('down','    ');
 assert.equal(c.toggle(),'ok');assert.deepEqual(calls.pop(),['connect','selected','rule']);
 c.nativeSelectedProfile='';assert.equal(c.toggle(),'ok');assert.deepEqual(calls.pop(),['connect','last','rule']);
 c.nativeView.connected=true;assert.equal(c.toggle(),'ok');assert.deepEqual(calls.pop(),['disconnect','','']);

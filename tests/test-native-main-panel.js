@@ -13,7 +13,7 @@ function context(){
     vless:{nativeCanAct:true,nativeOwner:true,refreshNativeDesktopCapabilities:()=>calls.push(['desktop-capabilities']),requestNativeAction:(...args)=>calls.push(args),nativeSnapshot:{instanceId:'instance',revision:4}},page:'main',nativeFlick:{contentY:90},
     nativeCursor:-1,nativeProfiles:{itemAt:()=>null},Qt:{callLater:f=>f()}});
   c.root=c;c.calls=calls;
-  for(const name of ['nativeRecord','buildNativeRows','sortNativeProbeProfiles','sortNativeProbeResults','subscriptionSortMode','toggleNativeSubscription','nativeToggleConnection','openSettings','openSubscriptions','browseNativeSubscription','moveNativeCursor','activateNativeCursor','requestNativeSubscriptionDelete','editSubscription']){
+  for(const name of ['nativeRecord','nativeActivateProfile','nativeHeaderQrRecord','buildNativeRows','sortNativeProbeProfiles','sortNativeProbeResults','subscriptionSortMode','toggleNativeSubscription','nativeToggleConnection','openSettings','openSubscriptions','browseNativeSubscription','moveNativeCursor','activateNativeCursor','requestNativeSubscriptionDelete','editSubscription']){
     const start=source.indexOf('  function '+name+'('),end=source.indexOf('\n  }',start)+4;
     assert(start>=0&&end>start);vm.runInContext(source.slice(start,end),c);
   }
@@ -22,6 +22,41 @@ function context(){
   return c;
 }
 let count=0;function test(name,f){try{f();count++;}catch(e){e.message=name+': '+e.message;throw e;}}
+test('selection is not connection; explicit row action alone switches the target',()=>{
+  const c=context();Object.assign(c.nativeView,{connected:true,state:'connected',activeId:'managed'});
+  c.nativeSelectedProfile='local';assert.equal(presentation.activeProfile(c.nativeView).id,'managed');
+  const line=source.split('\n').find(s=>s.includes('id: nativeChoose;'));
+  c.nativeRow={profile:standalone,index:0};
+  vm.runInContext(line.match(/onClicked: (\{.*\}) \}$/)[1],c);
+  assert.equal(c.calls.length,0);assert.equal(c.nativeView.activeId,'managed');
+  assert(!line.includes('●'));assert(line.includes('native.profile.selectActions'));
+  c.nativeActivateProfile('local');assert.deepEqual(c.calls.pop(),['connect','local','rule']);
+  c.nativeActivateProfile('managed');assert.deepEqual(c.calls.pop(),['disconnect','','']);
+  assert.match(source,/id: rowConnect;[^\n]*onClicked: root.nativeActivateProfile\(nativeRow.profile.id\)/);
+});
+test('active identity survives collapsed groups, filtering, and a different selected row',()=>{
+  const c=context();Object.assign(c.nativeView,{connected:true,state:'connected',activeId:'managed'});
+  c.profileFilter='Local';assert.equal(c.nativeRows.length,1);
+  assert.equal(presentation.activeProfile(c.nativeView).id,'managed');
+  assert.match(source,/id: nativeConnectedIdentity[\s\S]*?textFormat: Text.PlainText/);
+  assert(source.includes('root.nativeActiveProfile.subscriptionId === nativeRow.modelData.subscription.id'));
+  assert(source.includes('nativeRow.connected ? "native.profile.connected" : "native.profile.selectedOnly"'));
+});
+test('header QR describes the connected profile, row QR remains selected-profile scoped',()=>{
+  const c=context();Object.assign(c.nativeView,{connected:true,state:'connected',activeId:'managed'});
+  assert.equal(c.nativeHeaderQrRecord().uuid,'managed');
+  c.nativeView.connected=false;c.nativeView.state='unavailable';assert.equal(c.nativeHeaderQrRecord(),null);
+  c.nativeView.state='disconnected';c.nativeSelectedRecord=()=>({uuid:'local'});assert.equal(c.nativeHeaderQrRecord().uuid,'local');
+  assert(source.includes('onClicked: vless.showQr(root.nativeHeaderQrRecord())'));
+  assert(source.includes('onClicked: vless.showQr(nativeRow.record)'));
+});
+test('power and explicit actions reject removed or missing selections without fallback',()=>{
+  const c=context();c.nativeSelectedProfile='removed';assert.equal(c.nativeToggleConnection(),false);
+  c.nativeSelectedProfile='local';c.nativeView.profiles[0]={...standalone,missing:true};
+  assert.equal(c.nativeToggleConnection(),false);assert.equal(c.calls.length,0);
+  c.nativeView.profiles[0]=standalone;c.nativeView.state='reconnecting';
+  assert.equal(c.nativeActivateProfile('local'),false);assert.equal(c.calls.length,0);
+});
 test('keyboard scrolling keeps complete settings cards visible and bounds oversized rows',()=>{
   const c=context();c.Style={space:x=>x};
   const start=source.indexOf('  function scrollPanelControlIntoView(');

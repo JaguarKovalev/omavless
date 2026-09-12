@@ -163,6 +163,8 @@ Panel {
   property int nativeCursor: -1
   property var nativeExpanded: ({})
   readonly property var nativeView: NativePresentation.project(vless.nativeSnapshot, vless.nativeObservation, vless.nativeSnapshotFailed)
+  readonly property var nativeActiveProfile: NativePresentation.activeProfile(nativeView)
+  readonly property bool nativeSelectionConnectable: nativeView.profiles.some(function(p) { return p.id === (root.nativeSelectedProfile || nativeView.lastProfileId) && !p.missing })
   readonly property var nativeIpc: NativePresentation.ipc(vless.nativeSnapshot, vless.nativeObservation,
     vless.nativeSnapshotFailed, vless.nativePending, vless.nativeOutcomeUnknown)
   readonly property var nativeRows: buildNativeRows()
@@ -265,13 +267,20 @@ Panel {
     if ((page !== "main" && page !== "subscription") || nativeCursor < 0 || nativeCursor >= nativeRows.length) return
     var row = nativeRows[nativeCursor]
     if (row.kind === "subscription") toggleNativeSubscription(row.subscription.id)
-    else if (vless.nativeCanAct && !row.profile.missing) {
+    else {
       nativeSelectedProfile = row.profile.id
-      if (nativeView.connected && nativeView.activeId === row.profile.id)
-        vless.requestNativeAction("disconnect", "", "")
-      else if (nativeView.connected || nativeView.state === "disconnected")
-        vless.requestNativeAction("connect", row.profile.id, nativeView.mode)
+      nativeActivateProfile(row.profile.id)
     }
+  }
+
+  function nativeActivateProfile(id) {
+    var profile = nativeView.profiles.find(function(p) { return p.id === id })
+    if (!vless.nativeCanAct || !profile || profile.missing) return false
+    if (nativeView.connected && nativeView.activeId === id)
+      return vless.requestNativeAction("disconnect", "", "")
+    if (nativeView.connected || nativeView.state === "disconnected")
+      return vless.requestNativeAction("connect", id, nativeView.mode)
+    return false
   }
 
   function nativeModeLabel(mode) {
@@ -283,7 +292,7 @@ Panel {
     if (nativeView.connected) return vless.requestNativeAction("disconnect", "", "")
     else if (nativeView.state === "disconnected") {
       var selected = nativeSelectedProfile || nativeView.lastProfileId
-      if (selected) return vless.requestNativeAction("connect", selected, nativeView.mode)
+      if (selected) return nativeActivateProfile(selected)
     }
     return false
   }
@@ -1316,6 +1325,11 @@ Panel {
     return p ? {uuid:p.id, name:p.name, favorite:p.favorite, managed:p.subscriptionId !== ""} : null
   }
 
+  function nativeHeaderQrRecord() {
+    var active = NativePresentation.activeProfile(nativeView)
+    return active ? nativeRecord(active) : nativeView.state === "disconnected" ? nativeSelectedRecord() : null
+  }
+
   function confirmRename() {
     if (!renameAccepted) return
     var profile = pendingRename
@@ -1887,20 +1901,20 @@ Panel {
                     size: nativeHeader.controlHeight
                     iconText: "󰐲"
                     focusable: true
-                    tooltipText: root.textFor("native.main.qr")
+                    tooltipText: root.textFor(root.nativeView.connected ? "native.main.activeQr" : "native.main.qr")
                     anchors.verticalCenter: parent.verticalCenter
                     foreground: root.foreground
                     fontFamily: root.fontFamily
-                    enabled: vless.nativeCanAct && root.nativeSelectedRecord() !== null
+                    enabled: vless.nativeCanAct && root.nativeHeaderQrRecord() !== null
                     Component.onCompleted: root.nativeQrControl = this
                     Component.onDestruction: root.nativeQrControl = null
-                    onClicked: vless.showQr(root.nativeSelectedRecord())
+                    onClicked: vless.showQr(root.nativeHeaderQrRecord())
                   }
                   ToggleSwitch {
                     activeFocusOnTab: true
                     anchors.verticalCenter: parent.verticalCenter
                     checked: root.nativeView.connected
-                    enabled: vless.nativeCanAct && (root.nativeView.connected || (root.nativeView.state === "disconnected" && (root.nativeSelectedRecord() !== null || root.nativeView.lastProfileId !== "")))
+                    enabled: vless.nativeCanAct && (root.nativeView.connected || (root.nativeView.state === "disconnected" && root.nativeSelectionConnectable))
                     busy: vless.nativeActionRunning
                     cursorRing: false
                     hasCursor: activeFocus
@@ -1917,6 +1931,18 @@ Panel {
                 }
               }
             }
+          }
+
+          PlainText {
+            id: nativeConnectedIdentity
+            Layout.fillWidth: true
+            visible: root.page === "main" && root.nativeActiveProfile !== null
+            text: root.nativeActiveProfile ? root.textFor("native.profile.active", {name:root.nativeActiveProfile.name}) : ""
+            textFormat: Text.PlainText
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.Wrap
           }
 
           PlainText {
@@ -2294,7 +2320,8 @@ Panel {
                   readonly property var profile: isProfile ? modelData.profile : null
                   readonly property bool selected: isProfile && root.nativeSelectedProfile === profile.id
                   readonly property var record: isProfile ? root.nativeRecord(profile) : null
-                  property var focusTargets: isProfile ? [nativeChoose, rowRename, rowPin, rowDelete, rowQr, rowExport, rowEdit, rowDetails, rowDetailsRefresh] : [nativeGroup]
+                  readonly property bool connected: isProfile && root.nativeView.connected && profile.id === root.nativeView.activeId
+                  property var focusTargets: isProfile ? [nativeChoose, rowRename, rowPin, rowDelete, rowQr, rowExport, rowEdit, rowDetails, rowConnect, rowDetailsRefresh] : [nativeGroup]
                   Layout.fillWidth: true
                   spacing: Style.space(4)
                   RowLayout {
@@ -2305,11 +2332,12 @@ Panel {
                       MouseArea { anchors.fill: parent; onClicked: root.toggleNativeSubscription(nativeRow.modelData.subscription.id) }
                     }
                     PlainText { text: nativeRow.isProfile ? "" : String(nativeRow.modelData.count); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+                    PlainText { visible: !nativeRow.isProfile && root.nativeActiveProfile !== null && root.nativeActiveProfile.subscriptionId === nativeRow.modelData.subscription.id; text: root.textFor("native.profile.connected"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
                   }
                   RowLayout {
                     visible: nativeRow.isProfile
                     Layout.fillWidth: true
-                    PanelActionButton { id: nativeChoose; size: Style.space(24); iconText: nativeRow.selected ? "●" : "○"; tooltipText: root.textFor("common.select"); focusable: true; enabled: nativeRow.isProfile; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
+                    PanelActionButton { id: nativeChoose; size: Style.space(24); iconText: "󰅂"; foreground: nativeRow.selected ? Color.accent : root.dim; tooltipText: root.textFor("native.profile.selectActions"); focusable: true; enabled: nativeRow.isProfile; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
                     PlainText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: nativeRow.isProfile ? nativeRow.profile.name : ""; textFormat: Text.PlainText; color: nativeRow.isProfile && nativeRow.profile.id === root.nativeView.activeId ? Color.accent : root.foreground; font.family: root.fontFamily; elide: Text.ElideRight
                       MouseArea { anchors.fill: parent; onClicked: { root.nativeSelectedProfile = nativeRow.profile.id; root.nativeCursor = nativeRow.index } }
                     }
@@ -2326,6 +2354,12 @@ Panel {
                     PanelActionButton { id: rowEdit; size: Style.space(24); iconText: "󰏫"; tooltipText: root.textFor("native.editor.open"); focusable: true; enabled: vless.nativeCanAct && vless.nativeEditorDraft === null && !vless.nativeEditorRunning && nativeRow.record !== null && !nativeRow.record.managed; onClicked: { if (root.handOffToEditor(nativeRow.record)) root.close() } }
                     PanelActionButton { id: rowDetails; size: Style.space(24); iconText: "󰋽"; tooltipText: root.textFor("native.details.open"); focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile; onClicked: root.nativeExpandedDetailsId = root.nativeExpandedDetailsId === nativeRow.profile.id ? "" : nativeRow.profile.id }
                   }
+                  }
+                  RowLayout {
+                    visible: nativeRow.isProfile && (nativeRow.selected || nativeRow.connected)
+                    Layout.fillWidth: true
+                    PlainText { Layout.fillWidth: true; text: root.textFor(nativeRow.connected ? "native.profile.connected" : "native.profile.selectedOnly"); color: nativeRow.connected ? Color.accent : root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
+                    Button { id: rowConnect; visible: nativeRow.selected; text: root.textFor(nativeRow.connected ? "action.disconnect" : "action.connect"); bordered: true; focusable: true; enabled: vless.nativeCanAct && nativeRow.isProfile && !nativeRow.profile.missing && (root.nativeView.connected || root.nativeView.state === "disconnected"); onClicked: root.nativeActivateProfile(nativeRow.profile.id) }
                   }
                   PlainText { Layout.fillWidth: true; visible: nativeRow.isProfile && vless.probeResult(nativeRow.profile.id) !== null; text: nativeRow.isProfile ? root.nativeProbeLabel(nativeRow.profile.id) : ""; textFormat: Text.PlainText; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.Wrap }
                   ColumnLayout {

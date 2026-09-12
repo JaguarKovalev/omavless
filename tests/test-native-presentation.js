@@ -56,4 +56,13 @@ test('failure and transition states stay distinct from connected',()=>{
   const {snapshot:s,observation:o}=fixture();o.facts=null;assert.equal(p.project(s,o,false).state,'unavailable');
   assert.equal(p.project(null,null,false).state,'unavailable');
 });
+test('active profile is never inferred from selection, name, last-used or unavailable state',()=>{
+  const {snapshot:s,observation:o}=fixture();s.profiles.push({id:'two',name:s.profiles[0].name});s.lastProfileId='two';
+  let view=p.project(s,o,false);assert.equal(p.activeProfile(view).id,'one');
+  view.activeId='removed';assert.equal(p.activeProfile(view),null);
+  for(const state of ['disconnected','unavailable','starting','failed']) {
+    view={...view,activeId:'one',state};assert.equal(p.activeProfile(view),null);
+  }
+  assert.equal(p.activeProfile(null),null);
+});
 console.log('native presentation: '+n+' passed');

@@ -37,6 +37,12 @@ function project(snapshot, observation, failed) {
   return result
 }
 
+// Selection belongs to the editor/cursor, never to connection identity.
+function activeProfile(view) {
+  if (!view || !view.connected || view.state !== "connected" || !view.activeId) return null
+  return view.profiles.find(function(profile) { return profile.id === view.activeId }) || null
+}
+
 function filtered(profiles, query) {
   var needle = typeof query === "string" ? query.slice(0,128).toLowerCase() : ""
   return (profiles || []).slice(0,256).filter(function(p) {

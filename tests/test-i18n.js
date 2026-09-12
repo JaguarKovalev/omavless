@@ -108,6 +108,13 @@ assert.strictEqual(
 )
 
 const providerText = "<b>provider-owned</b>"
+for (const locale of ["en", "ru"]) {
+  for (const key of ["native.profile.active", "native.profile.connected", "native.profile.selectActions", "native.profile.selectedOnly", "native.main.activeQr"]) {
+    const translated = I18n.translate(key, locale, {name: providerText})
+    assert(!translated.includes("Missing translation"))
+    if (key === "native.profile.active") assert(translated.includes(providerText))
+  }
+}
 const interpolated = I18n.translate("profile.showing", "ru", {name: providerText})
 assert.ok(interpolated.includes(providerText))
 assert.ok(!Object.prototype.hasOwnProperty.call(I18n.CATALOG, providerText))
