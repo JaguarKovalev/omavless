@@ -2,7 +2,8 @@
 
 This guide is for an explicitly reviewed **local development candidate** on
 Arch/Omarchy. It is not a marketplace release, automatic migration, AUR package
-announcement or declaration that R6 acceptance is complete. The published 0.7.0
+announcement. Its scoped [local R6 acceptance](../testing/R6_LOCAL_CLOSURE_2026-09-13.md)
+does not establish a public release. The published 0.7.0
 marketplace snapshot remains unchanged. Ordinary `omarchy plugin add` does not
 install the native package or transfer ownership to Rust.
 

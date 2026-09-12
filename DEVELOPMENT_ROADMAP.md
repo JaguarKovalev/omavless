@@ -1,6 +1,6 @@
 # OmaVLESS development delivery roadmap
 
-Status: active delivery ledger, updated 2026-09-03.
+Status: active delivery ledger; local native checkpoint updated 2026-09-13.
 
 Local owner-approved update, 2026-09-13: **R6 native-path retirement is closed
 locally with explicit deferrals**, not merged/published. See
@@ -9,6 +9,10 @@ Optional enabled Last/pinned login validation moves to
 [AUTO-1](docs/roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md); startup Off remains default.
 DNS/provider investigation and V0 fixture limits remain open. Historical stage
 entries below keep their original evidence boundaries.
+
+The [publication candidate](docs/testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md)
+indexes the final local checks, outstanding Draft PR reconciliation and the
+owner-controlled publication step. No remote publication is implied.
 
 This file is the compact source of truth for **what happens next**, dependency
 order and acceptance state. Detailed contracts live under `docs/roadmap/`.

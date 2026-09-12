@@ -260,7 +260,12 @@ Catalog/contract tests are not visual acceptance: exercise the declared
 screen/state matrix on the exact installed head, protect private fixture data in
 screenshots and repeat affected captures after a fix.
 
-## Current continuity checkpoint — 2026-09-03
+## Historical continuity checkpoint — 2026-09-03
+
+The dated record below preserves earlier remote merge evidence. It is not the
+current installed ownership or remaining-work list: use the local checkpoint
+above and [publication candidate](docs/testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md)
+for the reconciled native branch. Do not restart R0–R6 from this historical list.
 
 - Published marketplace baseline remains OmaVLESS `0.7.0` at exact reviewed SHA
   `69fe05b03129a23664fff3f8289821a7b7f80095`.
