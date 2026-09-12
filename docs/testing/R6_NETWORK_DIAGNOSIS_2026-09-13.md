@@ -81,3 +81,30 @@ hosts, addresses, credentials, raw controller/core errors or subscription data
 are in this report. No implementation was changed or pushed. Existing static
 acceptance remains scoped to its original tested source; it was not rerun for
 this documentation-only finding.
+
+## Recovery observation and selection/connection ambiguity
+
+The owner subsequently reported another profile working and then believed the
+original profile was active again. A read-only TUN-bound HTTPS probe now passes
+in Routing (about 697 ms): one owned core/TUN, authenticated Unix controller,
+matching disk/daemon identity, and no manual recovery flag. No reconnect or
+configuration change was made for that probe. However, the actual desired
+profile ID, stored display name and endpoint differ from the recorded original
+fixture. This success must not be attributed to that original fixture, nor to
+fresh-login startup after intervening manual profile changes.
+
+Actual installed UI inspection explains the owner's interpretation: the original
+fixture row has a filled dot and exposes its actions. In `Panel.qml`,
+`nativeRow.selected` compares `nativeSelectedProfile`, and `nativeChoose` uses
+that boolean for its filled dot. Clicking the dot or name only assigns that
+selection/cursor; it does not submit Connect. Active identity is separately
+derived from `nativeView.activeId`, currently conveyed by name accent color;
+the native header only says connected without naming the active profile. A
+collapsed subscription can hide the active row altogether.
+
+This is a confirmed presentation ambiguity, not evidence of stale runtime
+metadata. Distinguish selected-for-actions from connected, expose active state
+even with its group collapsed, and preserve deliberate connection semantics.
+Do not silently connect on a selection click as a diagnostic workaround. The
+temporary outage's original fixture recovery remains unverified by this probe.
+Private screenshots stay outside Git. Installed files and VPN are unchanged.
