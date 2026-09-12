@@ -176,8 +176,24 @@ def counters(tun):
     return tuple(values)
 
 
-def run_gate():
-    authorization = auth.HumanAuthorization()
+class MaskedAuthorization(auth.HumanAuthorization):
+    """The normal human barrier remains authoritative under test isolation."""
+    def __init__(self, mask, **kwargs):
+        super().__init__(**kwargs)
+        self.mask = mask
+
+    def step(self, phase, effect):
+        def guarded_effect():
+            # The human may have waited longer than the restore watchdog.
+            self.mask.require_active()
+            return effect()
+        result = super().step(phase, guarded_effect)
+        self.mask.require_active()
+        return result
+
+
+def run_gate(authorization=None):
+    authorization = authorization or auth.HumanAuthorization()
     authorization.require_terminal()  # refuse headless batches before host access
     binary = Path(BINARY).lstat()
     gate.require(stat.S_ISREG(binary.st_mode) and binary.st_uid == 0 and not binary.st_mode & 0o022, "installed_binary_unsafe")
@@ -266,12 +282,30 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--authorize-socket-inspection", action="store_true")
+    parser.add_argument("--python-unavailable", action="store_true",
+                        help="TEST ONLY: temporarily deny system Python execution across this VM")
+    parser.add_argument("--authorize-vmwide-python-mask", action="store_true")
     args = parser.parse_args(argv)
     if not args.run or not args.authorize_socket_inspection:
         gate.emit(status="NOT RUN", reason="explicit_run_and_socket_inspection_authorization_required")
         return 0
+    if args.python_unavailable != args.authorize_vmwide_python_mask:
+        gate.emit(status="NOT RUN", reason="both_python_mask_optins_required")
+        return 0
     try:
-        run_gate()
+        if args.python_unavailable:
+            # Load all Python observer code before restricting new executions.
+            spec = importlib.util.spec_from_file_location(
+                "installed_python_mask", Path(__file__).with_name("installed_python_mask.py"))
+            mask_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mask_module)
+            with mask_module.InstalledPythonMask(authorize_vmwide=True) as mask:
+                run_gate(MaskedAuthorization(mask))
+                mask.require_active()
+            # Never publish a successful mask gate before restoration is proved.
+            gate.emit(python_unavailable=True, interpreter_restored=True, passed=True)
+        else:
+            run_gate()
         return 0
     except Exception as error:
         allowed = {"fixture_unavailable", "unexpected_tcp_listener", "proxy_listener_count", "tcp_attribution_failed",
