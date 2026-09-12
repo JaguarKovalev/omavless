@@ -28,15 +28,20 @@ function artifacts(raw) {
     requireFact(found.size === SUITES.length);
     return SUITES.map(name => ({ name, executable: found.get(name) }));
 }
-function plan(executable, binary, blockedPaths) {
+function plan(executable, binary, blockedPaths, installed = false) {
     requireFact(path.isAbsolute(executable) && path.isAbsolute(binary));
+    requireFact(typeof installed === "boolean");
     const args = ["--unshare-all", "--die-with-parent", "--new-session", "--clearenv",
         "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin",
         "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64",
         "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--tmpfs", "/run",
         "--dir", "/etc", "--dir", "/sys", "--ro-bind", ROOT, ROOT,
         "--ro-bind", process.execPath, "/tools/node",
-        "--ro-bind", binary, binary, "--ro-bind", executable, executable];
+        // Rust integration tests embed CARGO_BIN_EXE at compile time. In
+        // installed mode replace only that path INSIDE the mount namespace;
+        // neither the package nor the checkout artifact is overwritten.
+        "--ro-bind", installed ? "/usr/bin/omavless" : binary, binary,
+        "--ro-bind", executable, executable];
     for (const item of [...new Set(blockedPaths)]) {
         requireFact(/^\/usr\/bin\/[A-Za-z0-9._+-]+$/.test(item));
         // Bind a non-executable device on each resolved executable. Absolute
@@ -55,23 +60,31 @@ function safeFile(filename, max) {
     requireFact(fs.realpathSync(filename) === filename);
     return fs.readFileSync(filename);
 }
+function options(args) {
+    if (![2, 3].includes(args.length) || args[0] !== "--artifacts"
+        || typeof args[1] !== "string" || !path.isAbsolute(args[1])
+        || (args.length === 3 && args[2] !== "--installed")) return null;
+    return { artifacts: args[1], installed: args.length === 3 };
+}
 function main(args) {
-    if (args.length !== 2 || args[0] !== "--artifacts" || !path.isAbsolute(args[1])) {
-        console.log("NOT RUN: supply --artifacts ABS_CARGO_JSONL for isolated synthetic tests only.");
+    const selected = options(args);
+    if (!selected) {
+        console.log("NOT RUN: supply --artifacts ABS_CARGO_JSONL [--installed] for isolated synthetic tests only.");
         return 2;
     }
-    const suites = artifacts(safeFile(args[1], 16 * 1024 * 1024).toString("utf8"));
+    const suites = artifacts(safeFile(selected.artifacts, 16 * 1024 * 1024).toString("utf8"));
     const candidates = new Set(suites.map(s => path.resolve(path.dirname(s.executable), "../omavless")));
     requireFact(candidates.size === 1);
     const binary = [...candidates][0];
-    const digest = crypto.createHash("sha256").update(safeFile(binary, 128 * 1024 * 1024)).digest("hex");
+    const testedBinary = selected.installed ? "/usr/bin/omavless" : binary;
+    const digest = crypto.createHash("sha256").update(safeFile(testedBinary, 128 * 1024 * 1024)).digest("hex");
     const blocked = fs.readdirSync("/usr/bin").filter(n => /^python[0-9.]*$/.test(n) || BLOCKED.includes(n))
         .map(n => fs.realpathSync("/usr/bin/" + n));
     requireFact(blocked.some(n => /\/python[0-9.]*$/.test(n)));
     let passed = 0;
     for (const suite of suites) {
         safeFile(suite.executable, 128 * 1024 * 1024);
-        const result = cp.spawnSync("/usr/bin/bwrap", plan(suite.executable, binary, blocked), {
+        const result = cp.spawnSync("/usr/bin/bwrap", plan(suite.executable, binary, blocked, selected.installed), {
             encoding: "utf8", timeout: 240000, maxBuffer: 1024 * 1024,
             env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" }
         });
@@ -84,12 +97,13 @@ function main(args) {
         if (!ok) return 1;
         passed += evidence.passed;
     }
-    requireFact(crypto.createHash("sha256").update(safeFile(binary, 128 * 1024 * 1024)).digest("hex") === digest);
+    requireFact(crypto.createHash("sha256").update(safeFile(testedBinary, 128 * 1024 * 1024)).digest("hex") === digest);
     console.log(JSON.stringify({ passed, suites: suites.length, binarySha256: digest,
+        binarySource: selected.installed ? "installed" : "cargo",
         installedAcceptance: false, scope: "synthetic_executable_conformance" }));
     return 0;
 }
-module.exports = { artifacts, plan, SUITES, BLOCKED, ROOT };
+module.exports = { artifacts, plan, options, SUITES, BLOCKED, ROOT };
 if (require.main === module) {
     try { process.exitCode = main(process.argv.slice(2)); }
     catch (_) { console.log("NOT RUN: isolated conformance preconditions failed."); process.exitCode = 1; }

@@ -18,8 +18,10 @@ arity, errors, ownership refusal and missing-native-binary safety. All eleven
 tests pass. The Python test driver is outside the tested child boundary.
 
 `tools/run-native-no-python.js` runs already compiled native test executables
-under unprivileged bubblewrap. It accepts only the four named Cargo test
+under unprivileged bubblewrap. It accepts only the five named Cargo test
 artifacts bound to this checkout's runtime manifest and test source paths:
+
+The table below is historical four-suite evidence, not the current suite count.
 
 | Suite | Actual executed tests |
 | --- | ---: |
@@ -59,7 +61,7 @@ to tools/QML/docs do not change that binary; regenerate artifacts if Rust change
   set, but is not a cryptographic build attestation. Build from the exact clean
   candidate with locked Cargo immediately before recording final evidence.
 
-Eight deterministic Node tests validate artifact selection/bounds and the fixed
+Ten deterministic Node tests validate artifact selection/bounds and the fixed
 namespace/masking plan without running commands. A separate launcher suite
 tests command mappings; neither one substitutes for the 45 executable tests.
 
@@ -68,12 +70,33 @@ tests command mappings; neither one substitutes for the 45 executable tests.
 Use one Cargo writer and the existing shared target in the VM. First generate a
 fresh bounded JSONL artifact manifest with `cargo test --locked -p
 omavless-runtime --test cli --test plugin_action_cli --test desktop_cli --test
-plugin_target --no-run --message-format=json`. Redirect its output outside Git.
+plugin_target --test fresh_setup_cli --no-run --message-format=json`. Redirect
+its output outside Git. Keep the build profile/environment consistent with the
+preceding build to avoid an unnecessary second Cargo build in a small VM.
 Then run:
 
 ```sh
 node tools/run-native-no-python.js --artifacts /absolute/cargo-artifacts.jsonl
 ```
+
+To run those same tests against the installed executable instead of the Cargo
+executable:
+
+```sh
+node tools/run-native-no-python.js --artifacts /absolute/cargo-artifacts.jsonl --installed
+```
+
+This fixed option selects only `/usr/bin/omavless`; there is no arbitrary
+program/path option. A read-only bind overlays the test harness's embedded
+`CARGO_BIN_EXE` path **inside the mount namespace only**. The host package and
+Cargo files remain unchanged. The tool hashes the selected executable before
+and after all suites, reports `binarySource: installed` or `cargo`, and still
+reports `installedAcceptance:false`. Fixtures, peer replies and desktop helpers
+remain synthetic even when the executable comes from an installed package.
+It does not restart or test the already running host daemon, or prove graphical,
+login, package-manager, DNS or live-tunnel acceptance. A package incompatible
+with the current conformance corpus fails; it is never silently replaced with
+the Cargo binary or tested unsandboxed.
 
 No `sudo`, installed package replacement, host daemon restart or current private
 fixtures are needed. Never point the tool at unreviewed source/artifacts and

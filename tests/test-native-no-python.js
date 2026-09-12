@@ -64,4 +64,24 @@ test("privilege entry points excluded and arbitrary mask paths refused", () => {
         assert.throws(() => subject.plan("/synthetic/test", "/synthetic/omavless", [name]));
     }
 });
+test("installed option is fixed purpose, never an arbitrary executable", () => {
+    assert.deepEqual(subject.options(["--artifacts", "/synthetic/cargo.jsonl"]),
+        {artifacts:"/synthetic/cargo.jsonl", installed:false});
+    assert.deepEqual(subject.options(["--artifacts", "/synthetic/cargo.jsonl", "--installed"]),
+        {artifacts:"/synthetic/cargo.jsonl", installed:true});
+    for (const args of [[], ["--artifacts"], ["--artifacts","relative"],
+        ["--artifacts","/synthetic/cargo.jsonl","/arbitrary/program"],
+        ["--artifacts","/synthetic/cargo.jsonl","--installed","extra"]]) {
+        assert.equal(subject.options(args), null);
+    }
+});
+test("installed executable overlay is read-only, namespace-only and retains isolation", () => {
+    const before = subject.plan("/synthetic/debug/deps/cli", "/synthetic/debug/omavless", ["/usr/bin/python3.14"]);
+    const after = subject.plan("/synthetic/debug/deps/cli", "/synthetic/debug/omavless", ["/usr/bin/python3.14"], true);
+    const i = before.findIndex((v, n) => v === "--ro-bind" && before[n+1] === "/synthetic/debug/omavless");
+    assert(i >= 0);
+    const expected = before.slice(); expected[i+1] = "/usr/bin/omavless";
+    assert.deepEqual(after, expected);
+    assert.throws(() => subject.plan("/synthetic/test", "/synthetic/omavless", [], "/arbitrary/program"));
+});
 console.log("native no-Python isolation plan: " + count + " passed");
