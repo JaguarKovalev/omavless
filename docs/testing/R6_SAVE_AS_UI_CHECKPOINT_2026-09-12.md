@@ -102,3 +102,19 @@ System locale selection was restored, only the panel was closed, and final
 inspection found the plugin enabled, Routing/disconnected, one native daemon,
 zero Mihomo/TUN/auxiliary core and `manualRecoveryRequired=false`. No zenity
 process remained. No private screenshots, reports or credentials were committed.
+
+### Owner-confirmed Save and resulting file
+
+The owner subsequently confirmed pressing Save during that English chooser
+session. Read-only verification of the resulting report found a regular,
+current-user-owned 1515-byte file with mode `0600`, modified at
+2026-09-12 21:15:38 MSK. The installed frontend's `configurationReport` parser
+accepted its schema-2 public shape. Contents were neither printed nor committed.
+The first verifier invocation used the wrong installed parser location and
+therefore produced a generic refusal; retrying with the actual installed
+`plugin/NativeSnapshot.js` passed without changing the report.
+
+**English installed report Save As write: PASS (human action + file validation).**
+This resolves the write portion of the earlier automation gap. It does not
+establish an isolated overwrite-confirmation/cancel test, Russian acceptance or
+profile export. Those remain separate from this successful report write.

@@ -49,9 +49,11 @@ scenario green. Current connection preservation is not proof of a fresh start.
 | Upgrade, rollback/recovery and package removal | Disposable installed-account/package route; preserve and validate private store/ownership; use supported recovery commands; prove no duplicate owner/core/TUN | Plugin removal is not package removal. Archive inspection is not package-manager recovery. Do not delete markers/receipts to manufacture success or test removal on the owner's connected session. |
 | Support contract completion | Implement/test the missing promised host report coverage, or obtain explicit acceptance of the documented narrower report as its replacement | Schema-2 reports truthfully mark unverified DNS/routes/service/login fields. Do not silently promote them or call the narrower report complete legacy doctor parity. |
 
-The Save As UI checkpoint also needs its concrete save/overwrite/cancel evidence
-recorded in [the export report](R6_SAVE_AS_UI_CHECKPOINT_2026-09-12.md); seeing a
-chooser is not proof of a successful write. This is a bounded regression gate,
+The Save As UI checkpoint now has owner-confirmed English report-write evidence
+and read-only validation of the resulting private file. Overwrite/cancel and
+the remaining locale/profile cases still need their concrete evidence recorded
+in [the export report](R6_SAVE_AS_UI_CHECKPOINT_2026-09-12.md); seeing a
+chooser alone is not proof of a successful write. This is a bounded regression gate,
 not an invitation to redesign the UI again.
 
 ## Automatic checkpoint before the owner-requested pause
