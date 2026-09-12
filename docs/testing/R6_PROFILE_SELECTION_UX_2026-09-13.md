@@ -61,3 +61,40 @@ remain distinct checks. Keep the candidate local and R6 open until its existing
 acceptance gates are fulfilled. The owner later noted that the latest agent
 transport interruption likely occurred outside the VM; do not classify that
 message alone as another confirmed VPN failure.
+# Follow-up: fixed action dock and inline connection — 2026-09-13
+
+Local installed UI candidate: `13717a75264aa2be350bdf741d57b4f1210bcbad`.
+This supersedes the earlier selected-row action layout below, which the owner
+rejected. No GitHub push or publication was authorized or performed.
+
+- Every profile has Connect/Disconnect directly opposite its name, independent
+  of management selection. Name selection performs no network action.
+- Only subscription groups have expansion arrows. Profiles use a plain-text,
+  focusable name surface with selection styling; redundant protocol tokens and
+  the separate selected-row connection line are removed.
+- Favorite, rename, edit, QR, file export, details and delete live in one
+  bordered dock outside the list scroller. It names the selected target, remains
+  visible while scrolling and disables operations without a valid selection.
+  Managed-profile restrictions and existing confirmations remain intact.
+- The redundant header QR is removed. The verified connected-profile identity
+  and collapsed active-subscription indication remain distinct from selection.
+- Dock keyboard events use the panel's existing navigation boundary. Focusing
+  a fixed control does not scroll the list. Explicit details reveals a selected
+  hidden row before showing its existing private read-only details.
+
+Try Omarchy ARM64: actual English/Russian screenshots were inspected for
+collapsed/expanded groups, selected local/managed targets, scroll position,
+button/name alignment and dock focus. The final keyboard-only follow-up changed
+no geometry; final installed EN/RU collapsed-state captures also pass. Private
+captures remain outside Git. Locale returned to System. The native runtime
+retained PID 576, Routing/disconnected, zero core/auxiliary/TUN, no pending
+operation or manual recovery. No connection, mode or authentication action was
+executed for this UI pass; connected-button execution remains deterministic
+test evidence, not newly claimed live acceptance.
+
+All native JS suites, i18n, search, traffic reference, actual isolated QML export
+Process test and QML contracts pass; main-panel suite now has 37 tests.
+Shell syntax, manifest, plugin validation and diff checks pass. Rust/Python
+backend sources and package binary are unchanged; no full backend gate was
+ceremonially repeated. This is a bounded UI correction, not R6 closure or an
+assertion that every product flow has been visually accepted.
