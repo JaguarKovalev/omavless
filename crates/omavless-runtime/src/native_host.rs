@@ -14,7 +14,7 @@ use crate::lifecycle::{HostStepError, LifecycleHost, NativeLocalObservation};
 use omavless_domain::config::MAX_TEMPLATE_BYTES;
 use omavless_domain::private_store::parse_private_store;
 use omavless_mihomo::observation::{
-    processes_named, processes_named_strict, tun_interface_count, tun_interface_count_strict,
+    processes_named_strict, tun_interface_count, tun_interface_count_strict,
 };
 use omavless_mihomo::validate_config;
 use omavless_store::{atomic_replace_private, read_private_utf8};
@@ -187,6 +187,8 @@ pub struct NativeLifecycleHost {
     readiness: Option<ConfigReadiness>,
     previous_config: Option<Option<Vec<u8>>>,
     active_install_attempted: bool,
+    ping_slot: std::sync::Arc<crate::tun_ping::PingSlot>,
+    auxiliary: std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>,
 }
 
 impl NativeLifecycleHost {
@@ -224,12 +226,28 @@ impl NativeLifecycleHost {
             readiness: None,
             previous_config: None,
             active_install_attempted: false,
+            ping_slot: std::sync::Arc::default(),
+            auxiliary: std::sync::Arc::default(),
         })
     }
 
     #[must_use]
     pub fn core_pid(&self) -> Option<u32> {
         self.core.as_ref().and_then(OwnedCore::pid)
+    }
+
+    /// Startup only, while canonical runtime and migration ownership are held.
+    /// No directory is removed unless the whole host is proven core/TUN-empty.
+    pub(crate) fn cleanup_probe_orphans(&self) -> Result<(), HostStepError> {
+        crate::probe_executor::cleanup_orphans(&self.paths.runtime_directory, || {
+            self.core.is_none()
+                && processes_named_strict(&self.paths.proc_root, "mihomo")
+                    .is_ok_and(|pids| pids.is_empty())
+                && tun_interface_count_strict(&self.paths.sys_class_net)
+                    .is_ok_and(|count| count == 0)
+        })
+        .map(|_| ())
+        .map_err(|_| HostStepError::Cleanup)
     }
 
     fn remove_controller(&self) -> Result<(), HostStepError> {
@@ -264,23 +282,162 @@ impl NativeLifecycleHost {
         Ok(())
     }
 
-    fn visible_core_count(&self, own_pid: Option<u32>, own_running: bool) -> u8 {
-        let named = processes_named(&self.paths.proc_root, "mihomo");
+    fn visible_core_count(
+        &self,
+        own_pid: Option<u32>,
+        own_running: bool,
+    ) -> Result<u8, HostStepError> {
+        let named = processes_named_strict(&self.paths.proc_root, "mihomo")
+            .map_err(|_| HostStepError::Observation)?;
         let mut count = named.len();
+        let auxiliary = self
+            .auxiliary
+            .verified_pid()
+            .map_err(|_| HostStepError::Observation)?;
+        if auxiliary.is_some_and(|pid| named.contains(&pid)) {
+            count -= 1;
+        }
         if own_running && own_pid.is_some_and(|pid| !named.contains(&pid)) {
             count = count.saturating_add(1);
         }
-        u8::try_from(count).unwrap_or(u8::MAX)
+        Ok(u8::try_from(count).unwrap_or(u8::MAX))
     }
 }
 
 impl LifecycleHost for NativeLifecycleHost {
+    fn support_facts(&self, connected: bool) -> Option<crate::lifecycle::HostSupportFacts> {
+        Some(crate::support_diagnostics::collect_host(
+            &self.paths,
+            self.uid,
+            connected,
+        ))
+    }
+    fn auxiliary_slot(&self) -> Option<std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>> {
+        Some(std::sync::Arc::clone(&self.auxiliary))
+    }
+    fn probe_paths(&self) -> Option<(PathBuf, PathBuf)> {
+        Some((
+            self.paths.core.clone(),
+            self.paths.runtime_directory.clone(),
+        ))
+    }
+    fn ping_binding(
+        &mut self,
+        desired: &DesiredState,
+        deadline: Instant,
+    ) -> Result<crate::tun_ping::Binding, HostStepError> {
+        let deadline = deadline.min(Instant::now() + Duration::from_millis(500));
+        if Instant::now() >= deadline || !desired.connected {
+            return Err(HostStepError::Observation);
+        }
+        let facts = self.fresh_observation(desired)?;
+        if !facts.owned_core_running
+            || facts.visible_mihomo_count != 1 + facts.owned_auxiliary_mihomo_count
+            || facts.visible_tun_count != 1
+            || !facts.owned_controller_config_verified
+            || !facts.desired_profile_matches_owned
+        {
+            return Err(HostStepError::Observation);
+        }
+        let pid = self.core_pid().ok_or(HostStepError::Observation)?;
+        let reported = crate::core_selector::read_configuration(
+            &self.paths.controller_socket,
+            pid,
+            omavless_mihomo::ReadOnlyEndpoint::Configs,
+            deadline,
+        )
+        .ok_or(HostStepError::Observation)?;
+        let device =
+            crate::traffic::controller_device(&reported).ok_or(HostStepError::Observation)?;
+        let sample =
+            crate::traffic::read_device(&self.paths.sys_class_net, pid, desired.generation, device)
+                .ok_or(HostStepError::Observation)?;
+        let after = crate::core_selector::read_configuration(
+            &self.paths.controller_socket,
+            pid,
+            omavless_mihomo::ReadOnlyEndpoint::Configs,
+            deadline,
+        )
+        .ok_or(HostStepError::Observation)?;
+        if crate::traffic::controller_device(&after) != Some(device)
+            || Instant::now() >= deadline
+            || !self
+                .core
+                .as_mut()
+                .is_some_and(|c| c.pid() == Some(pid) && c.running().unwrap_or(false))
+        {
+            return Err(HostStepError::Observation);
+        }
+        Ok(crate::tun_ping::Binding {
+            device: device.to_owned(),
+            identity: sample.identity,
+            slot: std::sync::Arc::clone(&self.ping_slot),
+            epoch: self.ping_slot.epoch().ok_or(HostStepError::Observation)?,
+        })
+    }
+    fn traffic_counters(
+        &mut self,
+        desired: &DesiredState,
+    ) -> Result<crate::traffic::TrafficCounters, HostStepError> {
+        let deadline = Instant::now() + Duration::from_millis(500);
+        if !desired.connected {
+            return Err(HostStepError::Observation);
+        }
+        let valid = |facts: NativeLocalObservation| {
+            facts.owned_core_running
+                && facts.visible_mihomo_count == 1 + facts.owned_auxiliary_mihomo_count
+                && facts.visible_tun_count == 1
+                && facts.owned_controller_config_verified
+                && facts.desired_profile_matches_owned
+        };
+        if !valid(self.fresh_observation(desired)?) {
+            return Err(HostStepError::Observation);
+        }
+        let pid = self.core_pid().ok_or(HostStepError::Observation)?;
+        // File capabilities deliberately make the core's fdinfo unreadable to
+        // the user runtime. Do not change dumpability or guess the sole TUN.
+        // Ask the exact PID-authenticated private controller for its device.
+        let reported = crate::core_selector::read_configuration(
+            &self.paths.controller_socket,
+            pid,
+            omavless_mihomo::ReadOnlyEndpoint::Configs,
+            deadline,
+        )
+        .ok_or(HostStepError::Observation)?;
+        let device =
+            crate::traffic::controller_device(&reported).ok_or(HostStepError::Observation)?;
+        let sample =
+            crate::traffic::read_device(&self.paths.sys_class_net, pid, desired.generation, device)
+                .ok_or(HostStepError::Observation)?;
+        let after = crate::core_selector::read_configuration(
+            &self.paths.controller_socket,
+            pid,
+            omavless_mihomo::ReadOnlyEndpoint::Configs,
+            deadline,
+        )
+        .ok_or(HostStepError::Observation)?;
+        if crate::traffic::controller_device(&after) != Some(device) {
+            return Err(HostStepError::Observation);
+        }
+        let core_alive = self
+            .core
+            .as_mut()
+            .is_some_and(|core| core.pid() == Some(pid) && core.running().unwrap_or(false));
+        if !core_alive || Instant::now() >= deadline {
+            return Err(HostStepError::Observation);
+        }
+        Ok(sample)
+    }
     fn fresh_observation(
         &mut self,
         desired: &DesiredState,
     ) -> Result<NativeLocalObservation, HostStepError> {
         desired.validate().map_err(|_| HostStepError::Observation)?;
         let named = processes_named_strict(&self.paths.proc_root, "mihomo")
+            .map_err(|_| HostStepError::Observation)?;
+        let auxiliary = self
+            .auxiliary
+            .verified_pid()
             .map_err(|_| HostStepError::Observation)?;
         let tun = tun_interface_count_strict(&self.paths.sys_class_net)
             .map_err(|_| HostStepError::Observation)?;
@@ -313,6 +470,11 @@ impl LifecycleHost for NativeLifecycleHost {
             None => (None, false),
         };
         if (pid, running) != (after_pid, after_running)
+            || self
+                .auxiliary
+                .verified_pid()
+                .map_err(|_| HostStepError::Observation)?
+                != auxiliary
             || processes_named_strict(&self.paths.proc_root, "mihomo")
                 .map_err(|_| HostStepError::Observation)?
                 != named
@@ -326,6 +488,9 @@ impl LifecycleHost for NativeLifecycleHost {
             owned_core_running: running,
             visible_mihomo_count: u8::try_from(named.len())
                 .map_err(|_| HostStepError::Observation)?,
+            owned_auxiliary_mihomo_count: u8::from(
+                auxiliary.is_some_and(|pid| named.contains(&pid)),
+            ),
             visible_tun_count: tun,
             owned_controller_config_verified: verified,
             desired_profile_matches_owned: profile_matches,
@@ -363,7 +528,7 @@ impl LifecycleHost for NativeLifecycleHost {
         Ok(OwnedObservation {
             service_active: own_running,
             controller_ready,
-            core_count: self.visible_core_count(own_pid, own_running),
+            core_count: self.visible_core_count(own_pid, own_running)?,
             tun_count: tun_interface_count(&self.paths.sys_class_net),
             active_profile_matches: own_running
                 && controller_ready
@@ -372,6 +537,9 @@ impl LifecycleHost for NativeLifecycleHost {
     }
 
     fn prepare(&mut self, desired: &DesiredState) -> Result<(), HostStepError> {
+        if !self.auxiliary.mutation_safe() {
+            return Err(HostStepError::Prepare);
+        }
         if self.core.is_some() || self.profile_id.is_some() {
             return Err(HostStepError::Prepare);
         }
@@ -426,6 +594,12 @@ impl LifecycleHost for NativeLifecycleHost {
     }
 
     fn start_prepared(&mut self) -> Result<(), HostStepError> {
+        if !self.auxiliary.mutation_safe() {
+            return Err(HostStepError::Start);
+        }
+        if !self.ping_slot.revoke() {
+            return Err(HostStepError::Start);
+        }
         if self.core.is_some() || self.profile_id.is_none() {
             return Err(HostStepError::Start);
         }
@@ -439,8 +613,21 @@ impl LifecycleHost for NativeLifecycleHost {
         .map_err(|_| HostStepError::Start)?;
         let expected = self.readiness.as_ref().ok_or(HostStepError::Start)?;
         let ready = core.wait_configured(START_TIMEOUT, expected);
+        let private_controller = ready.is_ok()
+            && core.pid().is_some_and(|pid| {
+                crate::controller_permissions::secure_owned(
+                    &self.paths.controller_socket,
+                    pid,
+                    self.uid,
+                )
+            })
+            && core.running().unwrap_or(false);
         self.core = Some(core);
-        ready.map_err(|_| HostStepError::Start)
+        if private_controller {
+            Ok(())
+        } else {
+            Err(HostStepError::Start)
+        }
     }
 
     fn commit_prepared(&mut self) -> Result<(), HostStepError> {
@@ -462,6 +649,12 @@ impl LifecycleHost for NativeLifecycleHost {
     }
 
     fn stop_owned(&mut self) -> Result<(), HostStepError> {
+        if !self.auxiliary.mutation_safe() {
+            return Err(HostStepError::Stop);
+        }
+        if !self.ping_slot.revoke() {
+            return Err(HostStepError::Stop);
+        }
         if let Some(mut core) = self.core.take()
             && core.stop(STOP_TIMEOUT).is_err()
         {
@@ -491,6 +684,10 @@ impl LifecycleHost for NativeLifecycleHost {
 
 impl Drop for NativeLifecycleHost {
     fn drop(&mut self) {
+        let _auxiliary_guard = self.auxiliary.quiesce();
+        // Shutdown has no successor TUN. Cleanup is best effort in Drop;
+        // ordinary stop/start instead refuse if synchronous reaping is unproven.
+        let _ = self.ping_slot.revoke();
         if let Some(mut core) = self.core.take() {
             let _ = core.stop(STOP_TIMEOUT);
         }
@@ -552,6 +749,34 @@ mod tests {
     }
 
     #[test]
+    fn orphan_probe_cleanup_requires_strict_empty_host() {
+        let (root, host) = observation_fixture();
+        let orphan = host.paths.runtime_directory.join("probe-2147483647-0");
+        assert!(!Path::new("/proc/2147483647").exists());
+        fs::create_dir(&orphan).unwrap();
+        fs::set_permissions(&orphan, fs::Permissions::from_mode(0o700)).unwrap();
+        let marker = orphan.join(".omavless-probe-owner");
+        fs::write(&marker, b"omavless-probe-scratch-v1\n2147483647\n").unwrap();
+        fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
+        let process = host.paths.proc_root.join("4242");
+        fs::create_dir(&process).unwrap();
+        fs::write(process.join("comm"), b"mihomo\n").unwrap();
+        assert_eq!(host.cleanup_probe_orphans(), Err(HostStepError::Cleanup));
+        assert!(marker.exists());
+        fs::remove_dir_all(process).unwrap();
+        let tun = host.paths.sys_class_net.join("tun-test");
+        fs::create_dir(&tun).unwrap();
+        fs::write(tun.join("tun_flags"), b"0x1001\n").unwrap();
+        assert_eq!(host.cleanup_probe_orphans(), Err(HostStepError::Cleanup));
+        assert!(marker.exists());
+        fs::remove_dir_all(tun).unwrap();
+        host.cleanup_probe_orphans().unwrap();
+        assert!(!orphan.exists());
+        drop(host);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn fresh_observation_empty_has_no_controller_or_vpn_health_claim() {
         let (root, mut host) = observation_fixture();
         let observed = host.fresh_observation(&DesiredState::default()).unwrap();
@@ -560,6 +785,7 @@ mod tests {
             NativeLocalObservation {
                 owned_core_running: false,
                 visible_mihomo_count: 0,
+                owned_auxiliary_mihomo_count: 0,
                 visible_tun_count: 0,
                 owned_controller_config_verified: false,
                 desired_profile_matches_owned: false
@@ -567,6 +793,22 @@ mod tests {
         );
         assert!(!host.paths.active_config.exists());
         assert!(!host.paths.store.exists());
+        drop(host);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ping_tickets_are_revoked_before_host_stop_and_start() {
+        let (root, mut host) = observation_fixture();
+        let first = host.ping_slot.epoch().unwrap();
+        host.stop_owned().unwrap();
+        assert!(host.ping_slot.epoch().unwrap() > first);
+        let stopped = host.ping_slot.epoch().unwrap();
+        assert!(host.start_prepared().is_err());
+        assert!(host.ping_slot.epoch().unwrap() > stopped);
+        host.ping_slot.poison_for_test();
+        assert!(host.stop_owned().is_err());
+        assert!(host.start_prepared().is_err());
         drop(host);
         fs::remove_dir_all(root).unwrap();
     }
@@ -687,22 +929,29 @@ mod tests {
             "mode: direct\nport: 0\nsocks-port: 0\nmixed-port: 0\nredir-port: 0\ntproxy-port: 0\nallow-lan: false\nlog-level: silent\nexternal-controller-unix: {}\ntun:\n  enable: false\n  auto-route: false\ndns:\n  enable: false\nproxies: []\nproxy-groups: []\nrules: []\n",
             serde_json::to_string(host.paths.controller_socket.to_str().unwrap()).unwrap()
         );
-        fs::write(&host.paths.active_config, &config).unwrap();
-        fs::set_permissions(&host.paths.active_config, fs::Permissions::from_mode(0o600)).unwrap();
-        host.core = Some(
-            OwnedCore::spawn(
-                &host.paths.core,
-                &host.paths.data_directory,
-                &host.paths.active_config,
-                &host.paths.controller_socket,
-            )
-            .unwrap(),
-        );
+        fs::write(&host.paths.staged_config, &config).unwrap();
+        fs::set_permissions(&host.paths.staged_config, fs::Permissions::from_mode(0o600)).unwrap();
         host.profile_id = Some("synthetic-direct".into());
         host.readiness = Some(ConfigReadiness::new(
             crate::desired::RoutingMode::Direct,
             "DIRECT".into(),
         ));
+        host.start_prepared().unwrap();
+        host.commit_prepared().unwrap();
+        assert_eq!(
+            fs::metadata(&host.paths.controller_socket).unwrap().mode() & 0o7777,
+            0o600
+        );
+        let summary = crate::diagnostic_read::collect(
+            &host.paths.runtime_directory,
+            host.uid,
+            "diagnostics.summary",
+            &[],
+        )
+        .expect("strict diagnostics accepts the admitted private socket");
+        assert_eq!(summary["version"], 1);
+        assert!(summary["rules"]["items"].is_array());
+        assert!(summary["providers"]["items"].is_array());
         let desired = DesiredState {
             connected: true,
             profile_id: "synthetic-direct".into(),

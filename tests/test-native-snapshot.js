@@ -85,15 +85,20 @@ test('actual Service applyStatus does not replace snapshot on failed parse', () 
     assert(new RegExp('function '+name+'\\([^\\n]*\\) \\{\\n    if \\(nativeOwner\\) return').test(source),name);
   }
 });
-test('native view keeps data plain and hides old interactive pages', () => {
+test('native view keeps data plain and hides legacy mutation pages while diagnostics is shared read-only', () => {
   const source=fs.readFileSync(path.join(root,'plugin/Panel.qml'),'utf8');
-  for(const page of ['main','settings','subscriptions','diagnostics']) assert(source.includes('visible: !vless.nativeOwner && root.page === "'+page+'"'));
+  for(const page of ['main','settings','subscriptions']) assert(source.includes('visible: !vless.nativeOwner && root.page === "'+page+'"'));
+  assert(source.includes('visible: root.page === "diagnostics"'));
+  const diagnostics=fs.readFileSync(path.join(root,'plugin/AdvancedDiagnostics.qml'),'utf8');
+  assert(diagnostics.includes('readonly property bool readOnlyNative: service && service.nativeOwner === true'));
+  assert(source.includes('onRefreshProvidersRequested: if (!vless.nativeOwner) vless.refreshRuleProviders()'));
   const view=source.slice(source.indexOf('id: nativeFlick'),source.indexOf('      AdvancedDiagnostics {'));
   assert(view.includes('textFormat: Text.PlainText'));
   assert(view.includes('PlainText {'));
   assert(!/(?:^|\s)Text \{/.test(view));
   assert(!view.includes('Text.AutoText'));
   assert(view.includes('focusable: true; bordered: true'));
-  assert(source.includes('nativeControls: true, liveHealth: "unavailable", metadataUnavailable: vless.nativeSnapshotFailed'));
+  assert(source.includes('return JSON.stringify(root.nativeIpc.diagnostics)'));
+  assert(source.includes('readonly property var nativeIpc: NativePresentation.ipc'));
 });
 console.log(`${count} native snapshot tests passed`);

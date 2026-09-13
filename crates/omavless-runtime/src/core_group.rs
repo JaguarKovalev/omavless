@@ -41,12 +41,12 @@ fn scan(proc_root: &Path, group: i32, entry_limit: usize, member_limit: usize) -
             continue;
         }
         let pid = positive_pid(bytes)?;
-        let Some(file) = absent_ok(File::open(entry.path().join("stat")))? else {
+        let Some(file) = stat_absent_ok(File::open(entry.path().join("stat")))? else {
             // A process may disappear between directory enumeration and open.
             continue;
         };
         let mut raw = Vec::new();
-        let Some(_) = absent_ok(file.take((MAX_STAT_BYTES + 1) as u64).read_to_end(&mut raw))?
+        let Some(_) = stat_absent_ok(file.take((MAX_STAT_BYTES + 1) as u64).read_to_end(&mut raw))?
         else {
             continue;
         };
@@ -74,6 +74,18 @@ fn absent_ok<T>(result: io::Result<T>) -> Result<Option<T>, ()> {
         Ok(value) => Ok(Some(value)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(_) => Err(()),
+    }
+}
+
+// A proc task can disappear after its stat descriptor was opened. Linux then
+// returns ESRCH from read, rather than ENOENT from lookup. Both mean this task
+// is absent from the live inventory, not that the inventory was unreadable.
+// Restrict this exception to task/stat lookup/read: directory enumeration,
+// permissions, malformed records and all other I/O failures remain fail-closed.
+fn stat_absent_ok<T>(result: io::Result<T>) -> Result<Option<T>, ()> {
+    match result {
+        Err(error) if error.raw_os_error() == Some(nix::errno::Errno::ESRCH as i32) => Ok(None),
+        other => absent_ok(other),
     }
 }
 
@@ -276,6 +288,60 @@ mod tests {
             absent_ok::<()>(Err(io::ErrorKind::Interrupted.into())),
             Err(())
         );
+    }
+
+    #[test]
+    fn only_task_stat_boundary_accepts_esrch() {
+        let vanished = || io::Error::from_raw_os_error(nix::errno::Errno::ESRCH as i32);
+        assert_eq!(stat_absent_ok::<()>(Err(vanished())), Ok(None));
+        // Do not turn the directory enumeration helper into a general ESRCH
+        // bypass. Its existing fail-closed contract remains unchanged.
+        assert_eq!(absent_ok::<()>(Err(vanished())), Err(()));
+        assert_eq!(
+            stat_absent_ok::<()>(Err(io::ErrorKind::NotFound.into())),
+            Ok(None)
+        );
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::Interrupted,
+            io::ErrorKind::InvalidData,
+            io::ErrorKind::UnexpectedEof,
+            io::ErrorKind::Other,
+        ] {
+            assert_eq!(stat_absent_ok::<()>(Err(kind.into())), Err(()));
+        }
+    }
+
+    #[test]
+    fn opened_proc_stat_disappearance_is_not_incomplete_inventory() {
+        // Force the actual Linux race deterministically: retain a stat fd,
+        // reap only this test's harmless child, then read the existing fd.
+        struct ChildGuard(std::process::Child);
+        impl Drop for ChildGuard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let mut child = ChildGuard(
+            std::process::Command::new("/usr/bin/sleep")
+                .arg("60")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let file = File::open(format!("/proc/{}/stat", child.0.id())).unwrap();
+        child.0.kill().unwrap();
+        child.0.wait().unwrap();
+        let mut raw = Vec::new();
+        let result = file.take((MAX_STAT_BYTES + 1) as u64).read_to_end(&mut raw);
+        assert_eq!(
+            result.as_ref().unwrap_err().raw_os_error(),
+            Some(nix::errno::Errno::ESRCH as i32)
+        );
+        assert_eq!(stat_absent_ok(result), Ok(None));
     }
 
     #[test]

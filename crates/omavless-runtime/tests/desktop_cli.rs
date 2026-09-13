@@ -48,6 +48,29 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn core_readiness_cli_is_fixed_read_only_and_does_not_claim_service_permissions() {
+    let f = Fixture::new();
+    let before = fs::read_dir(&f.0).unwrap().count();
+    let response = f.call(&["desktop", "core-readiness"], b"");
+    assert!(response.status.success());
+    assert!(response.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&response.stdout).unwrap();
+    assert_eq!(value["schemaVersion"], 1);
+    assert_eq!(value["scope"], "desktop_setup_facts");
+    assert_eq!(value["installed"], false);
+    assert_eq!(value["version"], serde_json::Value::Null);
+    assert_eq!(value["servicePermissionReadiness"], "not_verified");
+    assert_eq!(value["coverage"]["serviceContextVerified"], false);
+    assert_eq!(value["coverage"]["tunCreationVerified"], false);
+    assert_eq!(value["coverage"]["controllerQueried"], false);
+    assert_eq!(fs::read_dir(&f.0).unwrap().count(), before);
+    let rejected = f.call(&["desktop", "core-readiness", "private-token"], b"");
+    assert_eq!(rejected.status.code(), Some(2));
+    assert!(rejected.stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&rejected.stderr).contains("private-token"));
+}
+
+#[test]
 fn qr_data_uri_cli_preserves_binary_command_and_keeps_input_private() {
     let f = Fixture::new();
     let missing = f.call(&["desktop", "qr-data-uri"], b"private-token");
@@ -170,10 +193,38 @@ fn desktop_dialog_cancellation_retains_exit_three_without_error_output() {
         assert_eq!(response.status.code(), Some(3));
         assert!(response.stdout.is_empty() && response.stderr.is_empty());
     }
+    for operation in ["pick-report-export", "pick-profile-export"] {
+        let response = f.call(&["desktop", operation], b"en");
+        assert_eq!(response.status.code(), Some(3));
+        assert!(response.stdout.is_empty() && response.stderr.is_empty());
+        let rejected = f.call(&["desktop", operation, "private-token"], b"en");
+        assert_eq!(rejected.status.code(), Some(2));
+        assert!(rejected.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&rejected.stderr).contains("private-token"));
+    }
     assert_eq!(
         fs::read_dir(f.0.join("omavless-desktop")).unwrap().count(),
         0
     );
+    assert!(!f.0.join("omavless").exists());
+}
+
+#[test]
+fn save_chooser_cli_only_releases_destination_after_explicit_selection() {
+    let f = Fixture::new();
+    let tool = f.0.join("zenity");
+    fs::write(&tool, b"#!/bin/bash\ntest \"$4\" = --filename=omavless-report.json || exit 9\nprintf '/tmp/synthetic-destination.json\\n'\n").unwrap();
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o700)).unwrap();
+    let selected = f.call(&["desktop", "pick-report-export"], b"en");
+    assert!(selected.status.success() && selected.stderr.is_empty());
+    assert_eq!(selected.stdout, b"/tmp/synthetic-destination.json");
+    for input in [b"unknown".as_slice(), b"en\0", b"\xff", b"private-token"] {
+        let rejected = f.call(&["desktop", "pick-report-export"], input);
+        assert_eq!(rejected.status.code(), Some(2));
+        assert!(rejected.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&rejected.stderr).contains("private-token"));
+    }
+    assert_eq!(fs::read_dir(&f.0).unwrap().count(), 1);
     assert!(!f.0.join("omavless").exists());
 }
 

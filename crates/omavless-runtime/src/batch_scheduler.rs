@@ -13,12 +13,20 @@ use crate::subscription_batch_work::BatchWorkStep;
 
 pub(super) const METHODS: &[&str] = &[
     "subscriptions.refresh_all",
+    "subscriptions.probe",
+    "subscriptions.probe_results",
     "routing.refresh_providers",
     "operations.get",
     "operations.cancel",
 ];
 
 pub(super) enum BatchWork {
+    Probe {
+        job: native_coordinator::NativeSubscriptionProbe,
+        lease: auxiliary_core::AuxiliaryLease,
+        core: PathBuf,
+        scratch: PathBuf,
+    },
     Subscription {
         job: NativeSubscriptionBatch,
         transport: SharedSubscriptionTransport,
@@ -34,6 +42,7 @@ impl BatchWork {
         match self {
             Self::Subscription { job, .. } => job.supervisor_ticket(),
             Self::Provider { job, .. } => job.supervisor_ticket(),
+            Self::Probe { job, .. } => job.supervisor_ticket(),
         }
     }
 }
@@ -284,11 +293,13 @@ impl BatchScheduler {
     pub(super) fn stop(&self, dispatcher: &Arc<Mutex<RuntimeDispatcher>>) {
         self.stopping.store(true, Ordering::Release);
         // Same lock order as admission. The worker only takes dispatcher.
+        let mut auxiliary = None;
         let handle = if let Ok(mut worker) = self.worker.lock() {
             if let Ok(mut dispatcher) = dispatcher.lock()
                 && let RuntimeDispatcher::Native(owner) = &mut *dispatcher
             {
                 owner.batch_stop();
+                auxiliary = owner.auxiliary_slot();
             }
             worker.take()
         } else {
@@ -297,6 +308,7 @@ impl BatchScheduler {
         // Do not hold admission while the bounded provider request drains.
         // An already accepted peer must receive daemon_restarting promptly,
         // rather than waiting as long as the 25-second provider deadline.
+        let _auxiliary_guard = auxiliary.map(|slot| slot.quiesce());
         if let Some(worker) = handle {
             let _ = worker.join();
         }
@@ -309,6 +321,16 @@ fn run(
     stopping: &AtomicBool,
     pool: &remote_fetch::RemoteFetchPool,
 ) {
+    if let BatchWork::Probe {
+        job,
+        lease,
+        core,
+        scratch,
+    } = work
+    {
+        run_probe(job, lease, core, scratch, supervisor, stopping, pool);
+        return;
+    }
     loop {
         if stopping.load(Ordering::Acquire) {
             return;
@@ -323,6 +345,7 @@ fn run(
             let valid = match &work {
                 BatchWork::Subscription { job, .. } => owner.batch_progress(job),
                 BatchWork::Provider { job, .. } => owner.provider_progress(job),
+                BatchWork::Probe { .. } => unreachable!("probe dispatched before loop"),
             };
             if !valid {
                 return;
@@ -336,6 +359,7 @@ fn run(
             } => job
                 .step(transport, pool, &mut || record_ids.next())
                 .map_err(|_| ()),
+            BatchWork::Probe { .. } => unreachable!("probe dispatched before loop"),
             BatchWork::Provider { job, transport } => job
                 .step(transport, pool)
                 .map(|step| match step {
@@ -363,10 +387,60 @@ fn run(
                     BatchWork::Provider { job, transport } => {
                         owner.provider_finish(job, &transport)
                     }
+                    BatchWork::Probe { .. } => unreachable!("probe dispatched before loop"),
                 }
                 supervisor.ticket = None;
                 return;
             }
         }
     }
+}
+
+fn run_probe(
+    job: native_coordinator::NativeSubscriptionProbe,
+    lease: auxiliary_core::AuxiliaryLease,
+    core: PathBuf,
+    scratch: PathBuf,
+    mut supervisor: Supervisor,
+    stopping: &AtomicBool,
+    pool: &remote_fetch::RemoteFetchPool,
+) {
+    // This local guard is dropped BEFORE Supervisor on unwind. Child cleanup
+    // never happens under the dispatcher mutex, including a panicking worker.
+    let lease = lease;
+    let cancellation = job.cancellation();
+    let valid = || {
+        if stopping.load(Ordering::Acquire) || cancellation.requested() || lease.cancelled() {
+            return false;
+        }
+        let Ok(mut dispatcher) = supervisor.dispatcher.lock() else {
+            return false;
+        };
+        let RuntimeDispatcher::Native(owner) = &mut *dispatcher else {
+            return false;
+        };
+        let valid = owner.probe_progress(&job, 0);
+        if !valid {
+            cancellation.request();
+        }
+        valid
+    };
+    let result =
+        crate::subscription_probe_work::execute(&job, &lease, &core, &scratch, pool, &valid);
+    // A result, including cancellation, is not terminal until the owned child
+    // has been reaped. A failed cleanup poisons the lifecycle owner.
+    let result = if lease.finish().is_err() {
+        Err(StableErrorCode::ManualRecoveryRequired)
+    } else {
+        result
+    };
+    drop(lease);
+    let Ok(mut dispatcher) = supervisor.dispatcher.lock() else {
+        return;
+    };
+    let RuntimeDispatcher::Native(owner) = &mut *dispatcher else {
+        return;
+    };
+    owner.probe_finish(job, result);
+    supervisor.ticket = None;
 }

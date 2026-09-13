@@ -89,13 +89,24 @@ semantic runtime. GPUI is not a dependency of the daemon/CLI/TUI path.
 
 ## Current delivery strategy
 
+Native checkpoint, 2026-09-13: R6 is closed under the explicitly revised
+owner scope in [the local closure](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
+Enabled Last/pinned login acceptance remains [AUTO-1](docs/roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md),
+not PASS. The installed default/manual path is Rust-only; legacy/reference
+sources and the published marketplace snapshot remain separate. Read
+[current delivery status](docs/roadmap/CURRENT_STATUS.md) before allocating work.
+Acceptance is not a marketplace release or blanket authorization to start TUI work.
+Interpret older R6-open checkpoint prose through that evidence, not as a reason
+to repeat completed migration work or hide deferred failures.
+
 Two lanes may proceed in parallel:
 
 1. **Plugin completion lane** — finish bounded current plugin/QML work such as
    localization batches, bug fixes, accessibility/navigation, existing
    diagnostic presentation and opportunistic V0 fixture validation.
-2. **Rust migration lane** — begin immediately with R0/R1 and then migrate
-   deterministic backend layers according to `RUST_MIGRATION.md`.
+2. **Native application lane** — maintain the accepted Rust owner and advance
+   separately scoped application/host follow-ups. R0–R6 is not a fresh work
+   queue; the retained migration contract explains the accepted boundaries.
 
 Do not freeze the current plugin merely because Rust work has started. Equally,
 do not expand large Python backend surfaces that are about to be migrated.
@@ -227,6 +238,21 @@ When an investigation produces findings that future agents need, store a
 credential-safe report or update canonical documentation in Git rather than
 leaving the result only in chat history.
 
+## UI interaction and presentation work
+
+Before changing plugin layout, controls, labels, selection, focus or scrolling,
+read [`skills/omavless-ui-review/SKILL.md`](skills/omavless-ui-review/SKILL.md)
+and follow the linked [`UI/UX contract`](docs/roadmap/UI_UX_CONTRACT.md).
+This repository-local entry applies to every agent environment; it does not
+depend on a personal Codex skill installation or automatic skill discovery.
+
+Check the intended user action and target **before** composing controls. A
+working callback or green source contract is not UX acceptance. Before calling
+an affected screen ready, inspect the installed rendering and relevant state
+transitions; otherwise explicitly record visual/integration evidence pending.
+Preserve owner-approved layout outside the task. UI review does not authorize
+VPN transitions, credential export or publication beyond the current request.
+
 ## Localization work
 
 For translation, locale formatting or localized-UI review, read
@@ -236,7 +262,12 @@ Catalog/contract tests are not visual acceptance: exercise the declared
 screen/state matrix on the exact installed head, protect private fixture data in
 screenshots and repeat affected captures after a fix.
 
-## Current continuity checkpoint — 2026-09-03
+## Historical continuity checkpoint — 2026-09-03
+
+The dated record below preserves earlier remote merge evidence. It is not the
+current installed ownership or remaining-work list: use the local checkpoint
+above and [publication candidate](docs/testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md)
+for the reconciled native branch. Do not restart R0–R6 from this historical list.
 
 - Published marketplace baseline remains OmaVLESS `0.7.0` at exact reviewed SHA
   `69fe05b03129a23664fff3f8289821a7b7f80095`.

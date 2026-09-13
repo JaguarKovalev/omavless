@@ -103,17 +103,35 @@ These remain distinct:
 - **Close panel** — dismiss QML popup only;
 - **Close TUI/terminal** — close client only;
 - **Disconnect** — persist disconnected intent and stop/verify owned core;
-- **Quit OmaVLESS UI** — close selected UI only;
+- **Close UI** — close selected UI only, including ordinary client exit;
+- **Quit OmaVLESS / Turn off OmaVLESS** — confirmed full shutdown: disconnect,
+  verify owned core/TUN cleanup, stop native runtime, then disable the Omarchy
+  plugin without uninstalling packages or deleting private settings;
 - **Disable/remove plugin** — unload Omarchy frontend with documented cleanup;
-- **Stop runtime** — administrative action, not ordinary Quit.
+- **Stop runtime** — administrative action or a verified step of Full Quit,
+  never an implicit consequence of closing a client.
 
-Do not map `Quit OmaVLESS` to `omarchy plugin disable` or simple panel close.
-The label becomes honest only after independent Rust runtime ownership exists.
+The 2026-09-10 owner-directed amendment replaces the former close-only
+`Quit OmaVLESS UI` wording with the unambiguous **Close UI** label. The new
+Settings Full Quit action must explain its complete effect and require
+confirmation. It must not simply call `omarchy plugin disable` and assume the
+VPN stopped. Keep the UI and safe failure/remediation message visible when
+disconnect, cleanup or runtime stop fails; never hide uncertain tunnel state.
+Preserve profile/subscription/routing/startup settings and installation. An
+ordinary panel close, Escape/back, terminal close or shell reload still leaves
+a requested healthy tunnel alone.
 
 At the current Omarchy baseline, plugin disable acts on the whole plugin id and
 there is no supported independent widget-unload primitive that preserves the
 legacy plugin-local Python owner. Therefore current plugin UX keeps the existing
-semantics until R5/T1 cutover.
+semantics until the native-owner boundary is available. Full Quit is a
+**local implementation/acceptance target, not yet a shipped or accepted feature**.
+Its ordering, concurrency, stop verification, safe retry and host boundary are
+specified in [CONTROL_PLANE.md section 9](CONTROL_PLANE.md#9-close-quit-disable-remove-and-stop).
+This does not authorize a generic service/shell IPC method or production TUI
+implementation before R6. A future standalone TUI may close independently;
+exposing full application shutdown there requires the same explicit semantics,
+without assuming an Omarchy plugin is installed.
 
 ## 6. TUI dashboard direction
 
@@ -375,6 +393,8 @@ Every TUI/control-plane PR preserves:
 - slow/disconnected client cannot stall lifecycle;
 - malformed IPC is bounded/rejected;
 - TUI crash/close leaves desired state unchanged;
+- explicit Full Quit verifies disconnect/runtime cleanup before disabling the
+  plugin; failed/uncertain shutdown remains visible and preserves private data;
 - runtime/core crash reports explicit recovery state;
 - plugin disable/remove/package uninstall have explicit cleanup ownership;
 - TUI contains no Python compatibility path;

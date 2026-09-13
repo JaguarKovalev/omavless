@@ -213,15 +213,20 @@ fn fixed_service_query(
     {
         return Err(ProductionObservationError::ServiceQuery);
     }
-    let properties = if installation {
-        [
+    let properties: &[&str] = if installation {
+        &[
+            "--property=LoadState",
+            "--property=ActiveState",
+            "--property=MainPID",
+            "--property=ExecMainStatus",
+            "--property=Result",
             "--property=UnitFileState",
             "--property=FragmentPath",
             "--property=DropInPaths",
             "--property=NeedDaemonReload",
         ]
     } else {
-        [
+        &[
             "--property=ActiveState",
             "--property=MainPID",
             "--property=ExecMainStatus",
@@ -249,7 +254,7 @@ fn manager_environment_query(systemctl: &Path) -> Result<String, ProductionObser
 
 // Shared private execution mechanics for the fixed observation commands above.
 // No CLI or IPC accepts a Command, executable, argv or deadline.
-fn bounded_fixed_query(
+pub(crate) fn bounded_fixed_query(
     mut command: Command,
     timeout: Duration,
 ) -> Result<String, ProductionObservationError> {
@@ -815,6 +820,29 @@ mod tests {
             }
         });
         (stage, worker)
+    }
+
+    #[test]
+    fn installation_absence_requires_successful_fixed_query() {
+        let (root, _uid) = root("absent-service");
+        for exit in [0, 1] {
+            let systemctl = executable(
+                &root,
+                &format!(
+                    "#!/bin/sh\n[ \"$1 $2 $3\" = \"--user show omavless.service\" ] || exit 9\ncase \"$*\" in *--property=LoadState*) ;; *) exit 9 ;; esac\nprintf 'LoadState=not-found\\nUnitFileState=\\nFragmentPath=\\nDropInPaths=\\nNeedDaemonReload=no\\nActiveState=inactive\\nMainPID=0\\nExecMainStatus=0\\nResult=success\\n'\nexit {exit}\n"
+                ),
+            );
+            let result = cutover_service_installation(&systemctl, LEGACY_SERVICE);
+            if exit == 0 {
+                assert_eq!(
+                    crate::cutover_activation::legacy_unit_absent(&result.unwrap()),
+                    Ok(true)
+                );
+            } else {
+                assert_eq!(result, Err(ProductionObservationError::ServiceQuery));
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

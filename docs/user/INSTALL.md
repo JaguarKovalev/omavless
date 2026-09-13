@@ -3,6 +3,13 @@
 This guide covers normal Omarchy installation, Mihomo readiness, optional
 desktop helpers, updates and development installs.
 
+It describes the published/legacy-compatible plugin path. For an explicitly
+reviewed local Rust candidate, use the separate [native installation guide](NATIVE_INSTALL.md):
+native package setup, ownership activation and `--native-only` frontend
+installation are distinct steps. The Python/GTK fallback and legacy purge
+instructions below do not apply to a committed native owner. This distinction
+does not announce a new marketplace release or completed R6 acceptance.
+
 ## Requirements
 
 - Omarchy 4.x;

@@ -27,8 +27,14 @@ production empty-host adapter is activated here.
 - Errors contain only fixed public classifications, never process names,
   interface names, filesystem paths or raw operating-system output.
 
-These are snapshots, not an atomic kernel inventory. Concurrent process exit or
-interface churn may cause a conservative refusal. Future fixed host integration
+These are snapshots, not an atomic kernel inventory. The local 2026-09-11
+[process-exit correction](R5_NATIVE_DISCONNECT_PROCESS_EXIT.md) permits skipping
+only a PID directory proven absent: initial directory ENOENT, or task/comm
+ENOENT/ESRCH followed by an independent PID-directory ENOENT. A live task with
+missing/unreadable comm still refuses. Complete enumeration/bounds and final
+proc-root type/device/inode verification remain mandatory; root disappearance
+is never fabricated zero. TUN/interface churn remains conservatively rejected.
+Future fixed host integration
 must combine them with service state, controller **absence** (not merely failed
 readiness), ownership locks and rechecks immediately before intent publication.
 Hidden process namespaces or restricted procfs views cannot establish global

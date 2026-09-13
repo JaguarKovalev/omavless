@@ -38,6 +38,9 @@ enum CliError {
     Message(String),
     DesktopCancelled,
     ActionOutcomeUnknown,
+    ActionNotAdmitted,
+    LoginSkip,
+    LoginFailure(String),
 }
 
 impl From<String> for CliError {
@@ -54,37 +57,91 @@ impl From<&str> for CliError {
 
 fn run() -> Result<(), CliError> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "login-condition" || arg == "login-prepare")
+    {
+        if arguments.len() != 1 {
+            return Err(CliError::LoginFailure(
+                "Invalid OmaVLESS login command".to_owned(),
+            ));
+        }
+        if arguments[0] == "login-condition" {
+            return match omavless_runtime::login_activation::condition() {
+                Ok(true) => Ok(()),
+                Ok(false) => Err(CliError::LoginSkip),
+                Err(error) => Err(CliError::LoginFailure(error.to_string())),
+            };
+        }
+        return omavless_runtime::login_activation::prepare()
+            .map_err(|error| CliError::LoginFailure(error.to_string()));
+    }
     if arguments == ["-h"] || arguments == ["--help"] {
         println!(
             "{USAGE}\n  import preview                  read private input from stdin; private UI output"
         );
         println!("  profile import                  read confirmed name + profile link from stdin");
         println!("  profile export PROFILE_ID qr|file  explicit private credential output");
+        println!("  profile details PROFILE_ID  explicit private endpoint metadata");
         println!("  profile edit-input PROFILE_ID    explicit private editor input");
         println!("  routing rules                    private custom-rule editor list");
         println!("  plugin snapshot                  private UI metadata; not live health");
         println!("  runtime observation              fresh local facts; not VPN connectivity");
+        println!("  runtime traffic                  owned TUN counters, or unavailable");
         println!("  plugin target                    read committed launcher target only");
         println!(
             "  cutover activate                 explicit disconnected native ownership transition"
         );
         println!("  plugin connect INSTANCE REVISION OPERATION PROFILE rule|global|direct");
         println!("  plugin disconnect INSTANCE REVISION OPERATION");
+        println!(
+            "  plugin quit INSTANCE REVISION OPERATION  confirmed full exit; disables runtime and Omarchy plugin"
+        );
+        println!(
+            "  plugin onboarding-complete INSTANCE REVISION OPERATION  save completion only; no host setup or login activation"
+        );
         println!("  plugin mode INSTANCE REVISION OPERATION rule|global|direct");
         println!("  plugin profile-rename INSTANCE REVISION OPERATION   stdin: ID newline NAME");
         println!("  plugin profile-favorite INSTANCE REVISION OPERATION stdin: ID newline on|off");
         println!("  plugin profile-delete INSTANCE REVISION OPERATION   stdin: ID");
-        println!("  plugin profile-import INSTANCE REVISION OPERATION   stdin: NAME newline INPUT");
-        println!("  diagnostics summary|rules|providers  bounded live controller diagnostics");
         println!(
-            "  diagnostics export               shareable native configuration report (no live host checks)"
+            "  plugin routing-preset INSTANCE REVISION OPERATION   stdin: PRESET newline on|off (keep mode)"
         );
+        println!(
+            "  plugin custom-rule-add INSTANCE REVISION OPERATION  stdin: KIND newline ACTION newline VALUE"
+        );
+        println!("  plugin custom-rule-delete INSTANCE REVISION OPERATION stdin: ID");
+        println!(
+            "  plugin subscription-add INSTANCE REVISION OPERATION    stdin: NAME newline URL"
+        );
+        println!(
+            "  plugin subscription-update INSTANCE REVISION OPERATION stdin: ID newline NAME newline URL"
+        );
+        println!(
+            "  plugin subscription-delete|subscription-refresh INSTANCE REVISION OPERATION stdin: ID"
+        );
+        println!(
+            "    replacement/subscription actions: exit 74 means not submitted; exit 73 means outcome unknown"
+        );
+        println!("  plugin profile-import INSTANCE REVISION OPERATION   stdin: NAME newline INPUT");
+        println!(
+            "  plugin profile-replace INSTANCE REVISION OPERATION  stdin: ID newline NAME newline INPUT"
+        );
+        println!("  diagnostics summary|rules|providers  bounded live controller diagnostics");
+        println!("  runtime test                      explicit current-route HTTPS/IP observation");
+        println!("  diagnostics export               shareable bounded native support report");
         println!("  routing preset PRESET [keep-mode]  adopt a bundled routing policy");
         println!("  routing rule-add KIND ACTION     read private rule value from stdin");
         println!("  routing rule-delete RULE_ID       remove one custom rule");
         println!("  routing refresh-providers INSTANCE_ID OPERATION_ID [REVISION]");
         println!("  routing check                    read private domain/IP query from stdin");
+        println!(
+            "  runtime ping                     read one ASCII DNS/IP target from stdin; TUN-bound ICMP"
+        );
         println!("  onboarding complete              mark first-use setup complete");
+        println!(
+            "  setup initialize                 create initial private config only; no activation"
+        );
         println!(
             "  store-compatibility              read-only native store check and recovery guidance"
         );
@@ -92,7 +149,7 @@ fn run() -> Result<(), CliError> {
             "  profile replace PROFILE_ID      read confirmed name + replacement link from stdin"
         );
         println!(
-            "  desktop capabilities|clipboard-read|clipboard-copy|pick-import|file-read|edit|qr|qr-data-uri|export-file|cleanup"
+            "  desktop capabilities|core-readiness|clipboard-read|clipboard-copy|pick-import|pick-report-export|pick-profile-export|file-read|edit|qr|qr-data-uri|export-file|cleanup"
         );
         println!(
             "                                  explicit private client-only helpers; input through stdin"
@@ -129,6 +186,10 @@ fn run() -> Result<(), CliError> {
                 println!("{}", helpers.capabilities());
                 return Ok(());
             }
+            Some("core-readiness") => {
+                println!("{}", helpers.core_readiness());
+                return Ok(());
+            }
             Some("clipboard-read") => helpers.clipboard_read(),
             Some("cleanup") => {
                 let directory =
@@ -138,6 +199,15 @@ fn run() -> Result<(), CliError> {
                 return Ok(());
             }
             Some("pick-import") => helpers.pick_import(),
+            Some("pick-report-export" | "pick-profile-export") => {
+                let locale = read_semantic_input(8)?;
+                let kind = if arguments[1] == "pick-report-export" {
+                    desktop_helpers::ExportKind::Report
+                } else {
+                    desktop_helpers::ExportKind::Profile
+                };
+                helpers.pick_export(kind, locale.trim_end_matches('\n'))
+            }
             Some("file-read") => {
                 let path = read_semantic_input(MAX_PATH_BYTES + 1)?;
                 desktop_helpers::read_import_file(path.trim_end_matches('\n').as_bytes())
@@ -223,6 +293,20 @@ fn run() -> Result<(), CliError> {
         );
         return Ok(());
     }
+    if arguments.first().is_some_and(|arg| arg == "setup") {
+        if arguments != ["setup", "initialize"] {
+            return Err("Invalid native setup command".into());
+        }
+        let result =
+            omavless_runtime::fresh_setup::prepare_current().map_err(|error| error.to_string())?;
+        println!(
+            "{}",
+            json!({"schemaVersion":1,"outcome":"prepared",
+            "createdFiles":result.created_files,"ownershipActivated":false,
+            "startupEnabled":false,"onboardingComplete":false})
+        );
+        return Ok(());
+    }
     if arguments == ["store-compatibility"] {
         let result = omavless_runtime::store_preflight::current_store_compatibility()
             .map_err(|error| error.to_string())?;
@@ -256,7 +340,67 @@ fn run() -> Result<(), CliError> {
         );
         return Ok(());
     }
-    let paths = RuntimePaths::current().map_err(|error| error.to_string())?;
+    if arguments.first().is_some_and(|arg| arg == "plugin")
+        && arguments.get(1).is_some_and(|arg| arg == "watch-removal")
+    {
+        if arguments.len() != 2 {
+            return Err("Invalid OmaVLESS removal watcher command".into());
+        }
+        let stopped = omavless_runtime::full_quit::removal::run()
+            .map_err(|message| CliError::Message(message.into()))?;
+        println!("{}", json!({"schemaVersion":1,"runtimeStopped":stopped}));
+        return Ok(());
+    }
+    if arguments.first().is_some_and(|arg| arg == "plugin")
+        && arguments.get(1).is_some_and(|arg| arg == "quit")
+    {
+        let [_, _, instance, revision, operation] = arguments.as_slice() else {
+            return Err("Invalid OmaVLESS quit command".into());
+        };
+        let instance = instance.to_str().ok_or("Invalid OmaVLESS quit command")?;
+        let operation = operation.to_str().ok_or("Invalid OmaVLESS quit command")?;
+        let revision = revision
+            .to_str()
+            .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|value| value.parse::<u64>().ok())
+            .ok_or("Invalid OmaVLESS quit command")?;
+        omavless_runtime::full_quit::run(instance, revision, operation)
+            .map_err(|error| CliError::Message(error.to_string()))?;
+        println!(
+            "{}",
+            json!({"schemaVersion":1,"shutdown":true,"pluginDisabled":true})
+        );
+        return Ok(());
+    }
+    let explicit_admission = arguments.first().is_some_and(|arg| arg == "plugin")
+        && arguments
+            .get(1)
+            .and_then(|arg| arg.to_str())
+            .is_some_and(|arg| {
+                matches!(
+                    arg,
+                    "profile-replace"
+                        | "onboarding-complete"
+                        | "subscription-add"
+                        | "subscription-update"
+                        | "subscription-delete"
+                        | "subscription-refresh"
+                        | "routing-preset"
+                        | "custom-rule-add"
+                        | "custom-rule-delete"
+                )
+            });
+    // This classification is valid only before dispatch. After entering the
+    // socket client, transport errors remain outcome-unknown. Other actions
+    // retain their existing exit-code contract.
+    let admission_error = |message: String| {
+        if explicit_admission {
+            CliError::ActionNotAdmitted
+        } else {
+            CliError::Message(message)
+        }
+    };
+    let paths = RuntimePaths::current().map_err(|error| admission_error(error.to_string()))?;
     if arguments == ["daemon"] {
         let stop = Arc::new(AtomicBool::new(false));
         flag::register(SIGINT, Arc::clone(&stop)).map_err(|_| "Signal setup failed")?;
@@ -271,6 +415,11 @@ fn run() -> Result<(), CliError> {
         ("status.get", json!({}))
     } else if arguments == ["capabilities"] {
         ("capabilities.get", json!({}))
+    } else if arguments == ["runtime", "ping"] {
+        let input = read_semantic_input(omavless_runtime::tun_ping::MAX_INPUT)?;
+        omavless_runtime::semantic_cli::parse_semantic_ping(&arguments, &input)
+            .map_err(|error| error.to_string())?
+            .into_parts()
     } else if arguments == ["routing", "check"] {
         let input = read_semantic_input(omavless_domain::routing::MAX_CUSTOM_RULE_VALUE_BYTES)?;
         omavless_runtime::semantic_cli::parse_semantic_route_check(&arguments, &input)
@@ -298,10 +447,11 @@ fn run() -> Result<(), CliError> {
         &arguments,
         omavless_runtime::plugin_action::cli_input_limit(&arguments)
             .map(read_semantic_input)
-            .transpose()?
+            .transpose()
+            .map_err(admission_error)?
             .as_deref(),
     )
-    .map_err(|error| error.to_string())?
+    .map_err(|error| admission_error(error.to_string()))?
     {
         ("plugin.action", params)
     } else {
@@ -357,11 +507,22 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(CliError::DesktopCancelled) => ExitCode::from(3),
+        Err(CliError::LoginSkip) => ExitCode::from(1),
+        Err(CliError::LoginFailure(message)) => {
+            // ExecCondition treats 1..254 as a skip, not a failed prerequisite.
+            // Only a proven non-native ownership phase may take that path.
+            eprintln!("{message}");
+            ExitCode::from(255)
+        }
         Err(CliError::ActionOutcomeUnknown) => {
             eprintln!(
                 "OmaVLESS action outcome is unknown; retain the original operation for reconciliation"
             );
             ExitCode::from(73)
+        }
+        Err(CliError::ActionNotAdmitted) => {
+            eprintln!("OmaVLESS action was not submitted; review the input before retrying");
+            ExitCode::from(74)
         }
         Err(CliError::Message(message)) => {
             eprintln!("{message}");

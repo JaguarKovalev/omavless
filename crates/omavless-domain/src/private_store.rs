@@ -165,6 +165,17 @@ pub struct ProfileEditInput {
     input: String,
 }
 
+/// Explicit same-user UI metadata. No Debug/serialization: endpoints and labels
+/// remain private, even though reusable credentials are excluded.
+pub struct PrivateProfileDetails {
+    value: Value,
+}
+impl PrivateProfileDetails {
+    pub fn into_private_ui_value(self) -> Value {
+        self.value
+    }
+}
+
 impl ProfileEditInput {
     #[must_use]
     pub fn private_name(&self) -> &str {
@@ -1092,6 +1103,27 @@ pub fn parse_private_store(input: &str) -> Result<PrivateStore, PrivateStoreErro
 }
 
 impl PrivateStore {
+    /// Move only current members of an existing subscription into a private
+    /// worker snapshot. No display names, URLs or missing records are released.
+    pub fn into_subscription_probe_profiles(
+        self,
+        subscription_id: &str,
+    ) -> Result<Vec<(String, omavless_profile::canonical::CanonicalProfile)>, PrivateStoreError>
+    {
+        if !self
+            .subscriptions
+            .iter()
+            .any(|item| item.id == subscription_id)
+        {
+            return Err(PrivateStoreError::SubscriptionNotFound);
+        }
+        Ok(self
+            .profiles
+            .into_iter()
+            .filter(|item| item.subscription_id == subscription_id && !item.missing)
+            .map(|item| (item.id, item.canonical))
+            .collect())
+    }
     /// Private redaction inputs only: never serialize, log or expose this list.
     pub fn diagnostic_private_fragments(&self) -> Vec<String> {
         fn sensitive(value: &Value, output: &mut Vec<String>) {
@@ -1390,6 +1422,44 @@ impl PrivateStore {
             .ok_or(PrivateStoreError::ProfileNotFound)?;
         Ok(PrivateProfileExport {
             uri: profile.uri.clone(),
+        })
+    }
+
+    pub fn profile_details(
+        &self,
+        profile_id: &str,
+    ) -> Result<PrivateProfileDetails, PrivateStoreError> {
+        let profile = self
+            .profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .ok_or(PrivateStoreError::ProfileNotFound)?;
+        // Reuse the already validated canonical model, not a second URI parser.
+        // Reconstruct an allowlisted projection instead of removing known secrets.
+        let preview = profile.canonical.private_preview();
+        let field = |key: &str, max: usize| -> Result<String, PrivateStoreError> {
+            let value = preview[key]
+                .as_str()
+                .ok_or(PrivateStoreError::InvalidShape)?;
+            if value.len() > max || value.chars().any(char::is_control) {
+                return Err(PrivateStoreError::InvalidShape);
+            }
+            Ok(value.to_owned())
+        };
+        let host = field("server", 1012)?;
+        let port = preview["port"]
+            .as_u64()
+            .filter(|port| (1..=65535).contains(port))
+            .ok_or(PrivateStoreError::InvalidShape)?;
+        Ok(PrivateProfileDetails {
+            value: serde_json::json!({
+                "version":1, "name":profile.name,
+                "protocol":field("protocol", 16)?,
+                "server":format!("{host}:{port}"),
+                "transport":field("transport", 32)?,
+                "security":field("security", 16)?,
+                "sni":field("sni", 1012)?,
+            }),
         })
     }
 
@@ -2265,6 +2335,33 @@ pub fn apply_subscription_mutation(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn probe_snapshot_moves_only_current_members_and_requires_existing_subscription() {
+        let input = store(PRIVATE_URI, "vless");
+        let selected = parse_private_store(&input)
+            .unwrap()
+            .into_subscription_probe_profiles(SUBSCRIPTION_ID)
+            .unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].0, PROFILE_ID);
+        assert_eq!(selected[0].1.protocol(), Protocol::Vless);
+        assert!(
+            parse_private_store(&input)
+                .unwrap()
+                .into_subscription_probe_profiles(SECOND_SUBSCRIPTION_ID)
+                .is_err()
+        );
+        let mut missing: Value = serde_json::from_str(&input).unwrap();
+        missing["profiles"][0]["missing"] = json!(true);
+        assert!(
+            parse_private_store(&missing.to_string())
+                .unwrap()
+                .into_subscription_probe_profiles(SUBSCRIPTION_ID)
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn provider_stamp_is_monotonic_preserves_store_and_rejects_exhaustion() {

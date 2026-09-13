@@ -59,6 +59,206 @@ fn strict_process_boundaries_and_incomplete_scans_refuse() {
     assert!(processes_named_strict(&f.0, "mihomo").is_err());
 }
 
+const TASK_PHASES: [ProcessScanPhase; 7] = [
+    ProcessScanPhase::Directory,
+    ProcessScanPhase::CommMetadata,
+    ProcessScanPhase::Open,
+    ProcessScanPhase::OpenedMetadata,
+    ProcessScanPhase::Read,
+    ProcessScanPhase::AfterDirectory,
+    ProcessScanPhase::AfterComm,
+];
+
+#[test]
+fn vanished_task_at_each_phase_does_not_poison_complete_inventory() {
+    for phase in TASK_PHASES {
+        let f = Fixture::new();
+        f.process("1", b"mihomo\n");
+        f.process("2", b"short worker\n");
+        let mut injected = false;
+        let found = processes_named_strict_scan(&f.0, "mihomo", 16, 16, |step, directory| {
+            if step == phase && directory.file_name().unwrap() == "2" {
+                fs::remove_dir_all(directory).unwrap();
+                injected = true;
+            }
+            Ok(())
+        });
+        assert!(injected);
+        assert_eq!(found, Ok(BTreeSet::from([1])), "{phase:?}");
+    }
+}
+
+#[test]
+fn task_lookup_errors_require_independent_directory_disappearance() {
+    for phase in TASK_PHASES {
+        for errno in [nix::libc::ENOENT, nix::libc::ESRCH] {
+            for vanished in [false, true] {
+                let f = Fixture::new();
+                f.process("1", b"worker\n");
+                let result =
+                    processes_named_strict_scan(&f.0, "mihomo", 16, 16, |step, directory| {
+                        if step == phase {
+                            if vanished {
+                                fs::remove_dir_all(directory).unwrap();
+                            }
+                            return Err(io::Error::from_raw_os_error(errno));
+                        }
+                        Ok(())
+                    });
+                // Initial metadata ENOENT is already the directory absence
+                // lookup. ESRCH is NOT accepted at that initial phase.
+                let permitted = if phase == ProcessScanPhase::Directory {
+                    errno == nix::libc::ENOENT
+                } else {
+                    vanished
+                };
+                assert_eq!(result.is_ok(), permitted, "{phase:?}/{errno}/{vanished}");
+            }
+        }
+    }
+}
+
+#[test]
+fn task_permission_and_other_errors_never_become_absence() {
+    for phase in TASK_PHASES {
+        for errno in [nix::libc::EACCES, nix::libc::EPERM, nix::libc::EIO] {
+            let f = Fixture::new();
+            f.process("1", b"worker\n");
+            let result = processes_named_strict_scan(&f.0, "mihomo", 16, 16, |step, directory| {
+                if step == phase {
+                    fs::remove_dir_all(directory).unwrap();
+                    return Err(io::Error::from_raw_os_error(errno));
+                }
+                Ok(())
+            });
+            assert!(result.is_err(), "{phase:?}/{errno}");
+        }
+    }
+}
+
+#[test]
+fn live_missing_comm_at_lookup_phases_still_refuses() {
+    for phase in [
+        ProcessScanPhase::CommMetadata,
+        ProcessScanPhase::Open,
+        ProcessScanPhase::AfterComm,
+    ] {
+        let f = Fixture::new();
+        f.process("1", b"worker\n");
+        let result = processes_named_strict_scan(&f.0, "mihomo", 16, 16, |step, directory| {
+            if step == phase {
+                fs::remove_file(directory.join("comm")).unwrap();
+            }
+            Ok(())
+        });
+        assert!(result.is_err(), "{phase:?}");
+    }
+}
+
+#[test]
+fn pid_or_comm_replacement_is_not_process_disappearance() {
+    for replace_directory in [false, true] {
+        let f = Fixture::new();
+        f.process("1", b"worker\n");
+        let result = processes_named_strict_scan(&f.0, "mihomo", 16, 16, |step, directory| {
+            if step == ProcessScanPhase::AfterDirectory {
+                if replace_directory {
+                    // Keep the old inode alive; allocator reuse cannot make
+                    // the synthetic replacement nondeterministic.
+                    fs::rename(directory, f.0.join("retired")).unwrap();
+                    fs::create_dir(directory).unwrap();
+                } else {
+                    fs::rename(directory.join("comm"), directory.join("old-comm")).unwrap();
+                }
+                fs::write(directory.join("comm"), b"mihomo\n").unwrap();
+            }
+            Ok(())
+        });
+        assert!(result.is_err());
+    }
+}
+
+#[test]
+fn missing_or_replaced_proc_root_cannot_fabricate_empty_inventory() {
+    for when in [ProcessScanPhase::Directory, ProcessScanPhase::RootRecheck] {
+        for replacement in [false, true] {
+            let f = Fixture::new();
+            let root = f.0.join("proc");
+            fs::create_dir(&root).unwrap();
+            fs::create_dir(root.join("1")).unwrap();
+            fs::write(root.join("1/comm"), b"worker\n").unwrap();
+            let result = processes_named_strict_scan(&root, "mihomo", 16, 16, |step, _| {
+                if step == when {
+                    fs::rename(&root, f.0.join("retired")).unwrap();
+                    if replacement {
+                        fs::create_dir(&root).unwrap();
+                    }
+                }
+                Ok(())
+            });
+            assert!(result.is_err(), "{when:?}/{replacement}");
+        }
+    }
+}
+
+#[test]
+fn vanished_tasks_do_not_exempt_scan_bounds_or_later_invalid_tasks() {
+    let f = Fixture::new();
+    f.process("1", b"worker\n");
+    f.process("2", b"worker\n");
+    assert!(
+        processes_named_strict_scan(&f.0, "mihomo", 1, 16, |step, directory| {
+            if step == ProcessScanPhase::Directory {
+                fs::remove_dir_all(directory).unwrap();
+            }
+            Ok(())
+        })
+        .is_err()
+    );
+
+    let f = Fixture::new();
+    f.process("1", b"worker\n");
+    f.process("2", b"invalid comm without newline");
+    assert!(
+        processes_named_strict_scan(&f.0, "mihomo", 16, 16, |step, directory| {
+            if step == ProcessScanPhase::Directory && directory.file_name().unwrap() == "1" {
+                fs::remove_dir_all(directory).unwrap();
+            }
+            Ok(())
+        })
+        .is_err()
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn exited_harmless_child_comm_descriptor_reports_proven_task_disappearance() {
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let mut child = ChildGuard(
+        std::process::Command::new("/usr/bin/sleep")
+            .arg("60")
+            .spawn()
+            .unwrap(),
+    );
+    let directory = std::path::PathBuf::from(format!("/proc/{}", child.0.id()));
+    let mut comm = fs::File::open(directory.join("comm")).unwrap();
+    child.0.kill().unwrap();
+    child.0.wait().unwrap();
+    let mut raw = Vec::new();
+    let read = comm.read_to_end(&mut raw);
+    assert_eq!(
+        read.as_ref().unwrap_err().raw_os_error(),
+        Some(nix::libc::ESRCH)
+    );
+    assert_eq!(task_step(&directory, read), Ok(None));
+}
+
 #[test]
 fn strict_comm_invalid_bytes_size_and_numeric_identity_refuse() {
     for raw in [

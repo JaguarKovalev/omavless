@@ -7,10 +7,10 @@ pkgdesc='Private native VPN runtime and semantic CLI (development checkpoint)'
 arch=('@ARCH@')
 url='https://github.com/k-kostin/omavless'
 license=('MIT')
-depends=('glibc' 'gcc-libs' 'systemd' 'libcap' 'ca-certificates' 'mihomo')
+depends=('glibc' 'gcc-libs' 'systemd' 'libcap' 'ca-certificates' 'mihomo' 'iputils' 'bubblewrap')
 optdepends=('zenity: graphical file import and profile editing'
             'kdialog: alternative graphical file picker'
-            'yad: alternative graphical file picker and editor'
+            'yad: alternative graphical file picker'
             'qrencode: explicit profile QR export'
             'wl-clipboard: Wayland clipboard import and export')
 # Keep the reviewed prebuilt bytes intact, including their recorded SHA256.

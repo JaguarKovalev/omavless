@@ -8,6 +8,24 @@ Python/Rust parity gates. It complements [`CONTROL_PLANE.md`](CONTROL_PLANE.md),
 [`ARCHITECTURE.md`](ARCHITECTURE.md), [`TUI_APP.md`](TUI_APP.md) and
 [`PLATFORM.md`](PLATFORM.md).
 
+Current local decision, 2026-09-13: [R6 native-path retirement is locally closed](../testing/R6_LOCAL_CLOSURE_2026-09-13.md)
+under the owner's explicit enabled-autoconnect deferral to
+[AUTO-1](LOGIN_AUTOCONNECT_FOLLOWUP.md). Default Off/Python-absence evidence is
+retained; network failures are not relabelled PASS. See
+[current delivery status](CURRENT_STATUS.md) for the integrated tree and use
+GitHub for actual publication state. This is not blanket Python-source deletion
+or permission to start unrelated work.
+
+Historical local-only R6 continuity, 2026-09-11: native config preparation and
+[strict absent-legacy activation composition](../testing/R6_ABSENT_LEGACY_ACTIVATION.md)
+now have deterministic coverage, including unchanged initial-config parity and
+transaction compensation. The subsequent
+[installed fresh-account gate](../testing/R6_FRESH_PACKAGE_ACTIVATION_2026-09-11.md)
+PASSed real initialize/activate/retry refusal on Try Omarchy ARM64 with no legacy
+service. Complete onboarding, login/recovery and full installed Python-absence
+remain required; this local work is not published acceptance. The production TUI
+gate is unchanged.
+
 ## 1. Decision
 
 The long-term OmaVLESS application stack is selected as:
@@ -485,7 +503,9 @@ to widen concurrency or retry semantics beyond the existing contract.
 
 Goal: make `omavless daemon` the one canonical owner.
 
-Implementation status: **foundations accepted; ownership cutover pending**.
+Implementation status: **native ownership accepted under the scoped R6 checkpoint**.
+The incremental history below records what each earlier slice did, not the
+current installed owner or remaining-work list. See [current status](CURRENT_STATUS.md).
 PRs #96-#100, #102, #104, #106-#108, #110, #111, #113, #117-#121 and
 #125-#134 and #136 provide the private control
 socket/owner lock, desired-state and reconciliation model, package-unit
@@ -817,6 +837,13 @@ Python remains the installed production owner.
 
 Goal: prove that the product no longer requires Python before TUI implementation
 starts.
+
+Owner-approved scope amendment, 2026-09-13: the native installed default/manual
+path may close R6 using proven startup Off and native lifecycle/Python-absence
+evidence while optional enabled Last/pinned fresh-login acceptance remains
+AUTO-1. Preserve the explicit limitations in the local closure report. Do not
+call enabled autoconnect validated, silently enable it, or use this exception
+to waive normal lifecycle, cleanup, store or no-Python requirements.
 
 Required evidence:
 

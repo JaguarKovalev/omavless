@@ -5,9 +5,17 @@ here="$(cd "$(dirname "$0")" && pwd)"
 python3 -m unittest -v \
   "$here/test_backend.py" \
   "$here/test_backend_launcher.py" \
+  "$here/test_native_launcher_no_python.py" \
+  "$here/test_install_picker_policy.py" \
+  "$here/test_native_uninstall_guard.py" \
   "$here/test_mihomo_validation_effects.py" \
   "$here/test_local_arch_package.py" \
   "$here/test_installed_native_acceptance.py" \
+  "$here/test_installed_native_domain.py" \
+  "$here/test_installed_native_bridge.py" \
+  "$here/test_installed_native_package.py" \
+  "$here/test_installed_python_mask.py" \
+  "$here/test_human_authorization.py" \
   "$here/test_control_protocol.py" \
   "$here/test_control_protocol_probe.py" \
   "$here/test_native_service_acceptance.py" \
@@ -26,8 +34,31 @@ if command -v node >/dev/null 2>&1; then
   node "$here/test-panel-search.js"
   node "$here/test-native-snapshot.js"
   node "$here/test-native-actions.js"
+  node "$here/test-native-onboarding.js"
+  node "$here/test-native-main-panel.js"
+  node "$here/test-native-ipc-controls.js"
+  node "$here/test-native-ipc-reads.js"
+  node "$here/test-native-no-python.js"
+  node "$here/test-native-connection-test.js"
   node "$here/test-native-import.js"
+  node "$here/test-native-subscriptions.js"
+  node "$here/test-native-routing.js"
+  node "$here/test-native-batch.js"
+  node "$here/test-native-support.js"
+  node "$here/test-native-settings-readiness.js"
+  node "$here/test-native-startup-ui.js"
+  node "$here/test-native-file-export.js"
+  node "$here/test-native-routing-panel.js"
+  node "$here/test-native-diagnostics.js"
+  node "$here/test-native-core-setup.js"
+  node "$here/test-native-quit.js"
+  node "$here/test-native-profile-details.js"
   node "$here/test-native-qr.js"
+  node "$here/test-native-editor.js"
+  node "$here/test-native-presentation.js"
+  node "$here/test-traffic-reference.js"
+  node "$here/test-native-traffic.js"
+  node "$here/test-native-ping.js"
 else
   echo "node unavailable: i18n runtime tests not run" >&2
   exit 1

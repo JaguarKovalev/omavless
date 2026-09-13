@@ -1,5 +1,20 @@
 const assert = require("assert")
 const I18n = require("../plugin/I18n.js")
+assert.strictEqual(I18n.translate("native.probe.dns_failed", "en"), "DNS failed")
+assert.strictEqual(I18n.translate("native.probe.dns_failed", "ru"), "Ошибка DNS")
+
+// Release/migration acceptance belongs in documentation, not product copy.
+const panelSource = require("fs").readFileSync(require("path").join(__dirname, "../plugin/Panel.qml"), "utf8")
+assert(!panelSource.includes('native.main.unavailable'))
+assert.strictEqual(I18n.translate("native.state.connected", "en"), "CONNECTED")
+assert.strictEqual(I18n.translate("native.state.connected", "ru"), "ПОДКЛЮЧЕНО")
+for (const locale of ["en", "ru"]) {
+  for (const key of ["settings.setup_description", "native.support.scope", "native.support.save", "native.settings.modeHelp"]) {
+    const value = I18n.translate(key, locale)
+    assert(value.length > 0 && value.length < 150)
+    assert(!/Missing translation|Rust|Python|acceptance|приёмк/i.test(value))
+  }
+}
 
 assert.strictEqual(I18n.normalizeLocale("ru_RU.UTF-8"), "ru")
 assert.strictEqual(I18n.normalizeLocale("ru-RU"), "ru")
@@ -68,6 +83,9 @@ assert.strictEqual(
 assert.strictEqual(I18n.publicErrorKey("", editorMissingFallback), "")
 assert.strictEqual(I18n.translate("edit.config", "ru"), "Конфигурация")
 assert.strictEqual(I18n.translate("common.delete", "ru"), "Удалить")
+assert.strictEqual(I18n.translate("native.profile.actionsFor", "en", {name:"Synthetic"}), "Profile actions: Synthetic")
+assert.strictEqual(I18n.translate("native.profile.actionsFor", "ru", {name:"Synthetic"}), "Действия с профилем: Synthetic")
+assert.strictEqual(I18n.translate("native.profile.chooseActions", "ru"), "Выберите профиль для действий")
 assert.strictEqual(
   I18n.translate("tooltip.import_file", "en"),
   "Import a profile or subscription link file (i)"
@@ -93,6 +111,13 @@ assert.strictEqual(
 )
 
 const providerText = "<b>provider-owned</b>"
+for (const locale of ["en", "ru"]) {
+  for (const key of ["native.profile.active", "native.profile.connected", "native.profile.selectActions", "native.profile.selectedOnly", "native.main.activeQr"]) {
+    const translated = I18n.translate(key, locale, {name: providerText})
+    assert(!translated.includes("Missing translation"))
+    if (key === "native.profile.active") assert(translated.includes(providerText))
+  }
+}
 const interpolated = I18n.translate("profile.showing", "ru", {name: providerText})
 assert.ok(interpolated.includes(providerText))
 assert.ok(!Object.prototype.hasOwnProperty.call(I18n.CATALOG, providerText))

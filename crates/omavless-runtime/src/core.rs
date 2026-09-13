@@ -304,6 +304,13 @@ mod tests {
     #[test]
     fn helper_resources_are_drained_even_after_leader_exit_or_term_spawn() {
         use nix::fcntl::{Flock, FlockArg};
+        // Execute the checked-in fixture, not an executable freshly written
+        // while parallel tests are spawning children. This avoids publication
+        // races without retrying production spawn or relaxing cleanup checks.
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tools/owned_core_helper_fixture.py")
+            .canonicalize()
+            .expect("checked-in helper fixture must exist");
         struct Unrelated(Child);
         impl Drop for Unrelated {
             fn drop(&mut self) {
@@ -326,13 +333,6 @@ mod tests {
         ] {
             let root = root("inherited-resource");
             let cleanup = Cleanup(root.clone());
-            let fixture = root.join("fake-core");
-            fs::write(
-                &fixture,
-                include_str!("../../../tools/owned_core_helper_fixture.py"),
-            )
-            .unwrap();
-            fs::set_permissions(&fixture, fs::Permissions::from_mode(0o700)).unwrap();
             let config = root.join("config.json");
             fs::write(&config, format!(r#"{{"spawn":"{spawn}","helper":"{helper}","detach":false,"exitAfterReady":{early}}}"#)).unwrap();
             let mut core =

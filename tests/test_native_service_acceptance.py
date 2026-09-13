@@ -175,9 +175,103 @@ class NativeServiceAcceptanceTests(unittest.TestCase):
 
     def test_real_fixture_refuses_non_global_before_reading_private_source(self):
         options = MagicMock(private_vless_store="/private/source", mode="rule")
-        with patch.object(PROBE, "load_private_vless") as load, self.assertRaisesRegex(PROBE.Failure, "^private_fixture_requires_full_vpn$"):
+        with patch.object(PROBE.auth, "HumanAuthorization"), patch.object(PROBE, "load_private_vless") as load, self.assertRaisesRegex(PROBE.Failure, "^private_fixture_requires_full_vpn$"):
             PROBE.acceptance(options)
         load.assert_not_called()
+
+    @staticmethod
+    def authorization(words):
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+        return PROBE.auth.HumanAuthorization(Terminal(words), Terminal())
+
+    def test_no_terminal_refuses_before_private_fixture_or_host_access(self):
+        options = MagicMock(private_vless_store="/private/source", mode="global")
+        guard = PROBE.auth.HumanAuthorization(io.StringIO(), io.StringIO())
+        with patch.object(PROBE.auth, "HumanAuthorization", return_value=guard), \
+                patch.object(PROBE, "load_private_vless") as load, \
+                patch.object(PROBE, "Path") as paths, \
+                patch.object(PROBE.subprocess, "run") as command, \
+                patch.object(PROBE.tempfile, "mkdtemp") as temporary, \
+                patch.object(PROBE, "processes") as processes, \
+                self.assertRaises(PROBE.auth.AuthorizationUnsettled):
+            PROBE.acceptance(options)
+        for callback in (load, paths, command, temporary, processes):
+            callback.assert_not_called()
+        self.assertTrue(guard.blocked)
+
+    def test_cleanup_already_blocked_never_attempts_any_host_effect(self):
+        guard = self.authorization("ready\nsettled\nready\nsettled\n")
+        guard.blocked = True
+        disconnect, stop, verify = MagicMock(), MagicMock(), MagicMock()
+        with self.assertRaises(PROBE.auth.AuthorizationUnsettled):
+            PROBE.cleanup_owned_fixture(guard, disconnect, stop, verify)
+        for callback in (disconnect, stop, verify):
+            callback.assert_not_called()
+
+    def test_cleanup_each_effect_requires_its_own_ready_and_settled(self):
+        words = ("ready", "settled", "ready", "settled")
+        for refusal in range(4):
+            replies = list(words)
+            replies[refusal] = "stop"
+            guard = self.authorization("\n".join(replies) + "\n")
+            disconnect, stop, verify = MagicMock(), MagicMock(), MagicMock()
+            with self.subTest(refusal=refusal), self.assertRaises(PROBE.auth.AuthorizationUnsettled):
+                PROBE.cleanup_owned_fixture(guard, disconnect, stop, verify)
+            self.assertEqual(disconnect.call_count, int(refusal >= 1))
+            self.assertEqual(stop.call_count, int(refusal >= 3))
+            verify.assert_not_called()
+            self.assertTrue(guard.blocked)
+
+    def test_cleanup_success_verifies_only_after_second_settled(self):
+        guard = self.authorization("ready\nsettled\nready\nsettled\n")
+        calls = []
+        def verify():
+            calls.append("verify")
+            self.assertFalse(guard.in_flight)
+            self.assertEqual(guard.input.read(), "")
+            return True
+        self.assertTrue(PROBE.cleanup_owned_fixture(
+            guard, lambda: calls.append("disconnect"), lambda: calls.append("stop"), verify))
+        self.assertEqual(calls, ["disconnect", "stop", "verify"])
+        self.assertEqual(guard.output.getvalue().count("Type ready"), 2)
+        self.assertEqual(guard.output.getvalue().count("Type settled"), 2)
+
+    def test_disconnect_exception_still_requires_settled_before_cleanup_stop(self):
+        for replies, stop_calls in (("ready\nstop\nready\nsettled\n", 0),
+                                   ("ready\nsettled\nstop\nsettled\n", 0),
+                                   ("ready\nsettled\nready\nsettled\n", 1)):
+            guard = self.authorization(replies)
+            disconnect = MagicMock(side_effect=subprocess.TimeoutExpired(["synthetic"], 120))
+            stop, verify = MagicMock(), MagicMock(return_value=True)
+            if stop_calls:
+                self.assertTrue(PROBE.cleanup_owned_fixture(guard, disconnect, stop, verify))
+                verify.assert_called_once_with()
+            else:
+                with self.assertRaises(PROBE.auth.AuthorizationUnsettled):
+                    PROBE.cleanup_owned_fixture(guard, disconnect, stop, verify)
+                verify.assert_not_called()
+            self.assertEqual(stop.call_count, stop_calls)
+
+    def test_failed_stop_or_verification_never_reports_clean(self):
+        for stop_error, verify_error in ((True, False), (False, True)):
+            guard = self.authorization("ready\nsettled\nready\nsettled\n")
+            stop = MagicMock(side_effect=RuntimeError if stop_error else None)
+            verify = MagicMock(side_effect=RuntimeError if verify_error else None)
+            self.assertFalse(PROBE.cleanup_owned_fixture(guard, MagicMock(), stop, verify))
+            self.assertEqual(verify.call_count, int(not stop_error))
+
+    def test_acceptance_source_guards_all_authorizing_transitions_and_retains_fixture(self):
+        source = Path(PROBE.__file__).read_text()
+        for phase in ("service_start", "connect", "disconnect", "service_stop"):
+            self.assertIn('authorization.step("' + phase + '"', source)
+            self.assertIn(phase, PROBE.auth.HumanAuthorization.PHASES)
+        self.assertLess(source.index("authorization.require_terminal()"),
+                        source.index("private_profile = load_private_vless"))
+        self.assertIn('classification="human_authorization_unsettled"', source)
+        self.assertIn("diagnostic_files_retained=True", source)
+        self.assertIn("manual_cleanup_required_inspect_host_before_any_further_transition", source)
 
     def test_bounded_reader_accepts_exact_limit_and_rejects_one_more(self):
         path = self.root / "bounded"

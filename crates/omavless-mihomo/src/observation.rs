@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeSet, VecDeque};
 use std::fs;
-use std::io::Read;
+use std::io::{self, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
@@ -27,8 +27,9 @@ fn fixed_process_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
 
-/// Unlike the tolerant display projection, every incomplete scan is an error.
-/// An empty result proves only this bounded observation, not atomic host state.
+/// Unlike the tolerant display projection, an unreadable/incomplete live task
+/// is an error. A task proven gone during inspection is not a live inventory
+/// member. An empty result proves this bounded observation, not atomic state.
 pub fn processes_named_strict(proc_root: &Path, name: &str) -> StrictResult<BTreeSet<u32>> {
     processes_named_strict_bounded(proc_root, name, 65_536, MAX_NAMED_PROCESSES)
 }
@@ -38,6 +39,48 @@ fn processes_named_strict_bounded(
     name: &str,
     entries_limit: usize,
     matches_limit: usize,
+) -> StrictResult<BTreeSet<u32>> {
+    processes_named_strict_scan(proc_root, name, entries_limit, matches_limit, |_, _| Ok(()))
+}
+
+// Private phase boundary for deterministic disappearance/error tests. There
+// is no caller-controlled hook, retry policy or path in the public API.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessScanPhase {
+    Directory,
+    CommMetadata,
+    Open,
+    OpenedMetadata,
+    Read,
+    AfterDirectory,
+    AfterComm,
+    RootRecheck,
+}
+
+fn task_step<T>(directory: &Path, result: io::Result<T>) -> StrictResult<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error)
+            if error.kind() == io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(nix::libc::ESRCH) =>
+        {
+            // Missing comm is NOT proof that its process disappeared. Require
+            // an independent lookup of the PID directory to prove ENOENT.
+            match fs::symlink_metadata(directory) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+                _ => Err(StrictObservationError),
+            }
+        }
+        Err(_) => Err(StrictObservationError),
+    }
+}
+
+fn processes_named_strict_scan(
+    proc_root: &Path,
+    name: &str,
+    entries_limit: usize,
+    matches_limit: usize,
+    mut phase: impl FnMut(ProcessScanPhase, &Path) -> io::Result<()>,
 ) -> StrictResult<BTreeSet<u32>> {
     if !fixed_process_name(name) {
         return Err(StrictObservationError);
@@ -66,36 +109,81 @@ fn processes_named_strict_bounded(
             return Err(StrictObservationError);
         }
         let directory = entry.path();
-        let before_dir = fs::symlink_metadata(&directory).map_err(|_| StrictObservationError)?;
+        let before_dir = match phase(ProcessScanPhase::Directory, &directory)
+            .and_then(|()| fs::symlink_metadata(&directory))
+        {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(_) => return Err(StrictObservationError),
+        };
         if !before_dir.is_dir() {
             return Err(StrictObservationError);
         }
         let path = directory.join("comm");
-        let before = fs::symlink_metadata(&path).map_err(|_| StrictObservationError)?;
+        let Some(before) = task_step(
+            &directory,
+            phase(ProcessScanPhase::CommMetadata, &directory)
+                .and_then(|()| fs::symlink_metadata(&path)),
+        )?
+        else {
+            continue;
+        };
         if !before.is_file() {
             return Err(StrictObservationError);
         }
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
-            .open(&path)
-            .map_err(|_| StrictObservationError)?;
-        let opened = file.metadata().map_err(|_| StrictObservationError)?;
+        let Some(file) = task_step(
+            &directory,
+            phase(ProcessScanPhase::Open, &directory).and_then(|()| {
+                fs::OpenOptions::new()
+                    .read(true)
+                    .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
+                    .open(&path)
+            }),
+        )?
+        else {
+            continue;
+        };
+        let Some(opened) = task_step(
+            &directory,
+            phase(ProcessScanPhase::OpenedMetadata, &directory).and_then(|()| file.metadata()),
+        )?
+        else {
+            continue;
+        };
         if !opened.is_file() || opened.dev() != before.dev() || opened.ino() != before.ino() {
             return Err(StrictObservationError);
         }
         let mut raw = Vec::new();
-        file.take(65)
-            .read_to_end(&mut raw)
-            .map_err(|_| StrictObservationError)?;
+        let Some(_) = task_step(
+            &directory,
+            phase(ProcessScanPhase::Read, &directory)
+                .and_then(|()| file.take(65).read_to_end(&mut raw)),
+        )?
+        else {
+            continue;
+        };
         if raw.len() > 64 || raw.contains(&0) {
             return Err(StrictObservationError);
         }
         // Linux comm is a byte string, not necessarily UTF-8 or nonempty.
         // Unrelated valid names must not make safe inventory unavailable.
         let comm = raw.strip_suffix(b"\n").ok_or(StrictObservationError)?;
-        let after_dir = fs::symlink_metadata(&directory).map_err(|_| StrictObservationError)?;
-        let after = fs::symlink_metadata(&path).map_err(|_| StrictObservationError)?;
+        let Some(after_dir) = task_step(
+            &directory,
+            phase(ProcessScanPhase::AfterDirectory, &directory)
+                .and_then(|()| fs::symlink_metadata(&directory)),
+        )?
+        else {
+            continue;
+        };
+        let Some(after) = task_step(
+            &directory,
+            phase(ProcessScanPhase::AfterComm, &directory)
+                .and_then(|()| fs::symlink_metadata(&path)),
+        )?
+        else {
+            continue;
+        };
         if !after_dir.is_dir()
             || after_dir.dev() != before_dir.dev()
             || after_dir.ino() != before_dir.ino()
@@ -111,6 +199,14 @@ fn processes_named_strict_bounded(
                 return Err(StrictObservationError);
             }
         }
+    }
+    // Disappearance of the inventory root must not masquerade as every task
+    // exiting. A replaced root likewise cannot supply an empty-host proof.
+    let after_root = phase(ProcessScanPhase::RootRecheck, proc_root)
+        .and_then(|()| fs::symlink_metadata(proc_root))
+        .map_err(|_| StrictObservationError)?;
+    if !after_root.is_dir() || after_root.dev() != root.dev() || after_root.ino() != root.ino() {
+        return Err(StrictObservationError);
     }
     Ok(found)
 }

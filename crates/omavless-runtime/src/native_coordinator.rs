@@ -12,9 +12,11 @@
 
 mod batch;
 mod onboarding;
+mod probe;
 mod provider;
 mod startup;
 pub use batch::{NativeBatchTicket, NativeSubscriptionBatch};
+pub use probe::{NativeSubscriptionProbe, ProbeCancellation};
 pub use provider::{NativeProviderRefresh, ProviderRefreshAdmission, ProviderRefreshSnapshot};
 
 use crate::connection_transaction::{
@@ -215,6 +217,7 @@ pub enum NativeOwnerExecution {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeOwnerError {
+    Probe(StableErrorCode),
     Provider(crate::provider_refresh::ProviderRefreshError),
     Protocol(MutationProtocolError),
     LongOperation(crate::long_operation::LongOperationError),
@@ -231,6 +234,7 @@ impl NativeOwnerError {
     #[must_use]
     pub const fn stable_code(self) -> StableErrorCode {
         match self {
+            Self::Probe(code) => code,
             Self::Provider(error) => match error {
                 crate::provider_refresh::ProviderRefreshError::Unavailable
                 | crate::provider_refresh::ProviderRefreshError::NoRemoteProviders => {
@@ -257,6 +261,7 @@ impl NativeOwnerError {
 impl fmt::Display for NativeOwnerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::Probe(_) => "Native subscription probe failed",
             Self::Provider(_) => "Native rule provider refresh failed",
             Self::Protocol(_) => "Native mutation request is invalid",
             Self::LongOperation(_) => "Native batch operation failed",
@@ -365,6 +370,8 @@ pub struct OfflineNativeCoordinator<H> {
     transaction: ConnectionTransactionState<H>,
     required_ownership: Option<OwnershipFence>,
     batch: Option<batch::BatchOwnerState>,
+    probe_results: std::collections::VecDeque<probe::RetainedProbeResults>,
+    auxiliary_recovery_required: bool,
 }
 
 impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
@@ -387,6 +394,8 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
             ),
             required_ownership: None,
             batch: None,
+            probe_results: std::collections::VecDeque::new(),
+            auxiliary_recovery_required: false,
         }
     }
 
@@ -440,7 +449,11 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
 
     #[must_use]
     pub const fn actual(&self) -> ActualState {
-        self.transaction.actual()
+        if self.auxiliary_recovery_required {
+            ActualState::ManualRecoveryRequired
+        } else {
+            self.transaction.actual()
+        }
     }
 
     pub(crate) fn desired(
@@ -725,6 +738,83 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
         })
     }
 
+    pub(crate) fn traffic(&mut self, request: &Value) -> Result<Value, NativeOwnerError> {
+        crate::traffic::validate(request)?;
+        self.with_owned_read(|owner| {
+            let desired = crate::desired::read_desired_snapshot(
+                owner.transaction.desired_paths(),
+                owner.transaction.uid(),
+            )
+            .map_err(|_| NativeOwnerError::Invariant)?;
+            let sample = if desired.connected
+                && owner.actual() == crate::lifecycle::ActualState::Connected
+            {
+                owner.host_mut().traffic_counters(&desired).ok()
+            } else {
+                None
+            };
+            let after = crate::desired::read_desired_snapshot(
+                owner.transaction.desired_paths(),
+                owner.transaction.uid(),
+            )
+            .map_err(|_| NativeOwnerError::Invariant)?;
+            if desired != after {
+                return Err(NativeOwnerError::OwnershipUnavailable);
+            }
+            Ok(crate::traffic::project(sample))
+        })
+    }
+
+    pub(crate) fn ping_plan(
+        &mut self,
+        request: &Value,
+        deadline: std::time::Instant,
+    ) -> Result<crate::tun_ping::Context, NativeOwnerError> {
+        crate::tun_ping::host(request)?;
+        self.with_owned_read(|owner| {
+            use sha2::{Digest, Sha256};
+            if owner.transaction.blocked() || owner.actual() == ActualState::ManualRecoveryRequired
+            {
+                return Err(NativeOwnerError::ManualRecoveryRequired);
+            }
+            let desired = owner.desired().map_err(|_| NativeOwnerError::Invariant)?;
+            if !desired.connected || owner.actual() != ActualState::Connected {
+                return Err(NativeOwnerError::OwnershipUnavailable);
+            }
+            crate::private_store_transaction::validate_store_path(
+                owner.transaction.store_path(),
+                owner.transaction.uid(),
+            )
+            .map_err(|_| NativeOwnerError::Invariant)?;
+            let input = omavless_store::read_private_utf8(
+                owner.transaction.store_path(),
+                owner.transaction.uid(),
+            )
+            .map_err(|_| NativeOwnerError::Invariant)?;
+            omavless_domain::private_store::parse_private_store(&input)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let store_digest = Sha256::digest(input.as_bytes()).into();
+            let (pid, config_digest) = owner
+                .host_mut()
+                .route_core_identity()
+                .ok_or(NativeOwnerError::OwnershipUnavailable)?;
+            let binding = owner
+                .host_mut()
+                .ping_binding(&desired, deadline)
+                .map_err(|_| NativeOwnerError::OwnershipUnavailable)?;
+            if owner.desired().map_err(|_| NativeOwnerError::Invariant)? != desired {
+                return Err(NativeOwnerError::OwnershipUnavailable);
+            }
+            Ok(crate::tun_ping::Context {
+                binding,
+                desired,
+                store_digest,
+                config_digest,
+                pid,
+            })
+        })
+    }
+
     pub(crate) fn custom_rules(
         &mut self,
         request: &Value,
@@ -735,13 +825,42 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
 
     pub(crate) fn support_report(&mut self, request: &Value) -> Result<Value, NativeOwnerError> {
         crate::support_diagnostics::validate(request)?;
-        let actual = self.actual();
-        let desired_paths = self.transaction.desired_paths().clone();
-        self.with_owned_private_store(|store| {
-            Ok(crate::support_diagnostics::report(
-                store.support_projection(),
-                actual,
-                crate::routing_preset::pending(&desired_paths),
+        self.with_owned_read(|owner| {
+            let uid = owner.transaction.uid();
+            let store_path = owner.transaction.store_path().to_owned();
+            let desired_paths = owner.transaction.desired_paths().clone();
+            crate::private_store_transaction::validate_store_path(&store_path, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let input = omavless_store::read_private_utf8(&store_path, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let store = omavless_domain::private_store::parse_private_store(&input)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let desired = crate::desired::read_desired_snapshot(&desired_paths, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?;
+            let pending = crate::routing_preset::pending(&desired_paths);
+            let observation = owner.host_mut().fresh_observation(&desired).ok();
+            let host = owner.host_mut().support_facts(desired.connected);
+            // Preserve one coherent sample even if a non-cooperating writer
+            // changes private input during the bounded host read.
+            if crate::desired::read_desired_snapshot(&desired_paths, uid)
+                .map_err(|_| NativeOwnerError::Invariant)?
+                != desired
+                || omavless_store::read_private_utf8(&store_path, uid)
+                    .map_err(|_| NativeOwnerError::Invariant)?
+                    != input
+                || crate::routing_preset::pending(&desired_paths) != pending
+            {
+                return Err(NativeOwnerError::OwnershipUnavailable);
+            }
+            Ok(crate::support_diagnostics::with_host(
+                crate::support_diagnostics::report(
+                    store.support_projection(),
+                    &desired,
+                    owner.actual(),
+                    pending,
+                    observation,
+                ),
+                host,
             ))
         })
     }
@@ -899,6 +1018,21 @@ impl<H: LifecycleHost> OfflineNativeCoordinator<H> {
                     PrivateStoreError::SubscribedProfile => {
                         MutationProtocolError::InvalidArgument.into()
                     }
+                    _ => NativeOwnerError::Invariant,
+                })
+        })
+    }
+
+    pub(crate) fn profile_details(
+        &mut self,
+        request: &Value,
+    ) -> Result<omavless_domain::private_store::PrivateProfileDetails, NativeOwnerError> {
+        let parsed = crate::profile_read_protocol::parse_profile_details_request(request)?;
+        self.with_owned_private_store(|store| {
+            store
+                .profile_details(parsed.private_profile_id())
+                .map_err(|error| match error {
+                    PrivateStoreError::ProfileNotFound => NativeOwnerError::RecordNotFound,
                     _ => NativeOwnerError::Invariant,
                 })
         })
@@ -1787,9 +1921,20 @@ mod tests {
         fail_stop: bool,
         fail_starts: usize,
         calls: usize,
+        support_observation: Option<crate::lifecycle::NativeLocalObservation>,
+        support_read_change: Option<(PathBuf, Vec<u8>)>,
     }
 
     impl LifecycleHost for FakeHost {
+        fn fresh_observation(
+            &mut self,
+            _desired: &DesiredState,
+        ) -> Result<crate::lifecycle::NativeLocalObservation, HostStepError> {
+            if let Some((path, bytes)) = self.support_read_change.take() {
+                fs::write(path, bytes).unwrap();
+            }
+            self.support_observation.ok_or(HostStepError::Observation)
+        }
         fn validate_startup(&mut self, _desired: &DesiredState) -> Result<(), HostStepError> {
             if self.fail_stop {
                 Err(HostStepError::Prepare)
@@ -1896,6 +2041,8 @@ mod tests {
                 fail_stop: false,
                 fail_starts: 0,
                 calls: 0,
+                support_observation: None,
+                support_read_change: None,
             },
             desired_paths,
             &store_path,
@@ -1903,6 +2050,110 @@ mod tests {
             uid,
         );
         (root, store_path, owner)
+    }
+
+    fn support_fixture(label: &str) -> (PathBuf, PathBuf, OfflineNativeCoordinator<FakeHost>) {
+        let (root, store, mut owner) = fixture(label);
+        let paths = owner.transaction.cutover_paths();
+        fs::create_dir_all(&paths.state_directory).unwrap();
+        fs::set_permissions(&paths.state_directory, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(
+            &paths.ownership_marker,
+            br#"{"schemaVersion":1,"generation":2,"phase":"rust"}"#,
+        )
+        .unwrap();
+        fs::set_permissions(&paths.ownership_marker, fs::Permissions::from_mode(0o600)).unwrap();
+        owner.required_ownership = Some(OwnershipFence {
+            phase: OwnershipPhase::Rust,
+            generation: 2,
+        });
+        (root, store, owner)
+    }
+
+    #[test]
+    fn support_report_unavailable_is_null_and_does_not_write_or_change_revision() {
+        let (root, store, mut owner) = support_fixture("support-unavailable");
+        let before = fs::read(&store).unwrap();
+        let report = owner
+            .support_report(&profile_request("diagnostics.export", json!({})))
+            .unwrap();
+        assert_eq!(report["schemaVersion"], 3);
+        assert_eq!(report["localObservation"]["availability"], "unavailable");
+        assert!(report["localObservation"]["facts"].is_null());
+        assert_eq!(report["coverage"]["liveHostObservation"], false);
+        assert_eq!(owner.host().calls, 0);
+        assert_eq!(owner.revision(), 0);
+        assert!(fs::read(&store).unwrap() == before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn support_report_composes_fresh_disconnected_counts_without_health_promotion() {
+        let (root, store, mut owner) = support_fixture("support-observed");
+        let before = fs::read(&store).unwrap();
+        owner.host_mut().support_observation = Some(crate::lifecycle::NativeLocalObservation {
+            owned_core_running: false,
+            visible_mihomo_count: 1,
+            owned_auxiliary_mihomo_count: 0,
+            visible_tun_count: 1,
+            owned_controller_config_verified: false,
+            desired_profile_matches_owned: false,
+        });
+        let report = owner
+            .support_report(&profile_request("diagnostics.export", json!({})))
+            .unwrap();
+        assert_eq!(report["localObservation"]["availability"], "observed");
+        assert_eq!(report["localObservation"]["facts"]["visibleMihomoCount"], 1);
+        assert_eq!(
+            report["localObservation"]["facts"]["ownedCoreRunning"],
+            false
+        );
+        assert_eq!(report["runtime"]["lastKnownState"], "disconnected");
+        assert_eq!(report["coverage"]["controllerQuery"], false);
+        assert_eq!(owner.revision(), 0);
+        assert_eq!(owner.host().calls, 0);
+        assert!(fs::read(&store).unwrap() == before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn support_report_refuses_changed_store_desired_and_ownership_after_observation() {
+        for kind in ["store", "desired", "ownership"] {
+            let (root, store, mut owner) = support_fixture(kind);
+            let (path, bytes) = match kind {
+                "store" => {
+                    let mut value: Value =
+                        serde_json::from_slice(&fs::read(&store).unwrap()).unwrap();
+                    value["onboardingComplete"] = json!(false);
+                    (store, serde_json::to_vec(&value).unwrap())
+                }
+                "desired" => {
+                    let desired_paths = owner.transaction.desired_paths();
+                    let mut desired = crate::desired::read_desired_snapshot(
+                        desired_paths,
+                        owner.transaction.uid(),
+                    )
+                    .unwrap();
+                    desired.mode = RoutingMode::Direct;
+                    (
+                        desired_paths.file.clone(),
+                        serde_json::to_vec(&desired).unwrap(),
+                    )
+                }
+                _ => (
+                    owner.transaction.cutover_paths().ownership_marker.clone(),
+                    br#"{"schemaVersion":1,"generation":3,"phase":"rollbackPreparing"}"#.to_vec(),
+                ),
+            };
+            owner.host_mut().support_read_change = Some((path, bytes));
+            assert!(matches!(
+                owner.support_report(&profile_request("diagnostics.export", json!({}))),
+                Err(NativeOwnerError::OwnershipUnavailable)
+            ));
+            assert_eq!(owner.revision(), 0);
+            assert_eq!(owner.host().calls, 0);
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]
@@ -2652,6 +2903,281 @@ mod tests {
     fn batch_request(method: &str, operation: &str) -> Value {
         json!({"api": "omavless.control", "version": 1, "id": "batch-test", "method": method,
             "params": {"instanceId": "owner-instance", "operationId": operation}})
+    }
+
+    fn probe_owner_fixture(label: &str) -> (PathBuf, PathBuf, OfflineNativeCoordinator<FakeHost>) {
+        let (root, path, owner) = batch_fixture(label);
+        let template = path.parent().unwrap().join("route-template.yaml");
+        fs::write(
+            &template,
+            b"dns:\n  nameserver: [https://dns.example/dns-query]\n",
+        )
+        .unwrap();
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o600)).unwrap();
+        (root, path, owner)
+    }
+
+    fn probe_request(operation: &str) -> Value {
+        let mut request = batch_request("subscriptions.probe", operation);
+        request["params"]["subscriptionId"] = json!(SUBSCRIPTION);
+        request
+    }
+
+    fn probe_rows() -> Vec<omavless_mihomo::probe_plan::ProbeResult> {
+        vec![omavless_mihomo::probe_plan::ProbeResult {
+            resolved: true,
+            reachable: true,
+            latency_ms: 12,
+        }]
+    }
+
+    #[test]
+    fn probe_owner_success_is_volatile_and_exact_retry_has_no_work() {
+        let (root, path, mut owner) = probe_owner_fixture("probe-success");
+        let bytes = fs::read(&path).unwrap();
+        let revision = owner.revision();
+        let job = owner
+            .start_subscription_probe(&probe_request("probe"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.profiles().len(), 1);
+        assert!(owner.mutation_operation_known(&probe_request("probe")));
+        assert!(owner.mutation_operation_known(&probe_request("ordinary-add")));
+        assert!(!owner.mutation_operation_known(&probe_request("unseen")));
+        assert_eq!(job.profiles()[0].0, SUBSCRIPTION_PROFILE);
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .is_none()
+        );
+        owner.publish_subscription_probe_progress(&job, 1).unwrap();
+        owner
+            .complete_subscription_probe(job, Ok(probe_rows()))
+            .unwrap();
+        let result = owner
+            .subscription_probe_results(&batch_request("subscriptions.probe_results", "probe"))
+            .unwrap();
+        assert_eq!(result["version"], 1);
+        assert_eq!(result["results"][0]["latencyMs"], 12);
+        assert!(!result.to_string().contains("192.0.2"));
+        assert!(!result.to_string().contains("Managed"));
+        assert!(!result.to_string().contains("private-token"));
+        assert_eq!(owner.revision(), revision);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .is_none()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn probe_owner_cancel_failure_and_bad_rows_never_publish() {
+        for kind in ["cancel", "failure", "bad-rows"] {
+            let (root, path, mut owner) = probe_owner_fixture(kind);
+            let bytes = fs::read(&path).unwrap();
+            let revision = owner.revision();
+            let job = owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .unwrap();
+            let flag = job.cancellation();
+            if kind == "cancel" {
+                owner
+                    .cancel_subscription_batch(&batch_request("operations.cancel", "probe"))
+                    .unwrap();
+                assert!(flag.requested());
+            }
+            let result = if kind == "bad-rows" {
+                Ok(Vec::new())
+            } else {
+                Err(StableErrorCode::CoreRejected)
+            };
+            assert!(owner.complete_subscription_probe(job, result).is_err());
+            assert!(
+                owner
+                    .subscription_probe_results(&batch_request(
+                        "subscriptions.probe_results",
+                        "probe"
+                    ))
+                    .is_err()
+            );
+            assert_eq!(
+                batch_status(&owner, "probe")["state"],
+                if kind == "cancel" {
+                    "cancelled"
+                } else {
+                    "failed"
+                }
+            );
+            assert_eq!(owner.revision(), revision);
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn probe_owner_store_template_revision_and_shutdown_fence_results() {
+        for kind in [
+            "store",
+            "template",
+            "active-config",
+            "revision",
+            "desired",
+            "shutdown",
+        ] {
+            let (root, path, mut owner) = probe_owner_fixture(kind);
+            let job = owner
+                .start_subscription_probe(&probe_request("probe"))
+                .unwrap()
+                .unwrap();
+            match kind {
+                "store" => {
+                    let mut bytes = fs::read(&path).unwrap();
+                    bytes.push(b' ');
+                    fs::write(&path, bytes).unwrap();
+                }
+                "template" => {
+                    fs::write(
+                        path.parent().unwrap().join("route-template.yaml"),
+                        b"dns: {}\n",
+                    )
+                    .unwrap();
+                }
+                "active-config" => {
+                    let config = path.parent().unwrap().join("config.yaml");
+                    fs::write(&config, b"mode: global\n").unwrap();
+                    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+                }
+                "revision" => {
+                    owner.execute_profile(&json!({"api":"omavless.control","version":1,"id":"test","method":"profiles.favorite","params":{"operationId":"favorite","profileId":PROFILE,"enabled":true}})).unwrap();
+                }
+                "desired" => {
+                    let mut desired = owner.transaction.desired().unwrap();
+                    desired.generation += 1;
+                    write_desired(
+                        owner.transaction.desired_paths(),
+                        owner.transaction.uid(),
+                        &desired,
+                    )
+                    .unwrap();
+                }
+                _ => owner.stop_batch_operations().unwrap(),
+            }
+            assert!(
+                owner
+                    .complete_subscription_probe(job, Ok(probe_rows()))
+                    .is_err()
+            );
+            assert!(
+                owner
+                    .subscription_probe_results(&batch_request(
+                        "subscriptions.probe_results",
+                        "probe"
+                    ))
+                    .is_err()
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn probe_owner_namespace_stale_results_and_cleanup_failure_are_fenced() {
+        let (root, path, mut owner) = probe_owner_fixture("probe-namespace");
+        let job = owner
+            .start_subscription_probe(&probe_request("probe"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            owner
+                .start_subscription_batch(&batch_request("subscriptions.refresh_all", "probe"))
+                .is_err()
+        );
+        assert!(
+            owner
+                .start_subscription_batch(&batch_request("subscriptions.refresh_all", "different"))
+                .is_err()
+        );
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("ordinary-add"))
+                .is_err()
+        );
+        owner
+            .complete_subscription_probe(job, Ok(probe_rows()))
+            .unwrap();
+        let mut changed = fs::read(&path).unwrap();
+        changed.push(b' ');
+        fs::write(&path, changed).unwrap();
+        assert!(
+            owner
+                .subscription_probe_results(&batch_request("subscriptions.probe_results", "probe"))
+                .is_err()
+        );
+        let job = owner
+            .start_subscription_probe(&probe_request("cleanup-failure"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            owner
+                .complete_subscription_probe(job, Err(StableErrorCode::ManualRecoveryRequired))
+                .is_err()
+        );
+        assert_eq!(owner.actual(), ActualState::ManualRecoveryRequired);
+        assert_eq!(
+            batch_status(&owner, "cleanup-failure")["error"]["code"],
+            "manual_recovery_required"
+        );
+        assert!(
+            owner
+                .start_subscription_probe(&probe_request("blocked"))
+                .is_err()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn probe_owner_cache_is_bounded_and_abort_allows_successor() {
+        let (root, _, mut owner) = probe_owner_fixture("probe-cache");
+        let job = owner
+            .start_subscription_probe(&probe_request("aborted"))
+            .unwrap()
+            .unwrap();
+        let ticket = job.supervisor_ticket();
+        let cancel = job.cancellation();
+        drop(job);
+        owner.abort_subscription_batch(ticket).unwrap();
+        assert!(cancel.requested());
+        for index in 0..17 {
+            let job = owner
+                .start_subscription_probe(&probe_request(&format!("probe-{index}")))
+                .unwrap()
+                .unwrap();
+            owner
+                .complete_subscription_probe(job, Ok(probe_rows()))
+                .unwrap();
+        }
+        assert_eq!(owner.probe_results.len(), 16);
+        assert!(
+            owner
+                .subscription_probe_results(&batch_request(
+                    "subscriptions.probe_results",
+                    "probe-0"
+                ))
+                .is_err()
+        );
+        assert!(
+            owner
+                .subscription_probe_results(&batch_request(
+                    "subscriptions.probe_results",
+                    "probe-16"
+                ))
+                .is_ok()
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn batch_fixture(label: &str) -> (PathBuf, PathBuf, OfflineNativeCoordinator<FakeHost>) {

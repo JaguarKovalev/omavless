@@ -58,6 +58,17 @@ test('visible inventories never imply named-core or TUN ownership', () => {
   p.result.facts.desiredProfileMatchesOwned=false;p.result.facts.visibleMihomoCount=3;p.result.facts.visibleTunCount=2;
   assert(parseObservation(p)); // Unrelated visible processes/interfaces are not ours.
 });
+test('optional attributed auxiliary count is bounded and never hides visible processes', () => {
+  const p=observation();
+  p.result.facts.visibleMihomoCount=2; p.result.facts.ownedAuxiliaryMihomoCount=1;
+  const r=parseObservation(p); assert(r); assert.equal(r.facts.visibleMihomoCount,2);
+  assert.equal(r.facts.ownedAuxiliaryMihomoCount,1);
+  for(const invalid of [-1,2,0.5,'1',null]) {
+    p.result.facts.ownedAuxiliaryMihomoCount=invalid; assert.equal(parseObservation(p),null);
+  }
+  p.result.facts.ownedAuxiliaryMihomoCount=1; p.result.facts.visibleMihomoCount=0;
+  assert.equal(parseObservation(p),null);
+});
 test('metadata/observation join requires exact instance revision intent and generation', () => {
   const r=parseObservation(observation());
   const snapshot={instanceId:r.instanceId,revision:r.revision,lastKnownActual:r.lastKnownActual,desired:{...r.desired,profileId:'synthetic-profile'}};
@@ -113,7 +124,7 @@ function serviceHarness() {
         {id:'profile-managed',missing:false,subscriptionId:'subscription-one',favorite:false}]},
     nativeObservation:{instanceId:'instance-one',revision:4,desired:{connected:false,mode:'rule',generation:3},
       availability:'observed',lastKnownActual:'disconnected',manualRecoveryRequired:false},nativePending:null,nativeOutcomeUnknown:false,
-    nativeActionCode:'',_nativeOperationSerial:0,backendPath:'/synthetic/backend.sh',
+    nativeActionCode:'',nativeQuitting:false,_nativeOperationSerial:0,backendPath:'/synthetic/backend.sh',
     nativeActionProcess:{command:[],running:false},profiles:[{id:'legacy-profile',active:false}]});
   for(const name of ['nativeActionRunning','nativeFactsCurrent','nativeCanAct']) {
     const match=source.match(new RegExp('readonly property bool '+name+': ([\\s\\S]*?)(?=\\n  (?:readonly )?property|\\n  function)'));

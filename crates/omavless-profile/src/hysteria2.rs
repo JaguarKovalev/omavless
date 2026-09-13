@@ -334,6 +334,9 @@ pub fn parse_hysteria2(input: &str) -> Result<Hysteria2Profile, Hysteria2Error> 
 }
 
 impl Hysteria2Profile {
+    pub(crate) fn private_endpoint(&self) -> &str {
+        &self.server
+    }
     #[must_use]
     pub fn facts(&self) -> Hysteria2Facts {
         Hysteria2Facts {

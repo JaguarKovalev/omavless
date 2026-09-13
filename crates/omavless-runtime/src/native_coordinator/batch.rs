@@ -35,12 +35,14 @@ pub(super) struct BatchOwnerState {
 pub(super) enum ActiveCancellation {
     Subscription(BatchCancellation),
     Provider(crate::provider_refresh::ProviderRefreshCancellation),
+    Probe(super::probe::ProbeCancellation),
 }
 impl ActiveCancellation {
     pub(super) fn request(&self) {
         match self {
             Self::Subscription(flag) => flag.request(),
             Self::Provider(flag) => flag.request(),
+            Self::Probe(flag) => flag.request(),
         }
     }
 }

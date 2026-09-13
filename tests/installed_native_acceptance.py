@@ -21,6 +21,9 @@ import uuid
 _spec = importlib.util.spec_from_file_location("native_gate", Path(__file__).with_name("native_service_acceptance.py"))
 gate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gate)
+_auth_spec = importlib.util.spec_from_file_location("human_authorization", Path(__file__).with_name("human_authorization.py"))
+auth = importlib.util.module_from_spec(_auth_spec)
+_auth_spec.loader.exec_module(auth)
 BINARY = "/usr/bin/omavless"
 UNIT = "omavless-runtime.service"
 LEGACY = "omavless.service"
@@ -32,6 +35,20 @@ def valid_environment(environment, home, runtime):
             and environment.get("XDG_RUNTIME_DIR", str(runtime)) == str(runtime)
             and environment.get("XDG_STATE_HOME", str(home / ".local/state")) == str(home / ".local/state")
             and environment.get("XDG_CONFIG_HOME", str(home / ".config")) == str(home / ".config"))
+
+
+def clean_disconnected_observation(observed):
+    """Empty process inventory alone must never conceal sticky recovery state."""
+    if not isinstance(observed, dict):
+        return False
+    facts, desired = observed.get("facts"), observed.get("desired")
+    return (observed.get("availability") == "observed"
+            and observed.get("lastKnownActual") == "disconnected"
+            and observed.get("manualRecoveryRequired") is False
+            and isinstance(desired, dict) and desired.get("connected") is False
+            and isinstance(facts, dict) and facts.get("ownedCoreRunning") is False
+            and all(type(facts.get(field)) is int and facts[field] == 0 for field in
+                    ("visibleMihomoCount", "visibleTunCount", "ownedAuxiliaryMihomoCount")))
 
 
 def template_policy(config):
@@ -159,7 +176,25 @@ def counters(tun):
     return tuple(values)
 
 
-def run_gate():
+class MaskedAuthorization(auth.HumanAuthorization):
+    """The normal human barrier remains authoritative under test isolation."""
+    def __init__(self, mask, **kwargs):
+        super().__init__(**kwargs)
+        self.mask = mask
+
+    def step(self, phase, effect):
+        def guarded_effect():
+            # The human may have waited longer than the restore watchdog.
+            self.mask.require_active()
+            return effect()
+        result = super().step(phase, guarded_effect)
+        self.mask.require_active()
+        return result
+
+
+def run_gate(authorization=None):
+    authorization = authorization or auth.HumanAuthorization()
+    authorization.require_terminal()  # refuse headless batches before host access
     binary = Path(BINARY).lstat()
     gate.require(stat.S_ISREG(binary.st_mode) and binary.st_uid == 0 and not binary.st_mode & 0o022, "installed_binary_unsafe")
     home = Path.home()
@@ -171,8 +206,7 @@ def run_gate():
     gate.require(not state["desired"]["connected"] and state["lastKnownActual"] == "disconnected" and not tuns()
                  and not any(name == b"mihomo" for name in gate.processes().values()), "baseline_not_disconnected")
     initial = cli("runtime", "observation")["result"]
-    gate.require(initial["availability"] == "observed" and initial["facts"]["visibleMihomoCount"] == 0
-                 and initial["facts"]["visibleTunCount"] == 0 and not initial["facts"]["ownedCoreRunning"], "baseline_not_disconnected")
+    gate.require(clean_disconnected_observation(initial), "baseline_not_disconnected")
     profile = next((p for p in state["profiles"] if p["id"] == state["lastProfileId"] and p["protocol"] == "vless" and not p["missing"]), None)
     gate.require(profile is not None, "fixture_unavailable")
     mixed_port = template_policy(gate.bounded(home / ".config/omavless/route-template.yaml", 5242880))
@@ -188,9 +222,15 @@ def run_gate():
                  and not os.path.lexists(runtime / "omavless/mihomo.sock"), "service_baseline")
     passed = False
     try:
-        start = time.monotonic()
-        action("connect", profile["id"], "global")
-        elapsed = round((time.monotonic() - start) * 1000)
+        elapsed = 0
+        def connect_once():
+            nonlocal elapsed
+            start = time.monotonic()
+            try:
+                return action("connect", profile["id"], "global")
+            finally:
+                elapsed = round((time.monotonic() - start) * 1000)
+        authorization.step("connect", connect_once)
         observed = cli("runtime", "observation")["result"]
         gate.require(observed["lastKnownActual"] == "connected" and observed["facts"]["ownedControllerConfigVerified"], "controller_config")
         cores = {p for p, name in gate.processes().items() if name == b"mihomo"}
@@ -208,7 +248,8 @@ def run_gate():
         rows = listener_rows(gate.bounded(Path("/proc/net/tcp"), LIMIT), gate.bounded(Path("/proc/net/tcp6"), LIMIT))
         gate.emit(authorization_required="read_only_socket_pid_attribution")
         # Explicit opt-in above; no deadline on ordinary human polkit dialogs.
-        proof = command(["/usr/bin/pkexec", "/usr/bin/ss", "-H", "-ltnpe"], timeout=None)
+        proof = authorization.step("socket_inspection", lambda: command(
+            ["/usr/bin/pkexec", "/usr/bin/ss", "-H", "-ltnpe"], timeout=None))
         classify_listeners(baseline, rows, mixed_port, addresses, proof, core)
         before = counters(tun)
         result = subprocess.run(probe_args(tun), capture_output=True, timeout=25)
@@ -219,15 +260,19 @@ def run_gate():
         gate.require(probe and used, "https_probe_failed")
         passed = True
     finally:
-        action("disconnect")
+        if authorization.blocked:
+            gate.emit(passed=False, cleanup=False, reason="human_authorization_unsettled",
+                      recovery="inspect_host_before_any_further_transition")
+            raise auth.AuthorizationUnsettled()
+        authorization.step("disconnect", lambda: action("disconnect"))
         observed = cli("runtime", "observation")["result"]
-        gate.require(observed["lastKnownActual"] == "disconnected" and not tuns()
+        gate.require(clean_disconnected_observation(observed) and not tuns()
                      and not any(name == b"mihomo" for name in gate.processes().values())
                      and set(map(int, gate.bounded(cgroup / "cgroup.procs").split())) == {pid}
                      and unit(LEGACY, "ActiveState") == "inactive" and unit(LEGACY, "MainPID") == "0"
                      and not os.path.lexists(runtime / "omavless/mihomo.sock"), "manual_recovery_required")
         if cli("plugin", "snapshot")["result"]["desired"]["mode"] != original_mode:
-            action("mode", original_mode)
+            authorization.step("restore_mode", lambda: action("mode", original_mode))
         restored = cli("plugin", "snapshot")["result"]["desired"]
         gate.require(not restored["connected"] and restored["mode"] == original_mode, "manual_recovery_required")
         gate.emit(disconnect=True, cleanup=True, mode_restored=True, passed=passed)
@@ -237,17 +282,37 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--authorize-socket-inspection", action="store_true")
+    parser.add_argument("--python-unavailable", action="store_true",
+                        help="TEST ONLY: temporarily deny system Python execution across this VM")
+    parser.add_argument("--authorize-vmwide-python-mask", action="store_true")
     args = parser.parse_args(argv)
     if not args.run or not args.authorize_socket_inspection:
         gate.emit(status="NOT RUN", reason="explicit_run_and_socket_inspection_authorization_required")
         return 0
+    if args.python_unavailable != args.authorize_vmwide_python_mask:
+        gate.emit(status="NOT RUN", reason="both_python_mask_optins_required")
+        return 0
     try:
-        run_gate()
+        if args.python_unavailable:
+            # Load all Python observer code before restricting new executions.
+            spec = importlib.util.spec_from_file_location(
+                "installed_python_mask", Path(__file__).with_name("installed_python_mask.py"))
+            mask_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mask_module)
+            with mask_module.InstalledPythonMask(authorize_vmwide=True) as mask:
+                run_gate(MaskedAuthorization(mask))
+                mask.require_active()
+            # Never publish a successful mask gate before restoration is proved.
+            gate.emit(python_unavailable=True, interpreter_restored=True, passed=True)
+        else:
+            run_gate()
         return 0
     except Exception as error:
         allowed = {"fixture_unavailable", "unexpected_tcp_listener", "proxy_listener_count", "tcp_attribution_failed",
                    "tcp_attribution_unavailable", "https_probe_failed", "manual_recovery_required", "baseline_not_disconnected"}
-        code = str(error) if isinstance(error, gate.Failure) and str(error) in allowed else "installed_gate_failed_check_safe_state"
+        code = ("human_authorization_unsettled" if isinstance(error, auth.AuthorizationUnsettled)
+                else str(error) if isinstance(error, gate.Failure) and str(error) in allowed
+                else "installed_gate_failed_check_safe_state")
         gate.emit(passed=False, classification="FIXTURE UNAVAILABLE" if code == "fixture_unavailable" else code)
         return 1
 

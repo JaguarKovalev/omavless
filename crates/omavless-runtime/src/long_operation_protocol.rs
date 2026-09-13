@@ -20,6 +20,7 @@ pub const MAX_INSTANCE_ID_BYTES: usize = 128;
 pub enum LongOperationMethod {
     SubscriptionRefreshAll,
     RuleProviderRefresh,
+    SubscriptionProbe,
 }
 impl LongOperationMethod {
     #[must_use]
@@ -27,6 +28,7 @@ impl LongOperationMethod {
         match self {
             Self::SubscriptionRefreshAll => "subscriptions.refresh_all",
             Self::RuleProviderRefresh => "routing.refresh_providers",
+            Self::SubscriptionProbe => "subscriptions.probe",
         }
     }
     #[must_use]
@@ -34,6 +36,7 @@ impl LongOperationMethod {
         match self {
             Self::SubscriptionRefreshAll => MAX_REFRESH_ALL_SUBSCRIPTIONS,
             Self::RuleProviderRefresh => omavless_mihomo::rule_provider::MAX_RULE_PROVIDERS,
+            Self::SubscriptionProbe => 256,
         }
     }
 }
@@ -86,6 +89,69 @@ pub struct RefreshAllStartRequest {
     operation_id: String,
     expected_revision: Option<u64>,
     digest: MutationDigest,
+}
+
+/// Private selected-subscription intent; no credentials or scheduling input.
+pub struct SubscriptionProbeStartRequest {
+    pub(crate) metadata: RefreshAllStartRequest,
+    pub(crate) subscription_id: String,
+}
+
+pub fn parse_subscription_probe_start(
+    request: &Value,
+) -> Result<SubscriptionProbeStartRequest, MutationProtocolError> {
+    validate_request(request).map_err(|_| MutationProtocolError::InvalidRequest)?;
+    if request["method"] != "subscriptions.probe" {
+        return Err(MutationProtocolError::UnknownMethod);
+    }
+    let params = request["params"]
+        .as_object()
+        .ok_or(MutationProtocolError::InvalidArgument)?;
+    if !exact_fields(
+        params,
+        &[
+            "instanceId",
+            "operationId",
+            "expectedRevision",
+            "subscriptionId",
+        ],
+        &["instanceId", "operationId", "subscriptionId"],
+    ) {
+        return Err(MutationProtocolError::InvalidArgument);
+    }
+    let subscription_id = params["subscriptionId"]
+        .as_str()
+        .filter(|value| omavless_domain::store::valid_record_id(value))
+        .ok_or(MutationProtocolError::InvalidArgument)?;
+    let meta = metadata(params)?;
+    let instance = instance_id(params.get("instanceId"))?;
+    let operation = operation_id(params.get("operationId"))?;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"omavless.control/subscription-probe/v1\0");
+    append_field(&mut bytes, instance);
+    append_field(&mut bytes, subscription_id);
+    match meta.expected_revision {
+        Some(revision) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&revision.to_be_bytes());
+        }
+        None => bytes.push(0),
+    }
+    Ok(SubscriptionProbeStartRequest {
+        metadata: RefreshAllStartRequest {
+            instance_id: instance.to_owned(),
+            operation_id: operation.to_owned(),
+            expected_revision: meta.expected_revision,
+            digest: MutationDigest::from_semantic_bytes(&bytes),
+        },
+        subscription_id: subscription_id.to_owned(),
+    })
+}
+
+pub fn parse_subscription_probe_results(
+    request: &Value,
+) -> Result<OperationLookupRequest, MutationProtocolError> {
+    parse_lookup(request, "subscriptions.probe_results")
 }
 
 impl RefreshAllStartRequest {
@@ -268,13 +334,17 @@ impl LongOperationProjection<'_> {
                 .is_some_and(|revision| revision < self.base_revision)
             || (self.state == LongOperationState::Succeeded
                 && self.outcome_revision
-                    != Some(if self.progress.total == 0 {
-                        self.base_revision
-                    } else {
-                        self.base_revision
-                            .checked_add(1)
-                            .ok_or(MutationProtocolError::InvalidArgument)?
-                    }))
+                    != Some(
+                        if self.progress.total == 0
+                            || self.method == LongOperationMethod::SubscriptionProbe
+                        {
+                            self.base_revision
+                        } else {
+                            self.base_revision
+                                .checked_add(1)
+                                .ok_or(MutationProtocolError::InvalidArgument)?
+                        },
+                    ))
         {
             return Err(MutationProtocolError::InvalidArgument);
         }
@@ -334,6 +404,50 @@ mod tests {
     use serde_json::json;
 
     const INSTANCE: &str = "instance-1";
+
+    #[test]
+    fn selected_probe_intent_is_bounded_and_domain_separated() {
+        let params = json!({"instanceId":INSTANCE,"operationId":"probe","expectedRevision":7,"subscriptionId":"10000000-0000-4000-8000-000000000001"});
+        let parsed =
+            parse_subscription_probe_start(&request("subscriptions.probe", params.clone()))
+                .unwrap();
+        assert_eq!(parsed.metadata.expected_revision(), Some(7));
+        for (field, value) in [
+            ("subscriptionId", json!("https://private.invalid/password")),
+            ("subscriptionId", Value::Null),
+            ("url", json!("https://private.invalid/password")),
+            ("timeout", json!(5000)),
+            ("profiles", json!([])),
+            ("instanceId", json!("")),
+            ("operationId", json!("")),
+            ("expectedRevision", json!(-1)),
+        ] {
+            let mut invalid = params.clone();
+            invalid[field] = value;
+            let error = parse_subscription_probe_start(&request("subscriptions.probe", invalid))
+                .err()
+                .unwrap();
+            assert!(!error.to_string().contains("private.invalid"));
+            assert!(!error.to_string().contains("password"));
+        }
+        let mut changed = params;
+        changed["subscriptionId"] = json!("10000000-0000-4000-8000-000000000002");
+        assert!(
+            parsed.metadata.digest()
+                != parse_subscription_probe_start(&request("subscriptions.probe", changed))
+                    .unwrap()
+                    .metadata
+                    .digest()
+        );
+        assert!(
+            parse_subscription_probe_results(&request(
+                "subscriptions.probe_results",
+                json!({"instanceId":INSTANCE,"operationId":"probe"})
+            ))
+            .is_ok()
+        );
+        assert!(parse_subscription_probe_results(&request("subscriptions.probe_results", json!({"instanceId":INSTANCE,"operationId":"probe","subscriptionId":"10000000-0000-4000-8000-000000000001"}))).is_err());
+    }
 
     fn request(method: &str, params: Value) -> Value {
         json!({

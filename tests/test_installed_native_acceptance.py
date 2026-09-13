@@ -1,5 +1,6 @@
 """Deterministic installed-gate policy tests; no host/service/network access."""
 import contextlib
+import copy
 import importlib.util
 import io
 from pathlib import Path
@@ -18,6 +19,32 @@ PROOF = b'LISTEN users:(("mihomo",pid=42,fd=1)) ino:11\nLISTEN users:(("mihomo",
 
 
 class InstalledNativeAcceptanceTests(unittest.TestCase):
+    def test_empty_runtime_requires_fresh_explicit_no_recovery_proof(self):
+        good = {"availability": "observed", "lastKnownActual": "disconnected",
+                "manualRecoveryRequired": False, "desired": {"connected": False},
+                "facts": {"ownedCoreRunning": False, "visibleMihomoCount": 0,
+                          "visibleTunCount": 0, "ownedAuxiliaryMihomoCount": 0}}
+        self.assertTrue(subject.clean_disconnected_observation(good))
+        for path, values in (
+                (("manualRecoveryRequired",), (True, None, 0, "false")),
+                (("availability",), ("unavailable", None)),
+                (("lastKnownActual",), ("manualRecoveryRequired", "connected", None)),
+                (("desired", "connected"), (True, 0, None)),
+                (("facts", "ownedCoreRunning"), (True, 0, None)),
+                *[(("facts", field), (1, False, None, "0")) for field in
+                  ("visibleMihomoCount", "visibleTunCount", "ownedAuxiliaryMihomoCount")]):
+            for value in values:
+                changed = copy.deepcopy(good)
+                node = changed
+                for part in path[:-1]:
+                    node = node[part]
+                node[path[-1]] = value
+                self.assertFalse(subject.clean_disconnected_observation(changed))
+            del node[path[-1]]
+            self.assertFalse(subject.clean_disconnected_observation(changed))
+        for value in (None, {}, [], {**good, "facts": None}, {**good, "desired": None}):
+            self.assertFalse(subject.clean_disconnected_observation(value))
+
     def test_exact_effective_environment_and_absent_home_override(self):
         home, runtime = Path("/home/synthetic"), Path("/run/user/1234")
         self.assertTrue(subject.valid_environment({}, home, runtime))
@@ -35,6 +62,58 @@ class InstalledNativeAcceptanceTests(unittest.TestCase):
                 with contextlib.redirect_stdout(output):
                     self.assertEqual(subject.main(args), 0)
                 self.assertIn("NOT RUN", output.getvalue())
+
+    def test_mask_requires_two_explicit_optins_before_loading_or_accessing_host(self):
+        base = ["--run", "--authorize-socket-inspection"]
+        with patch.object(subject, "run_gate", side_effect=AssertionError("host access")), \
+                patch.object(subject.importlib.util, "spec_from_file_location", side_effect=AssertionError("load")):
+            for option in ("--python-unavailable", "--authorize-vmwide-python-mask"):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(subject.main(base + [option]), 0)
+                self.assertIn("both_python_mask_optins_required", output.getvalue())
+
+    def test_mask_is_checked_after_each_human_wait_without_replacing_acknowledgements(self):
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+        events = []
+        class Mask:
+            def require_active(self):
+                events.append("mask")
+        authorization = subject.MaskedAuthorization(Mask(),
+            input_stream=Terminal("ready\nsettled\n"), output_stream=Terminal())
+        authorization.step("connect", lambda: events.append("effect"))
+        self.assertEqual(events, ["mask", "effect", "mask"])
+        authorization = subject.MaskedAuthorization(Mask(),
+            input_stream=Terminal("no\n"), output_stream=Terminal())
+        with self.assertRaises(subject.auth.AuthorizationUnsettled):
+            authorization.step("connect", lambda: self.fail("effect"))
+        self.assertTrue(authorization.blocked)
+
+    def test_expired_mask_refuses_effect_but_still_requires_settled(self):
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+        class Mask:
+            def require_active(self):
+                raise RuntimeError("expired")
+        inputs = Terminal("ready\nsettled\n")
+        output = Terminal()
+        authorization = subject.MaskedAuthorization(Mask(), input_stream=inputs, output_stream=output)
+        with self.assertRaisesRegex(RuntimeError, "expired"):
+            authorization.step("disconnect", lambda: self.fail("effect"))
+        self.assertIn("Type settled", output.getvalue())
+        self.assertEqual(inputs.read(), "")
+
+    def test_no_terminal_refuses_even_explicit_optins_before_any_host_read(self):
+        output = io.StringIO()
+        with patch.object(subject.auth.sys, "stdin", io.StringIO("ready\nsettled\n")), \
+                patch.object(subject, "command", side_effect=AssertionError("host access")), \
+                patch.object(subject, "Path", side_effect=AssertionError("filesystem access")), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(subject.main(["--run", "--authorize-socket-inspection"]), 1)
+        self.assertIn("human_authorization_unsettled", output.getvalue())
 
     def test_supported_policy_and_fail_closed_unsupported_templates(self):
         self.assertEqual(subject.template_policy(TEMPLATE), 7890)

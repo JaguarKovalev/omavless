@@ -59,7 +59,8 @@ class LocalArchPackageTests(unittest.TestCase):
         self.repo.mkdir()
         for name in ("packaging/arch/stage-payload.sh", "packaging/arch/build-local-package.sh",
                      "packaging/arch/PKGBUILD.local.in", "packaging/arch/README.md",
-                     "packaging/systemd/omavless-runtime.service", "LICENSE", "THIRD_PARTY_NOTICES.md"):
+                     "packaging/systemd/omavless-runtime.service",
+                     "packaging/systemd/omavless-login-prepare.service", "LICENSE", "THIRD_PARTY_NOTICES.md"):
             target = self.repo / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, target)
@@ -124,10 +125,13 @@ class LocalArchPackageTests(unittest.TestCase):
         self.assertIn("provenance=caller-supplied-prebuilt\n", identity)
         self.assertEqual(content("usr/lib/systemd/user/omavless-runtime.service"),
                          (ROOT / "packaging/systemd/omavless-runtime.service").read_bytes())
+        self.assertEqual(content("usr/lib/systemd/user/omavless-login-prepare.service"),
+                         (ROOT / "packaging/systemd/omavless-login-prepare.service").read_bytes())
         metadata = content(".PKGINFO").decode()
         self.assertIn("pkgname = omavless\n", metadata)
         self.assertIn("pkgver = 0.0.0.r1.g", metadata)
         self.assertIn("depend = mihomo\n", metadata)
+        self.assertIn("depend = bubblewrap\n", metadata)
         self.assertNotIn("depend = python", metadata)
         self.assertEqual(subprocess.check_output(["git", "-C", str(self.repo), "status", "--porcelain"]), b"")
 

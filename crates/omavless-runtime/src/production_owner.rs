@@ -88,6 +88,7 @@ pub struct ProductionNativeOwner<H = NativeLifecycleHost> {
     coordinator: OfflineNativeCoordinator<H>,
     startup: ConnectionTransactionOutcome,
     ownership: ProductionOwnership,
+    login_ready: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -145,6 +146,7 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
         Ok(Self {
             coordinator,
             startup,
+            login_ready: false,
             ownership: ProductionOwnership::Committed {
                 rust_generation: marker.generation(),
                 origin_preparing_generation: None,
@@ -209,6 +211,7 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
         Ok(Self {
             coordinator,
             startup,
+            login_ready: false,
             ownership: ProductionOwnership::Candidate(bootstrap),
         })
     }
@@ -226,6 +229,15 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
     #[must_use]
     pub const fn startup_outcome(&self) -> ConnectionTransactionOutcome {
         self.startup
+    }
+
+    pub(crate) const fn login_ready(&self) -> bool {
+        self.login_ready
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_login_ready(&mut self, ready: bool) {
+        self.login_ready = ready;
     }
 
     pub(crate) fn desired(&self) -> Result<crate::desired::DesiredState, ProductionOwnerError> {
@@ -369,6 +381,9 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
     pub(crate) fn profile_export(&mut self, request: &Value) -> Result<Value, ProtocolError> {
         crate::native_dispatch::respond_to_profile_export(&mut self.coordinator, request)
     }
+    pub(crate) fn profile_details(&mut self, request: &Value) -> Result<Value, ProtocolError> {
+        crate::native_dispatch::respond_to_profile_details(&mut self.coordinator, request)
+    }
 
     pub(crate) fn custom_rules(&mut self, request: &Value) -> Result<Value, ProtocolError> {
         crate::native_dispatch::respond_to_custom_rules(&mut self.coordinator, request)
@@ -396,6 +411,10 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
         Ok(response)
     }
 
+    pub(crate) fn traffic(&mut self, request: &Value) -> Result<Value, ProtocolError> {
+        crate::native_dispatch::respond_to_traffic(&mut self.coordinator, request)
+    }
+
     pub(crate) fn diagnostic_snapshot(&mut self) -> Result<Vec<String>, NativeOwnerError> {
         self.coordinator.diagnostic_snapshot()
     }
@@ -405,6 +424,14 @@ impl<H: LifecycleHost> ProductionNativeOwner<H> {
         request: &Value,
     ) -> Result<crate::route_probe::Plan, NativeOwnerError> {
         self.coordinator.route_plan(request)
+    }
+
+    pub(crate) fn ping_plan(
+        &mut self,
+        request: &Value,
+        deadline: std::time::Instant,
+    ) -> Result<crate::tun_ping::Context, NativeOwnerError> {
+        self.coordinator.ping_plan(request, deadline)
     }
 
     pub(crate) fn check_route(&mut self, request: &Value) -> Result<Value, ProtocolError> {
@@ -478,6 +505,13 @@ impl ProductionNativeOwner<NativeLifecycleHost> {
         if marker.phase() != OwnershipPhase::Rust {
             return Err(ProductionOwnerError::OwnershipUnavailable);
         }
+        crate::login_activation::require_current_receipt(
+            &cutover_paths,
+            uid,
+            &lock,
+            marker.generation(),
+        )
+        .map_err(|_| ProductionOwnerError::ManualRecoveryRequired)?;
         check_startup_receipt(&cutover_paths, uid, &lock, Some(marker.generation()))
             .map_err(|_| ProductionOwnerError::ManualRecoveryRequired)?;
         let host_paths = NativeHostPaths::current(&runtime_paths.directory)
@@ -485,7 +519,12 @@ impl ProductionNativeOwner<NativeLifecycleHost> {
         let store_path = host_paths.store.clone();
         let host = NativeLifecycleHost::new(host_paths, uid)
             .map_err(|_| ProductionOwnerError::HostUnavailable)?;
-        Self::initialize_locked(host, desired_paths, &store_path, cutover_paths, uid, lock)
+        host.cleanup_probe_orphans()
+            .map_err(|_| ProductionOwnerError::ManualRecoveryRequired)?;
+        let mut owner =
+            Self::initialize_locked(host, desired_paths, &store_path, cutover_paths, uid, lock)?;
+        owner.login_ready = crate::login_activation::startup_configuration_available();
+        Ok(owner)
     }
 
     /// Construct a transition candidate only through the package-fixed current

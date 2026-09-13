@@ -10,7 +10,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 
-mod environment;
+pub(crate) mod environment;
 
 const BINARY: &str = "/usr/bin/omavless";
 const UNIT: &str = "/usr/lib/systemd/user/omavless-runtime.service";
@@ -20,30 +20,61 @@ pub fn is_activation(arguments: &[OsString]) -> bool {
     arguments == ["cutover", "activate"]
 }
 
-pub(crate) fn check_service_installation(text: &str, native: bool) -> Result<(), ()> {
-    let value = |key: &str| -> Result<&str, ()> {
-        let mut values = text
-            .lines()
-            .filter_map(|line| line.split_once('='))
-            .filter(|(name, _)| *name == key)
-            .map(|(_, value)| value);
-        let first = values.next().ok_or(())?;
-        if values.next().is_some() {
-            return Err(());
+fn value<'a>(text: &'a str, key: &str) -> Result<&'a str, ()> {
+    let mut values = text
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .filter(|(name, _)| *name == key)
+        .map(|(_, value)| value);
+    let first = values.next().ok_or(())?;
+    if values.next().is_some() {
+        return Err(());
+    }
+    Ok(first)
+}
+
+/// Absence is affirmative systemd evidence, never a failed/empty query.
+/// Callers may use this exception only for the fixed legacy unit.
+pub(crate) fn legacy_unit_absent(text: &str) -> Result<bool, ()> {
+    match value(text, "LoadState")? {
+        "loaded" => Ok(false),
+        "not-found" => {
+            for (key, expected) in [
+                ("UnitFileState", ""),
+                ("FragmentPath", ""),
+                ("DropInPaths", ""),
+                ("NeedDaemonReload", "no"),
+                ("ActiveState", "inactive"),
+                ("MainPID", "0"),
+                ("ExecMainStatus", "0"),
+                ("Result", "success"),
+            ] {
+                if value(text, key)? != expected {
+                    return Err(());
+                }
+            }
+            Ok(true)
         }
-        Ok(first)
-    };
-    if value("UnitFileState")? != "disabled"
-        || value("NeedDaemonReload")? != "no"
-        || !value("DropInPaths")?.is_empty()
-        || (native && value("FragmentPath")? != UNIT)
+        _ => Err(()),
+    }
+}
+
+pub(crate) fn check_service_installation(text: &str, native: bool) -> Result<(), ()> {
+    if !native && legacy_unit_absent(text)? {
+        return Ok(());
+    }
+    if value(text, "LoadState")? != "loaded"
+        || value(text, "UnitFileState")? != "disabled"
+        || value(text, "NeedDaemonReload")? != "no"
+        || !value(text, "DropInPaths")?.is_empty()
+        || (native && value(text, "FragmentPath")? != UNIT)
     {
         return Err(());
     }
     Ok(())
 }
 
-fn packaged_identity() -> Result<(), ()> {
+pub(crate) fn packaged_identity() -> Result<(), ()> {
     // Test-only home overrides are never an installed activation input.
     if std::env::var_os("OMAVLESS_HOME").is_some() {
         return Err(());
@@ -87,6 +118,35 @@ pub fn activate() -> Result<CutoverTransactionOutcome, CutoverTransactionError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub(crate) const ABSENT: &str = "LoadState=not-found\nUnitFileState=\nFragmentPath=\nDropInPaths=\nNeedDaemonReload=no\nActiveState=inactive\nMainPID=0\nExecMainStatus=0\nResult=success\n";
+
+    #[test]
+    fn only_complete_inactive_absent_legacy_facts_are_accepted() {
+        assert_eq!(legacy_unit_absent(ABSENT), Ok(true));
+        assert!(check_service_installation(ABSENT, false).is_ok());
+        assert!(check_service_installation(ABSENT, true).is_err());
+        for line in ABSENT.lines() {
+            let key = line.split_once('=').unwrap().0;
+            for invalid in [
+                ABSENT.replace(&format!("{line}\n"), ""),
+                format!("{ABSENT}{line}\n"),
+                ABSENT.replace(line, &format!("{key}=unexpected-private-value")),
+            ] {
+                assert!(
+                    check_service_installation(&invalid, false).is_err(),
+                    "{key}"
+                );
+            }
+        }
+        for invalid in [
+            "",
+            "LoadState=masked\n",
+            "LoadState=error\n",
+            "LoadState=not-found\nActiveState=inactive\n",
+        ] {
+            assert!(check_service_installation(invalid, false).is_err());
+        }
+    }
     #[test]
     fn exact_command_and_fixed_installation_facts() {
         assert!(is_activation(&["cutover".into(), "activate".into()]));
@@ -101,7 +161,7 @@ mod tests {
             ));
         }
         let valid = format!(
-            "UnitFileState=disabled\nNeedDaemonReload=no\nDropInPaths=\nFragmentPath={UNIT}\n"
+            "LoadState=loaded\nUnitFileState=disabled\nNeedDaemonReload=no\nDropInPaths=\nFragmentPath={UNIT}\n"
         );
         assert!(check_service_installation(&valid, true).is_ok());
         for invalid in [

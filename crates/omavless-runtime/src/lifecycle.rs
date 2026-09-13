@@ -10,6 +10,7 @@ use crate::desired::{
     DesiredError, DesiredPaths, DesiredState, MAX_GENERATION, OwnedObservation, ReconcileAction,
     RoutingMode, read_desired, reconcile, write_desired,
 };
+pub use crate::support_diagnostics::HostSupportFacts;
 use omavless_control_protocol::StableErrorCode;
 use std::fmt;
 
@@ -56,6 +57,8 @@ pub struct NativeLocalObservation {
     pub owned_core_running: bool,
     /// Exact-name inventory in the trusted procfs view, not service ownership.
     pub visible_mihomo_count: u8,
+    /// Subset of the visible count proven to be our disposable no-TUN probe.
+    pub owned_auxiliary_mihomo_count: u8,
     /// Visible TUN interfaces only; no interface is attributed to this core.
     pub visible_tun_count: u8,
     /// True only after PID-authenticated read-only configuration verification.
@@ -67,6 +70,29 @@ pub struct NativeLocalObservation {
 /// Fixed-purpose package host boundary. Inputs are semantic desired state;
 /// there is no arbitrary argv, shell, service or privileged-command surface.
 pub trait LifecycleHost {
+    /// Bounded, read-only setup/service/file facts; no core execution or probe.
+    fn support_facts(&self, _connected: bool) -> Option<HostSupportFacts> {
+        None
+    }
+    fn auxiliary_slot(&self) -> Option<std::sync::Arc<crate::auxiliary_core::AuxiliarySlot>> {
+        None
+    }
+    fn probe_paths(&self) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        None
+    }
+    fn ping_binding(
+        &mut self,
+        _desired: &DesiredState,
+        _deadline: std::time::Instant,
+    ) -> Result<crate::tun_ping::Binding, HostStepError> {
+        Err(HostStepError::Observation)
+    }
+    fn traffic_counters(
+        &mut self,
+        _desired: &DesiredState,
+    ) -> Result<crate::traffic::TrafficCounters, HostStepError> {
+        Err(HostStepError::Observation)
+    }
     /// Fresh local observation only: no DNS/routes/internet/VPN-health proof.
     /// Existing hosts remain unsupported until they explicitly implement it.
     fn fresh_observation(
@@ -127,6 +153,41 @@ impl fmt::Display for LifecycleError {
 }
 
 impl std::error::Error for LifecycleError {}
+
+// Fixed failure-only journal evidence. Never format a desired state, profile,
+// host error, path or OS error. Keep the original error and recovery barrier;
+// a diagnostic must not authorize a retry, reset or weaker cleanup proof.
+#[derive(Clone, Copy)]
+enum DisconnectPhase {
+    ReadIntent,
+    ObserveBefore,
+    ClassifyBefore,
+    WriteIntent,
+    StopOwned,
+    DiscardPrepared,
+    VerifyEmpty,
+}
+
+impl DisconnectPhase {
+    const fn code(self) -> &'static str {
+        match self {
+            Self::ReadIntent => "read_intent",
+            Self::ObserveBefore => "observe_before",
+            Self::ClassifyBefore => "classify_before",
+            Self::WriteIntent => "write_intent",
+            Self::StopOwned => "stop_owned",
+            Self::DiscardPrepared => "discard_prepared",
+            Self::VerifyEmpty => "verify_empty",
+        }
+    }
+}
+
+fn disconnect_step<T>(
+    result: Result<T, LifecycleError>,
+    phase: DisconnectPhase,
+) -> Result<T, LifecycleError> {
+    result.inspect_err(|_| eprintln!("OmaVLESS disconnect failed: {}", phase.code()))
+}
 
 impl From<DesiredError> for LifecycleError {
     fn from(_value: DesiredError) -> Self {
@@ -459,8 +520,11 @@ impl<H: LifecycleHost> LifecycleExecutor<H> {
     }
 
     pub fn disconnect(&mut self) -> Result<LifecycleOutcome, LifecycleError> {
-        let current = self.read()?;
-        let observed = self.observe_or_manual(&current)?;
+        let current = disconnect_step(self.read(), DisconnectPhase::ReadIntent)?;
+        let observed = disconnect_step(
+            self.observe_or_manual(&current),
+            DisconnectPhase::ObserveBefore,
+        )?;
         let action = reconcile(&current, observed);
         if action == ReconcileAction::SettledDisconnected {
             self.actual = ActualState::Disconnected;
@@ -468,7 +532,10 @@ impl<H: LifecycleHost> LifecycleExecutor<H> {
         }
         if action == ReconcileAction::ManualRecoveryRequired {
             self.actual = ActualState::ManualRecoveryRequired;
-            return Err(LifecycleError::ManualRecoveryRequired);
+            return disconnect_step(
+                Err(LifecycleError::ManualRecoveryRequired),
+                DisconnectPhase::ClassifyBefore,
+            );
         }
 
         let disconnected = DesiredState {
@@ -479,14 +546,20 @@ impl<H: LifecycleHost> LifecycleExecutor<H> {
         };
         // Explicit disconnect changes durable intent before stopping. A stop
         // failure must not silently restore desired connected state.
-        self.write(&disconnected)?;
+        disconnect_step(self.write(&disconnected), DisconnectPhase::WriteIntent)?;
         self.actual = ActualState::Stopping;
         if action != ReconcileAction::RecoverConnected && self.host.stop_owned().is_err() {
             self.actual = ActualState::ManualRecoveryRequired;
-            return Err(LifecycleError::ManualRecoveryRequired);
+            return disconnect_step(
+                Err(LifecycleError::ManualRecoveryRequired),
+                DisconnectPhase::StopOwned,
+            );
         }
-        self.discard_or_manual()?;
-        self.verify_empty(&disconnected)?;
+        disconnect_step(self.discard_or_manual(), DisconnectPhase::DiscardPrepared)?;
+        disconnect_step(
+            self.verify_empty(&disconnected),
+            DisconnectPhase::VerifyEmpty,
+        )?;
         self.actual = ActualState::Disconnected;
         Ok(self.outcome(&disconnected, true))
     }
@@ -669,6 +742,34 @@ mod tests {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn disconnect_phase_evidence_is_fixed_and_preserves_every_original_result() {
+        let mut codes = std::collections::BTreeSet::new();
+        for phase in [
+            DisconnectPhase::ReadIntent,
+            DisconnectPhase::ObserveBefore,
+            DisconnectPhase::ClassifyBefore,
+            DisconnectPhase::WriteIntent,
+            DisconnectPhase::StopOwned,
+            DisconnectPhase::DiscardPrepared,
+            DisconnectPhase::VerifyEmpty,
+        ] {
+            let code = phase.code();
+            assert!(codes.insert(code));
+            assert!(code.len() <= 32 && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'));
+            assert_eq!(disconnect_step(Ok(7), phase), Ok(7));
+            for error in [
+                LifecycleError::InvalidRequest,
+                LifecycleError::State,
+                LifecycleError::TransitionFailedRestored,
+                LifecycleError::RecoveryFailed,
+                LifecycleError::ManualRecoveryRequired,
+            ] {
+                assert_eq!(disconnect_step::<()>(Err(error), phase), Err(error));
+            }
+        }
+    }
 
     struct FakeHost {
         calls: Vec<&'static str>,

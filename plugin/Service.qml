@@ -17,6 +17,75 @@ Item {
   property var settings: ({})
   // Native metadata is deliberately NOT legacy live status.
   property bool nativeOwner: false
+  property bool nativeQuitPending: false
+  readonly property bool nativeQuitting: nativeQuitPending || nativeQuitProcess.running
+  property bool nativeQuitFailed: false
+  function quitNativeApplication() {
+    if (!nativeCanAct || nativeEditorRunning || nativeImportBusy) return false
+    var operation = "quit-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36)
+    nativeQuitFailed = false
+    // Process.running becomes true asynchronously. Seal UI admission before
+    // scheduling the child, not only after Quickshell reports it running.
+    nativeQuitPending = true
+    nativeQuitProcess.command = ["bash", backendPath, "native-quit",
+      nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
+    nativeQuitProcess.running = true
+    return true
+  }
+  Process {
+    id: nativeQuitProcess
+    // No short watchdog: normal host authorization can require human input.
+    // The native command disables the frontend only after verified shutdown.
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { waitForEnd: true }
+    onExited: function(code) {
+      root.nativeQuitFailed = code !== 0
+      root.nativeQuitPending = false
+      if (code !== 0) root.refreshNativeObservation()
+    }
+  }
+  property var nativeTestResult: null
+  property string nativeTestStatus: ""
+  property var nativeTestProcess: null
+  property var nativeTestFence: null
+  property int nativeTestGeneration: 0
+  function clearNativeTest() {
+    nativeTestGeneration++
+    nativeTestFence = null
+    nativeTestResult = null
+    nativeTestStatus = ""
+  }
+  function startNativeConnectionTest() {
+    if (!nativeCanAct || !panelVisible || !nativeSnapshot.desired.connected || nativeTestProcess !== null) return false
+    clearNativeTest()
+    nativeTestStatus = "loading"
+    nativeTestFence = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision, generation:nativeTestGeneration}
+    nativeTestProcess = nativeConnectionTestComponent.createObject(root, {context:nativeTestFence})
+    if (!nativeTestProcess) { nativeTestStatus = "unavailable"; return false }
+    nativeTestProcess.running = true
+    return true
+  }
+  function finishNativeConnectionTest(context, code, raw) {
+    if (context.generation !== nativeTestGeneration || !panelVisible || !nativeCanAct
+        || context.instanceId !== nativeSnapshot.instanceId || context.revision !== nativeSnapshot.revision) return
+    nativeTestResult = code === 0 ? NativeSnapshot.connectionTest(raw, context) : null
+    nativeTestStatus = nativeTestResult ? nativeTestResult.https ? "ok" : "failed" : "unavailable"
+  }
+  Component {
+    id: nativeConnectionTestComponent
+    Process {
+      id: process
+      property var context
+      command: ["bash", root.backendPath, "native-connection-test"]
+      property Timer watchdog: Timer { interval: 10000; running: process.running; onTriggered: process.signal(9) }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) {
+        root.nativeTestProcess = null
+        try { root.finishNativeConnectionTest(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
   property var nativeSnapshot: null
   property bool nativeSnapshotFailed: false
   property var nativeObservation: null
@@ -27,10 +96,236 @@ Item {
   readonly property bool nativeFactsCurrent: nativeOwner && !nativeSnapshotFailed
     && NativeSnapshot.coherent(nativeSnapshot, nativeObservation)
     && nativeObservation.availability === "observed"
-  readonly property bool nativeCanAct: nativeFactsCurrent && !nativePending
+  readonly property bool nativeCanAct: nativeFactsCurrent && !nativePending && !nativeQuitting
     && nativeSnapshot.lastKnownActual !== "manualRecoveryRequired"
     && !nativeObservation.manualRecoveryRequired
   property int _nativeOperationSerial: 0
+  property bool nativeStartupSettingsVisible: false
+  property var nativeStartupCapability: null
+  property var _nativeStartupCapabilityRead: null
+  readonly property bool nativeStartupAvailable: nativeCanAct && nativeStartupCapability !== null
+    && nativeStartupCapability.available && nativeStartupCapability.instanceId === nativeSnapshot.instanceId
+    && nativeStartupCapability.revision === nativeSnapshot.revision
+  function refreshNativeStartupCapability() {
+    if (!nativeFactsCurrent || !nativeStartupSettingsVisible || _nativeStartupCapabilityRead !== null) return false
+    var context = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
+    _nativeStartupCapabilityRead = nativeStartupCapabilityComponent.createObject(root, {context:context})
+    if (!_nativeStartupCapabilityRead) { nativeStartupCapability = null; return false }
+    _nativeStartupCapabilityRead.running = true
+    return true
+  }
+  function finishNativeStartupCapability(context, code, raw) {
+    if (!nativeFactsCurrent || !nativeStartupSettingsVisible || context.instanceId !== nativeSnapshot.instanceId
+        || context.revision !== nativeSnapshot.revision) { nativeStartupCapability = null; return }
+    nativeStartupCapability = code === 0 ? NativeSnapshot.startupCapability(raw, context) : null
+  }
+  onNativeStartupSettingsVisibleChanged: {
+    nativeStartupCapability = null
+    if (nativeStartupSettingsVisible) refreshNativeStartupCapability()
+  }
+  Timer {
+    interval: 5000
+    running: root.nativeOwner && root.nativeStartupSettingsVisible
+    repeat: true
+    onTriggered: root.refreshNativeStartupCapability()
+  }
+  Component {
+    id: nativeStartupCapabilityComponent
+    Process {
+      id: process
+      property var context
+      command: ["bash", root.backendPath, "native-startup-capabilities"]
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      property Timer watchdog: Timer { interval: 6000; running: process.running; onTriggered: process.signal(9) }
+      onExited: function(code) {
+        root._nativeStartupCapabilityRead = null
+        try { root.finishNativeStartupCapability(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
+
+  function requestNativeStartup(enabled, target, profileId, mode) {
+    if (!nativeStartupAvailable || typeof enabled !== "boolean" || ["last", "profile"].indexOf(target) < 0
+        || ["rule", "global"].indexOf(mode) < 0) return false
+    if (target === "last") profileId = ""
+    else if (!NativeSnapshot.id(profileId, false) || (enabled && !nativeSnapshot.profiles.some(function(p) { return p.id === profileId && !p.missing }))) return false
+    var input = (enabled ? "on" : "off") + "\n" + target + "\n" + profileId + "\n" + mode
+    var operation = "qml-startup-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
+    var args = ["bash", backendPath, "native-startup-configure", nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
+    nativePending = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision,
+      operationId:operation, action:"startup-configure", command:args, input:input}
+    nativeActionCode = ""
+    nativeOutcomeUnknown = false
+    nativeActionProcess.command = args
+    nativeActionProcess.stdinEnabled = true
+    nativeActionProcess.running = true
+    return true
+  }
+  // Daemon jobs outlive the panel. They do not occupy nativePending, so an
+  // urgent Disconnect remains usable; the owner serializes competing writes.
+  property var nativeBatchJob: null
+  property bool nativeBatchUnknown: false
+  property string nativeBatchErrorCode: ""
+  property var _nativeBatchProcess: null
+  property int _nativeBatchFailures: 0
+  property int _nativeBatchPolls: 0
+  property var _nativeProbeCacheFence: null
+  readonly property bool nativeBatchRequestRunning: _nativeBatchProcess !== null
+  readonly property bool nativeBatchBusy: nativeBatchJob !== null && !nativeBatchJob.terminal
+  readonly property bool nativeBatchAbandonable: nativeBatchUnknown && nativeBatchJob !== null && !nativeBatchJob.terminal
+    && !nativeBatchRequestRunning && nativeFactsCurrent && nativeSnapshot.instanceId !== nativeBatchJob.instanceId
+
+  function startNativeBatch(kind, subscriptionId) {
+    if (!nativeCanAct || nativeBatchBusy || nativeBatchRequestRunning || ["subscriptions", "providers", "probe"].indexOf(kind) < 0) return false
+    var profileIds = []
+    if (kind === "probe") {
+      if (!NativeSnapshot.id(subscriptionId, false) || !nativeSnapshot.subscriptions.some(function(s) { return s.id === subscriptionId })) return false
+      profileIds = nativeSnapshot.profiles.filter(function(p) { return p.subscriptionId === subscriptionId && !p.missing }).map(function(p) { return p.id })
+      if (profileIds.length === 0 || profileIds.length > 256) return false
+      clearProbeResults(subscriptionId)
+    }
+    var operation = "qml-batch-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
+    nativeBatchJob = {kind:kind, instanceId:nativeSnapshot.instanceId, operationId:operation,
+      revision:nativeSnapshot.revision, state:"starting", completed:0, total:0, cancellable:false,
+      cancelRequested:false, terminal:false, acknowledged:false, errorCode:"",
+      subscriptionId:kind === "probe" ? subscriptionId : "", profileIds:profileIds}
+    _nativeBatchFailures = 0; _nativeBatchPolls = 0
+    nativeBatchUnknown = false; nativeBatchErrorCode = ""
+    return runNativeBatchRequest("start")
+  }
+
+  function runNativeBatchRequest(kind) {
+    var job = nativeBatchJob
+    if (!job || nativeBatchRequestRunning || ["start", "get", "cancel", "results"].indexOf(kind) < 0) return false
+    if (kind === "results" ? job.kind !== "probe" || job.state !== "succeeded" || !job.terminal : job.terminal) return false
+    if (!nativeOwner || !nativeSnapshot || nativeSnapshot.instanceId !== job.instanceId) {
+      nativeBatchUnknown = true; nativeBatchErrorCode = "error.daemon_restarting"; return false
+    }
+    nativeBatchPoll.stop()
+    var command = ["bash", backendPath, kind === "start" ? (job.kind === "subscriptions" ? "native-subscriptions-refresh-all" : job.kind === "probe" ? "native-subscription-probe" : "native-providers-refresh")
+      : kind === "get" ? "native-operation-get" : kind === "results" ? "native-subscription-probe-results" : "native-operation-cancel", job.instanceId, job.operationId]
+    if (kind === "start") { if (job.kind === "probe") command.push(job.subscriptionId); command.push(String(job.revision)) }
+    _nativeBatchProcess = nativeBatchComponent.createObject(root, {command:command, requestKind:kind, operation:job.operationId})
+    if (!_nativeBatchProcess) { nativeBatchUnknown = true; nativeBatchErrorCode = "error.capability_unavailable"; return false }
+    _nativeBatchProcess.running = true
+    return true
+  }
+
+  function finishNativeBatchRequest(kind, operation, code, output) {
+    var job = nativeBatchJob
+    if (kind === "results") { finishNativeProbeResults(operation, code, output); return }
+    if (!job || job.operationId !== operation || job.terminal) return
+    var result = NativeSnapshot.parseOperation(output, job, kind)
+    // Never reinterpret an old instance's completion as current owner state.
+    if (!nativeOwner || !nativeSnapshot || nativeSnapshot.instanceId !== job.instanceId) result = null
+    if (!result || !result.ok) {
+      nativeBatchUnknown = true
+      nativeBatchErrorCode = result && result.code === "daemon_restarting" ? "error.daemon_restarting" : "error.capability_unavailable"
+      _nativeBatchFailures++
+      // A well-formed start rejection is terminal only before any dispatch
+      // uncertainty. Replay rejection after lost acknowledgement is ambiguous.
+      if (kind === "start" && result && !result.ok && !job.startUncertain && result.code !== "daemon_restarting" && code !== 73) {
+        var rejected = Object.assign({}, job, {state:"failed", terminal:true, errorCode:result.code})
+        nativeBatchJob = rejected; nativeBatchUnknown = false
+        nativeBatchErrorCode = nativeBatchPublicError(result.code)
+        refreshAfterChange()
+        return
+      }
+      if (kind === "start") nativeBatchJob = Object.assign({}, job, {startUncertain:true})
+      if (job.acknowledged && _nativeBatchFailures < 5 && _nativeBatchPolls < 300) {
+        nativeBatchPoll.interval = Math.min(30000, 2000 * Math.pow(2, _nativeBatchFailures))
+        nativeBatchPoll.start()
+      }
+      return
+    }
+    if (code !== 0) { nativeBatchUnknown = true; nativeBatchErrorCode = "error.capability_unavailable"; return }
+    nativeBatchJob = Object.assign({}, job, result, {acknowledged:true})
+    nativeBatchUnknown = false; nativeBatchErrorCode = result.state === "failed" ? nativeBatchPublicError(result.errorCode) : ""
+    _nativeBatchFailures = 0
+    if (result.terminal) {
+      if (job.kind === "probe" && result.state === "succeeded") runNativeBatchRequest("results")
+      else { refreshAfterChange(); if (diagnosticsPageVisible) refreshAdvancedDiagnostics() }
+      return
+    }
+    if (_nativeBatchPolls >= 300) { nativeBatchUnknown = true; nativeBatchErrorCode = "error.capability_unavailable"; return }
+    nativeBatchPoll.interval = 2000
+    nativeBatchPoll.start()
+  }
+
+  function retryNativeBatch() {
+    if (nativeBatchJob && nativeBatchJob.kind === "probe" && nativeBatchJob.state === "succeeded" && nativeBatchUnknown) return runNativeBatchRequest("results")
+    if (!nativeBatchJob || nativeBatchJob.terminal || nativeBatchRequestRunning) return false
+    _nativeBatchFailures = 0; _nativeBatchPolls = 0
+    return runNativeBatchRequest(nativeBatchJob.acknowledged ? "get" : "start")
+  }
+
+  function finishNativeProbeResults(operation, code, output) {
+    var job = nativeBatchJob
+    if (!job || job.operationId !== operation || job.kind !== "probe" || job.state !== "succeeded") return
+    var rows = code === 0 && nativeFactsCurrent ? NativeSnapshot.parseProbeResults(output, job, nativeSnapshot) : null
+    if (!rows) {
+      var error = NativeSnapshot.parseOperation(output, job, "get")
+      nativeBatchUnknown = true
+      nativeBatchErrorCode = error && !error.ok ? nativeBatchPublicError(error.code) : "error.capability_unavailable"
+      return
+    }
+    var next = Object.assign({}, profileProbes)
+    for (var key in rows) next[key] = rows[key]
+    profileProbes = next
+    var times = Object.assign({}, subscriptionProbeTimes)
+    times[job.subscriptionId] = Date.now()
+    subscriptionProbeTimes = times
+    _nativeProbeCacheFence = {instanceId:job.instanceId, revision:job.revision}
+    nativeBatchUnknown = false; nativeBatchErrorCode = ""
+  }
+
+  function nativeBatchPublicError(code) {
+    return ["invalid_request", "unsupported_version", "unknown_method", "invalid_argument", "not_found", "conflict", "busy", "permission_denied", "capability_unavailable", "core_rejected", "daemon_restarting", "internal_error", "manual_recovery_required", "transition_failed_restored"].indexOf(code) >= 0
+      ? "error." + code : "error.capability_unavailable"
+  }
+
+  function cancelNativeBatch() {
+    if (!nativeBatchJob || !nativeBatchJob.acknowledged || !nativeBatchJob.cancellable || nativeBatchJob.cancelRequested) return false
+    return runNativeBatchRequest("cancel")
+  }
+
+  function dismissNativeBatch() {
+    if (nativeBatchRequestRunning || (nativeBatchJob && !nativeBatchJob.terminal)) return false
+    nativeBatchPoll.stop(); nativeBatchJob = null; nativeBatchUnknown = false; nativeBatchErrorCode = ""
+    return true
+  }
+
+  // Explicit acknowledgement of a lost old-epoch result, not a successful or
+  // cancelled job. Fresh coherent new-owner facts are required before release.
+  function abandonNativeBatch() {
+    if (!nativeBatchAbandonable) return false
+    nativeBatchPoll.stop(); nativeBatchJob = null; nativeBatchUnknown = false; nativeBatchErrorCode = ""
+    return true
+  }
+
+  Timer {
+    id: nativeBatchPoll
+    interval: 2000
+    repeat: false
+    onTriggered: { root._nativeBatchPolls++; root.runNativeBatchRequest("get") }
+  }
+
+  Component {
+    id: nativeBatchComponent
+    Process {
+      id: process
+      property string requestKind
+      property string operation
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      property Timer timeout: Timer { interval: 15000; running: process.running; onTriggered: process.running = false }
+      onExited: function(code) {
+        root._nativeBatchProcess = null
+        try { root.finishNativeBatchRequest(requestKind, operation, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
   property var _nativeImportContext: null
   property var _nativeSourceContext: null
   property var _nativePreviewContext: null
@@ -38,17 +333,24 @@ Item {
   readonly property bool nativeImportBusy: nativeImportSource.running || nativeImportPreview.running
 
   function cancelNativeImport() {
+    if (_nativeSourceContext) _nativeSourceContext.path = ""
     _nativeImportContext = null
     importPreview = ({})
   }
 
-  function startNativeImport(kind) {
+  function startNativeImport(kind, path) {
     if (!nativeCanAct || nativeImportBusy || _nativeImportContext || ["file", "clipboard"].indexOf(kind) < 0) return false
+    var fromPath = path !== undefined
+    if (fromPath && (kind !== "file" || typeof path !== "string" || path[0] !== "/"
+        || !NativeSnapshot.editorText(path, 4096) || /[\u0000-\u001f\u007f]/.test(path)
+        || path.split("/").indexOf("..") >= 0)) return false
     nativeImportCode = ""
     importPreview = ({})
     _nativeImportContext = {kind:kind, instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
     _nativeSourceContext = _nativeImportContext
-    nativeImportSource.command = ["bash", backendPath, "native-import-" + kind]
+    _nativeSourceContext.path = fromPath ? path : ""
+    nativeImportSource.command = ["bash", backendPath, fromPath ? "native-import-path" : "native-import-" + kind]
+    nativeImportSource.stdinEnabled = fromPath
     nativeImportSource.running = true
     return true
   }
@@ -60,6 +362,7 @@ Item {
 
   function finishNativeImportSource(exitCode, output, error) {
     var context = _nativeSourceContext
+    if (context) context.path = ""
     _nativeSourceContext = null
     if (context !== _nativeImportContext || context === null) return
     if (exitCode === 3) { cancelNativeImport(); return }
@@ -86,8 +389,15 @@ Item {
     var result = exitCode === 0 ? NativeSnapshot.parseImportPreview(output, context.revision) : null
     if (!result) { nativeImportCode = "input"; cancelNativeImport(); return }
     if (result.kind === "subscription") {
-      nativeImportCode = result.duplicate ? "duplicateSubscription" : "subscription"
+      if (result.duplicate) {
+        nativeImportCode = "duplicateSubscription"
+        cancelNativeImport()
+        return
+      }
+      var url = context.input.trim()
+      var kind = context.kind
       cancelNativeImport()
+      startNativeSubscription("", result.suggestedName, url, kind)
       return
     }
     context.ready = true
@@ -114,6 +424,234 @@ Item {
     return true
   }
 
+  property var nativeSubscriptionDraft: null
+  property var nativeSubscriptionReadProcess: null
+  property string nativeSubscriptionCode: ""
+  readonly property bool nativeSubscriptionLoading: nativeSubscriptionReadProcess !== null
+  signal nativeSubscriptionReady(string name, string url, string kind, bool editing)
+  signal nativeSubscriptionSaved()
+
+  function cancelNativeSubscription() {
+    nativeSubscriptionDraft = null
+    nativeSubscriptionCode = ""
+  }
+
+  function startNativeSubscription(id, name, url, kind) {
+    if (!nativeCanAct || nativeSubscriptionLoading || nativeSubscriptionDraft !== null) return false
+    if (id !== "" && !nativeSnapshot.subscriptions.some(function(s) { return s.id === id })) return false
+    nativeSubscriptionCode = ""
+    nativeSubscriptionDraft = {token:"subscription-" + (++_nativeOperationSerial), id:id,
+      instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
+    if (id === "") nativeSubscriptionReady(name || "", url || "", kind || "manual", false)
+    else {
+      nativeSubscriptionReadProcess = nativeSubscriptionReadComponent.createObject(root, {
+        command:["bash", backendPath, "native-subscription-edit-input", id], context:nativeSubscriptionDraft})
+      if (!nativeSubscriptionReadProcess) { nativeSubscriptionDraft = null; nativeSubscriptionCode = "unavailable"; return false }
+      nativeSubscriptionReadProcess.running = true
+    }
+    return true
+  }
+
+  function nativeSubscriptionCurrent() {
+    var d = nativeSubscriptionDraft
+    return d !== null && !d.unresolved && nativeCanAct && d.instanceId === nativeSnapshot.instanceId && d.revision === nativeSnapshot.revision
+  }
+
+  function finishNativeSubscriptionRead(context, code, output) {
+    var draft = nativeSubscriptionDraft
+    // Dynamic QML Process properties can copy the JS object; compare the
+    // unique token and fences, not object identity.
+    if (!context || !draft || context.token !== draft.token || context.id !== draft.id
+        || context.instanceId !== draft.instanceId || context.revision !== draft.revision) return
+    var value = code === 0 ? NativeSnapshot.parseSubscriptionEditor(output, context.revision) : null
+    if (!value || !nativeSubscriptionCurrent()) {
+      nativeSubscriptionDraft = null
+      nativeSubscriptionCode = "unavailable"
+      return
+    }
+    nativeSubscriptionReady(value.name, value.url, "manual", true)
+  }
+
+  function requestNativeSubscriptionAction(action, id, name, url, fence) {
+    if (!nativeCanAct || ["subscription-add", "subscription-update", "subscription-delete", "subscription-refresh"].indexOf(action) < 0) return false
+    if (action === "subscription-delete" && (!fence || fence.id !== id
+        || fence.instanceId !== nativeSnapshot.instanceId || fence.revision !== nativeSnapshot.revision)) {
+      nativeSubscriptionCode = "stale"
+      return false
+    }
+    var editing = action === "subscription-add" || action === "subscription-update"
+    if (editing && (!nativeSubscriptionCurrent() || nativeSubscriptionDraft.id !== id)) {
+      nativeSubscriptionCode = "stale"
+      return false
+    }
+    if (action !== "subscription-add" && !nativeSnapshot.subscriptions.some(function(s) { return s.id === id })) return false
+    if (action === "subscription-add" && id !== "") return false
+    var input = id
+    if (editing) {
+      // Only framing/bounds here. The canonical Rust validator owns URL policy.
+      if (!isValidName(name) || /[\r\n]/.test(name) || !NativeSnapshot.editorText(url, 8192)
+          || !url || /[\r\n\u0000]/.test(url)) return false
+      input = (id ? id + "\n" : "") + name + "\n" + url
+    }
+    var operation = "qml-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
+    var args = ["bash", backendPath, "native-" + action, nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
+    nativePending = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision,
+      operationId:operation, action:action, command:args, input:input}
+    nativeActionCode = ""
+    nativeSubscriptionCode = ""
+    nativeOutcomeUnknown = false
+    nativeActionProcess.command = args
+    nativeActionProcess.stdinEnabled = true
+    nativeActionProcess.running = true
+    return true
+  }
+
+  function finishNativeSubscriptionAction(result, unknown) {
+    if (!nativePending || nativePending.action.indexOf("subscription-") !== 0) return
+    if (unknown) {
+      if (nativeSubscriptionDraft) nativeSubscriptionDraft.unresolved = true
+      nativeSubscriptionCode = "unknown"
+    }
+    else if (result.ok) {
+      nativeSubscriptionDraft = null
+      nativeSubscriptionCode = "saved"
+      nativeSubscriptionSaved()
+    } else {
+      if (nativeSubscriptionDraft) nativeSubscriptionDraft.unresolved = false
+      nativeSubscriptionCode = "rejected"
+    }
+  }
+
+  // Private editor draft is independent of replay metadata. An acknowledged
+  // rejection must never erase the user's successfully returned bounded text.
+  property var nativeEditorDraft: null
+  property string nativeEditorCode: ""
+  property var nativeEditorReadProcess: null
+  property var nativeEditorProcess: null
+  property string _nativeEditorSeed: ""
+  readonly property bool nativeEditorRunning: nativeEditorReadProcess !== null || nativeEditorProcess !== null
+  signal nativeEditorAttention()
+
+  function nativeEditorContextCurrent(context) {
+    var draft = nativeEditorDraft
+    return context !== null && draft !== null && typeof context.token === "string"
+      && context.token === draft.token && context.instanceId === draft.instanceId
+      && context.revision === draft.revision && context.profileId === draft.profileId
+  }
+
+  function nativeEditorFence(draft) {
+    return draft !== null && draft === nativeEditorDraft && nativeOwner
+      && nativeFactsCurrent && nativeSnapshot.instanceId === draft.instanceId
+      && nativeSnapshot.revision === draft.revision
+      && nativeSnapshot.profiles.some(function(p) { return p.id === draft.profileId && p.subscriptionId === "" })
+  }
+
+  function startNativeEditor(profile) {
+    if (!nativeCanAct || nativeEditorDraft !== null || nativeEditorRunning || !profile) return false
+    var found = nativeSnapshot.profiles.find(function(p) { return p.id === profile.uuid && p.subscriptionId === "" })
+    if (!found) return false
+    nativeEditorDraft = {token:"editor-" + (++_nativeOperationSerial), instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision,
+      profileId:found.id, name:"", seed:"", input:"", unresolved:false}
+    nativeEditorCode = ""
+    nativeEditorReadProcess = nativeEditorReadComponent.createObject(root, {
+      command:["bash", backendPath, "native-profile-edit-input", found.id], context:nativeEditorDraft})
+    if (!nativeEditorReadProcess) { nativeEditorDraft = null; nativeEditorCode = "unavailable"; nativeEditorAttention(); return false }
+    nativeEditorReadProcess.running = true
+    return true
+  }
+
+  function finishNativeEditorRead(context, code, output) {
+    if (!nativeEditorContextCurrent(context)) return
+    context = nativeEditorDraft
+    var value = code === 0 ? NativeSnapshot.parseEditorInput(output, context.revision) : null
+    if (!value || !nativeEditorFence(context) || nativePending) {
+      nativeEditorDraft = null
+      nativeEditorCode = "unavailable"
+      nativeEditorAttention()
+      return
+    }
+    context.name = value.name
+    context.seed = value.input
+    context.input = value.input
+    nativeEditorDraft = context
+    reopenNativeEditor()
+  }
+
+  function reopenNativeEditor() {
+    var draft = nativeEditorDraft
+    if (!draft || nativeEditorRunning || nativePending) return false
+    // Reopening is local recovery only. Saving below still requires the
+    // original fence, and unresolved outcomes never create another mutation.
+    _nativeEditorSeed = draft.input
+    nativeEditorCode = ""
+    nativeEditorProcess = nativeEditorComponent.createObject(root, {
+      command:["bash", backendPath, "native-profile-editor"], context:draft, stdinEnabled:true})
+    if (!nativeEditorProcess) { _nativeEditorSeed = ""; nativeEditorCode = "unavailable"; nativeEditorAttention(); return false }
+    nativeEditorProcess.running = true
+    return true
+  }
+
+  function discardNativeEditor() {
+    if (nativeEditorRunning || nativeActionRunning || nativePending) return false
+    nativeEditorDraft = null
+    _nativeEditorSeed = ""
+    nativeEditorCode = ""
+    return true
+  }
+
+  function finishNativeEditor(context, code, output, error) {
+    _nativeEditorSeed = ""
+    if (!nativeEditorContextCurrent(context)) return
+    context = nativeEditorDraft
+    if (code === 3) {
+      if (context.input !== context.seed || context.unresolved) {
+        nativeEditorCode = context.unresolved ? "unknown" : nativeEditorFence(context) ? "rejected" : "stale"
+        nativeEditorAttention()
+      } else {
+        nativeEditorDraft = null
+        nativeEditorCode = ""
+        editFinished()
+      }
+      return
+    }
+    if (code !== 0 || !NativeSnapshot.editorText(output, 65536)) {
+      nativeEditorCode = String(error || "").trim() === "Profile editor unavailable: install zenity" ? "missing" : "unavailable"
+      nativeEditorAttention()
+      return
+    }
+    context.input = output
+    nativeEditorDraft = context
+    if (context.unresolved) { nativeEditorCode = "unknown"; nativeEditorAttention(); return }
+    if (output === context.seed) { nativeEditorDraft = null; nativeEditorCode = ""; editFinished(); return }
+    if (!NativeSnapshot.editorText(output, 32768) || output === "") { nativeEditorCode = "rejected"; nativeEditorAttention(); return }
+    if (!nativeEditorFence(context) || !nativeCanAct) { nativeEditorCode = "stale"; nativeEditorAttention(); return }
+    var operation = "qml-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
+    var args = ["bash", backendPath, "native-profile-replace", context.instanceId, String(context.revision), operation]
+    nativePending = {instanceId:context.instanceId, revision:context.revision, operationId:operation,
+      action:"profile-replace", command:args, input:context.profileId + "\n" + context.name + "\n" + output}
+    nativeOutcomeUnknown = false
+    nativeActionCode = ""
+    nativeActionProcess.command = args
+    nativeActionProcess.stdinEnabled = true
+    nativeActionProcess.running = true
+    nativeEditorAttention()
+  }
+
+  function finishNativeEditorAction(result, unknown) {
+    if (!nativePending || nativePending.action !== "profile-replace" || !nativeEditorDraft) return
+    if (unknown) {
+      nativeEditorDraft.unresolved = true
+      nativeEditorCode = "unknown"
+    } else if (result.ok) {
+      nativeEditorDraft = null
+      nativeEditorCode = ""
+      editFinished()
+    } else {
+      nativeEditorDraft.unresolved = false
+      nativeEditorCode = "rejected"
+    }
+  }
+
   function refreshNativeObservation() {
     if (!nativeOwner || nativeActionRunning || nativeObservationProcess.running) return false
     nativeObservationProcess.running = true
@@ -121,8 +659,8 @@ Item {
   }
 
   function requestNativeAction(action, profileId, mode) {
-    if (!nativeCanAct || ["connect", "disconnect", "mode"].indexOf(action) < 0) return false
-    if (action !== "disconnect" && ["rule", "global", "direct"].indexOf(mode) < 0) return false
+    if (!nativeCanAct || ["connect", "disconnect", "mode", "onboarding-complete"].indexOf(action) < 0) return false
+    if ((action === "connect" || action === "mode") && ["rule", "global", "direct"].indexOf(mode) < 0) return false
     if (action === "connect" && !nativeSnapshot.profiles.some(function(p) { return p.id === profileId && !p.missing })) return false
     var operation = "qml-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
     var args = ["bash", backendPath, "native-" + action, nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
@@ -228,12 +766,85 @@ Item {
   readonly property bool probingProfiles: probeProcess.running
   readonly property bool subscriptionEditorLoading: subscriptionUrlProcess.running
   signal subscriptionUrlReady(string uuid, string url)
+  property bool nativeRoutingToolsVisible: false
+  property string nativeRoutingErrorCode: ""
+  property var _nativeRoutingRead: null
+  property int _nativeRoutingGeneration: 0
+  property var _nativeRulesFence: null
+  property var _nativeRouteFence: null
+  readonly property bool nativeRoutingBusy: _nativeRoutingRead !== null || nativePending !== null
+  onNativeRoutingToolsVisibleChanged: {
+    clearNativeRouting()
+    if (!nativeRoutingToolsVisible && _nativeRoutingRead !== null) { _nativeRoutingRead.input = ""; _nativeRoutingRead.running = false }
+    if (nativeRoutingToolsVisible && nativeOwner) loadCustomRules()
+  }
+
+  function clearNativeRouting() {
+    _nativeRoutingGeneration++
+    customRules = []
+    routeCheckResult = null
+    _nativeRulesFence = null
+    _nativeRouteFence = null
+    nativeRoutingErrorCode = ""
+  }
+
+  function nativeRoutingCurrent(context) {
+    return !!(context && nativeOwner && nativeRoutingToolsVisible && nativeFactsCurrent
+      && context.generation === _nativeRoutingGeneration && context.instanceId === nativeSnapshot.instanceId
+      && context.revision === nativeSnapshot.revision)
+  }
+
+  function startNativeRoutingRead(kind, input) {
+    if (!nativeRoutingToolsVisible || !nativeFactsCurrent || nativeRoutingBusy) return false
+    nativeRoutingErrorCode = ""
+    if (kind === "check") routeCheckResult = null
+    var context = {kind:kind, generation:_nativeRoutingGeneration, instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
+    _nativeRoutingRead = nativeRoutingReadComponent.createObject(root, {
+      command:["bash", backendPath, kind === "rules" ? "native-routing-rules" : "native-routing-check"],
+      context:context, input:input || "", stdinEnabled:kind === "check"})
+    if (!_nativeRoutingRead) { nativeRoutingErrorCode = "error.capability_unavailable"; return false }
+    _nativeRoutingRead.running = true
+    return true
+  }
+
+  function finishNativeRoutingRead(context, code, output) {
+    if (!nativeRoutingCurrent(context)) return
+    var result = code === 0 ? (context.kind === "rules" ? NativeSnapshot.parseCustomRules(output, context.revision)
+      : NativeSnapshot.parseRouteCheck(output, context.revision)) : null
+    if (result === null) { nativeRoutingErrorCode = "error.capability_unavailable"; return }
+    if (context.kind === "rules") { customRules = result; _nativeRulesFence = context }
+    else { routeCheckResult = result; _nativeRouteFence = context }
+  }
+
+  function requestNativeRoutingAction(action, input) {
+    if (!nativeCanAct || nativeRoutingBusy) return false
+    if (["routing-preset", "custom-rule-add", "custom-rule-delete"].indexOf(action) < 0) return false
+    var operation = "qml-" + Date.now().toString(36) + "-" + (++_nativeOperationSerial).toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
+    var args = ["bash", backendPath, "native-" + action, nativeSnapshot.instanceId, String(nativeSnapshot.revision), operation]
+    nativePending = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision,
+      operationId:operation, action:action, command:args, input:input}
+    clearNativeRouting()
+    nativeActionCode = ""
+    nativeOutcomeUnknown = false
+    nativeActionProcess.command = args
+    nativeActionProcess.stdinEnabled = true
+    nativeActionProcess.running = true
+    return true
+  }
+
+  function finishNativeRoutingAction(result, unknown) {
+    if (!nativePending || ["routing-preset", "custom-rule-add", "custom-rule-delete"].indexOf(nativePending.action) < 0) return
+    nativeRoutingErrorCode = unknown ? "error.daemon_restarting" : result.ok ? ""
+      : ["invalid_argument", "conflict", "busy", "not_found", "permission_denied", "manual_recovery_required", "transition_failed_restored"].indexOf(result.code) >= 0
+        ? "error." + result.code : "error.capability_unavailable"
+  }
+
   property var customRules: []
   property string routingToolStatus: ""
   property string routingToolError: ""
   property var routeCheckResult: null
-  readonly property bool routingToolsLoading: customRulesProcess.running
-  readonly property bool routeChecking: routeCheckProcess.running
+  readonly property bool routingToolsLoading: customRulesProcess.running || (_nativeRoutingRead !== null && _nativeRoutingRead.context.kind === "rules")
+  readonly property bool routeChecking: routeCheckProcess.running || (_nativeRoutingRead !== null && _nativeRoutingRead.context.kind === "check")
   property string _routeCheckInput: ""
   // Names of the profiles currently active
   readonly property var activeNames: {
@@ -283,7 +894,11 @@ Item {
   // lastError, so a controller/API problem cannot turn a healthy VPN shield
   // into a fatal-looking bar state.
   property bool diagnosticsPageVisible: false
-  readonly property bool advancedDiagnosticsLoading: advancedDiagnosticsProcess.running
+  readonly property bool advancedDiagnosticsLoading: advancedDiagnosticsProcess.running || _nativeDiagnosticsProcess !== null
+  property var _nativeDiagnosticsProcess: null
+  property int _nativeDiagnosticsRequestGeneration: -1
+  property bool _nativeDiagnosticsOwner: false
+  property string _nativeDiagnosticsInstance: ""
   property string advancedDiagnosticsErrorCode: ""
   property string advancedDiagnosticsError: ""
   property var loadedRules: []
@@ -312,6 +927,17 @@ Item {
   // available, and one success restores the configured interval.
   property int statusFailureCount: 0
   property bool panelVisible: false
+  onPanelVisibleChanged: {
+    if (!panelVisible) {
+      clearNativeTest()
+      _nativeDesktopGeneration++
+      nativeDesktopCapabilities = null
+      if (_nativeDesktopRead) _nativeDesktopRead.running = false
+    }
+    _nativeSupportGeneration++
+    nativeSupportStatus = ""
+    if (_nativeSupportRead) _nativeSupportRead.running = false
+  }
   readonly property int statusBaseIntervalSec:
     panelVisible ? refreshIntervalSec : Math.max(30, refreshIntervalSec)
   readonly property int statusPollIntervalMs:
@@ -335,6 +961,84 @@ Item {
     ruleUpdateAvailable: false
   })
   property var coreSetup: ({ installed: false, tunReady: false, path: "" })
+  property bool nativeCoreSetupVisible: false
+  property var nativeCoreSetupFacts: null
+  property string nativeCoreSetupStatus: ""
+  property var _nativeCoreSetupRead: null
+  property int _nativeCoreSetupGeneration: 0
+  readonly property bool nativeCoreSetupBusy: _nativeCoreSetupRead !== null
+  onNativeCoreSetupVisibleChanged: {
+    _nativeCoreSetupGeneration++
+    nativeCoreSetupFacts = null
+    nativeCoreSetupStatus = ""
+    if (nativeCoreSetupVisible) refreshNativeCoreSetup()
+  }
+  function refreshNativeCoreSetup() {
+    if (!nativeOwner || !nativeCoreSetupVisible || _nativeCoreSetupRead !== null) return false
+    nativeCoreSetupFacts = null
+    nativeCoreSetupStatus = "loading"
+    _nativeCoreSetupRead = nativeCoreSetupComponent.createObject(root, {
+      generation:_nativeCoreSetupGeneration, command:["bash", backendPath, "native-core-readiness"]})
+    if (_nativeCoreSetupRead === null) { nativeCoreSetupStatus = "failed"; return false }
+    _nativeCoreSetupRead.running = true
+    return true
+  }
+  function finishNativeCoreSetup(process, code, output) {
+    _nativeCoreSetupRead = null
+    try {
+      if (!nativeOwner || !nativeCoreSetupVisible) return
+      if (process.generation !== _nativeCoreSetupGeneration) { refreshNativeCoreSetup(); return }
+      nativeCoreSetupFacts = code === 0 ? NativeSnapshot.parseCoreSetupFacts(output) : null
+      nativeCoreSetupStatus = nativeCoreSetupFacts === null ? "failed" : ""
+    } finally { process.destroy() }
+  }
+  property string nativeDetailsProfileId: ""
+  property var nativeProfileDetails: null
+  property string nativeProfileDetailsStatus: ""
+  property var _nativeDetailsRead: null
+  property int _nativeDetailsGeneration: 0
+  property var _nativeDetailsContext: null
+  readonly property bool nativeProfileDetailsBusy: _nativeDetailsRead !== null
+  onNativeDetailsProfileIdChanged: {
+    clearNativeProfileDetails()
+    if (nativeDetailsProfileId !== "") refreshNativeProfileDetails()
+  }
+  function clearNativeProfileDetails() {
+    _nativeDetailsGeneration++
+    nativeProfileDetails = null
+    nativeProfileDetailsStatus = ""
+    _nativeDetailsContext = null
+  }
+  function nativeProfileDetailsCurrent(context) {
+    return context !== null && nativeCanAct && context.generation === _nativeDetailsGeneration
+      && nativeDetailsProfileId === context.id && nativeSnapshot.instanceId === context.instanceId
+      && nativeSnapshot.revision === context.revision
+      && nativeSnapshot.profiles.some(function(p) { return p.id === context.id })
+  }
+  function refreshNativeProfileDetails() {
+    if (!nativeCanAct || nativeDetailsProfileId === "" || _nativeDetailsRead !== null) return false
+    var context = {id:nativeDetailsProfileId, instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision, generation:_nativeDetailsGeneration}
+    if (!nativeProfileDetailsCurrent(context)) return false
+    nativeProfileDetails = null
+    nativeProfileDetailsStatus = "loading"
+    _nativeDetailsContext = context
+    _nativeDetailsRead = nativeProfileDetailsComponent.createObject(root, {
+      context:context, command:["bash", backendPath, "native-profile-details", context.id]})
+    if (_nativeDetailsRead === null) { nativeProfileDetailsStatus = "failed"; return false }
+    _nativeDetailsRead.running = true
+    return true
+  }
+  function finishNativeProfileDetails(process, code, output) {
+    _nativeDetailsRead = null
+    try {
+      if (!nativeProfileDetailsCurrent(process.context)) {
+        if (nativeDetailsProfileId !== "") refreshNativeProfileDetails()
+        return
+      }
+      nativeProfileDetails = code === 0 ? NativeSnapshot.parseProfileDetails(output, process.context.revision) : null
+      nativeProfileDetailsStatus = nativeProfileDetails === null ? "failed" : ""
+    } finally { process.destroy() }
+  }
   property var filePicker: ({ available: false, provider: "" })
   property var desktopHelpers: ({
     configEditorAvailable: false,
@@ -507,6 +1211,175 @@ Item {
   // A proxy profile has no connection state, and a tunnel that is silent is not
   // thereby broken. Sampled on a short timer only while the panel is open.
   property bool trafficMonitoring: false
+  property bool nativeTrafficMonitoring: false
+  property var nativeTrafficSample: null
+  property var nativeRxHistory: []
+  property var nativeTxHistory: []
+  property var _nativeTrafficRead: null
+  property var _nativeTrafficFence: null
+  property int _nativeTrafficGeneration: 0
+  property double _nativeTrafficReceivedAt: 0
+  property double _nativeTrafficClock: Date.now()
+  readonly property bool nativeTrafficEligible: nativeOwner && nativeTrafficMonitoring && nativeFactsCurrent
+    && nativeSnapshot.desired.connected && nativeSnapshot.lastKnownActual === "connected" && !nativePending
+  readonly property bool nativeTrafficFresh: nativeTrafficEligible && nativeTrafficSample !== null
+    && _nativeTrafficClock >= _nativeTrafficReceivedAt && _nativeTrafficClock - _nativeTrafficReceivedAt <= 10000
+  onNativeTrafficEligibleChanged: {
+    clearNativeTraffic()
+    if (nativeTrafficEligible) sampleNativeTraffic()
+    else if (_nativeTrafficRead !== null) _nativeTrafficRead.running = false
+  }
+
+  function clearNativeTraffic() {
+    _nativeTrafficGeneration++
+    nativeTrafficSample = null; nativeRxHistory = []; nativeTxHistory = []
+    _nativeTrafficFence = null; _nativeTrafficReceivedAt = 0
+  }
+
+  function nativeTrafficCurrent(context) {
+    return !!(context && nativeTrafficEligible && context.generation === _nativeTrafficGeneration
+      && context.instanceId === nativeSnapshot.instanceId && context.revision === nativeSnapshot.revision)
+  }
+
+  function sampleNativeTraffic() {
+    _nativeTrafficClock = Date.now()
+    if (!nativeTrafficFresh && nativeTrafficSample !== null) clearNativeTraffic()
+    if (!nativeTrafficEligible || _nativeTrafficRead !== null) return false
+    var context = {generation:_nativeTrafficGeneration, instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
+    _nativeTrafficRead = nativeTrafficComponent.createObject(root, {context:context, command:["bash", backendPath, "native-traffic"]})
+    if (!_nativeTrafficRead) { clearNativeTraffic(); return false }
+    _nativeTrafficRead.running = true
+    return true
+  }
+
+  function finishNativeTraffic(context, code, output) {
+    if (!nativeTrafficCurrent(context)) return
+    var parsed = code === 0 ? NativeSnapshot.parseTraffic(output, context) : null
+    if (!parsed || !parsed.available) { clearNativeTraffic(); return }
+    var next = NativeSnapshot.trafficDelta(parsed, nativeTrafficSample)
+    if (!next.rated) { nativeRxHistory = []; nativeTxHistory = [] }
+    else {
+      var rx = nativeRxHistory.slice(), tx = nativeTxHistory.slice()
+      rx.push(next.rxRate); tx.push(next.txRate)
+      while (rx.length > historyMaxPoints) rx.shift()
+      while (tx.length > historyMaxPoints) tx.shift()
+      nativeRxHistory = rx; nativeTxHistory = tx
+    }
+    nativeTrafficSample = next; _nativeTrafficFence = context
+    _nativeTrafficReceivedAt = Date.now(); _nativeTrafficClock = _nativeTrafficReceivedAt
+  }
+
+  function nativeTrafficValue(key, rate) {
+    if (!nativeTrafficFresh || (rate && !nativeTrafficSample.rated)) return "--"
+    return rate ? fmtRate(nativeTrafficSample[key]) : fmtSize(nativeTrafficSample[key])
+  }
+
+  Timer {
+    interval: 2000
+    repeat: true
+    running: root.nativeTrafficEligible
+    onTriggered: root.sampleNativeTraffic()
+  }
+  Component {
+    id: nativeTrafficComponent
+    Process {
+      id: process
+      property var context
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      property Timer watchdog: Timer { interval: 6000; running: process.running; onTriggered: process.running = false }
+      onExited: function(code) {
+        root._nativeTrafficRead = null
+        try { root.finishNativeTraffic(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
+  property bool nativePingMonitoring: false
+  property var nativePingSamples: []
+  property string nativePingStatus: ""
+  property var _nativePingRead: null
+  property var _nativePingFence: null
+  property int _nativePingGeneration: 0
+  property double _nativePingReceivedAt: 0
+  property double _nativePingClock: Date.now()
+  readonly property bool nativePingEligible: nativeOwner && nativePingMonitoring && nativeCanAct
+    && nativeSnapshot.desired.connected && nativeSnapshot.lastKnownActual === "connected" && pingHost !== ""
+  readonly property bool nativePingFresh: nativePingEligible && nativePingStatus === "observed"
+    && nativePingSamples.length > 0 && _nativePingClock >= _nativePingReceivedAt
+    && _nativePingClock - _nativePingReceivedAt <= 10000
+  readonly property var nativePingSummary: NativeSnapshot.pingWindow(nativePingFresh ? nativePingSamples : [])
+
+  function clearNativePing() {
+    _nativePingGeneration++
+    nativePingSamples = []; nativePingStatus = ""; _nativePingFence = null; _nativePingReceivedAt = 0
+  }
+  function nativePingCurrent(context) {
+    return !!(context && nativePingEligible && context.generation === _nativePingGeneration
+      && context.instanceId === nativeSnapshot.instanceId && context.revision === nativeSnapshot.revision
+      && context.host === pingHost)
+  }
+  function sampleNativePing() {
+    _nativePingClock = Date.now()
+    if (nativePingSamples.length && (_nativePingClock < _nativePingReceivedAt || _nativePingClock - _nativePingReceivedAt > 10000)) clearNativePing()
+    if (!nativePingEligible || _nativePingRead !== null) return false
+    var context = {instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision,
+      generation:_nativePingGeneration, host:pingHost}
+    _nativePingFence = context
+    nativePingStatus = nativePingSamples.length ? "observed" : "loading"
+    _nativePingRead = nativePingComponent.createObject(root, {context:context,
+      command:["bash", backendPath, "native-ping"], stdinEnabled:true})
+    if (!_nativePingRead) { nativePingStatus = "unavailable"; return false }
+    _nativePingRead.running = true
+    return true
+  }
+  function testNativePing() {
+    if (!nativePingEligible || (_nativePingRead !== null && !nativePingCurrent(_nativePingRead.context))) return false
+    // A manual request joins the same current in-flight probe; never duplicate it.
+    nativePingSamples = []; nativePingStatus = "loading"
+    return _nativePingRead !== null || sampleNativePing()
+  }
+  function finishNativePing(context, code, output) {
+    if (!nativePingCurrent(context)) return
+    var result = code === 0 ? NativeSnapshot.parsePing(output, context) : null
+    if (!result || !result.available) { nativePingStatus = "unavailable"; return }
+    var next = nativePingSamples.slice()
+    next.push(result.value)
+    while (next.length > 10) next.shift()
+    nativePingSamples = next; nativePingStatus = "observed"
+    _nativePingReceivedAt = Date.now(); _nativePingClock = _nativePingReceivedAt
+  }
+  onNativePingEligibleChanged: {
+    clearNativePing()
+    if (nativePingEligible) sampleNativePing()
+  }
+  onPingHostChanged: {
+    clearNativePing()
+    if (nativePingEligible) sampleNativePing()
+  }
+  Timer {
+    interval: 3000
+    repeat: true
+    running: root.nativePingEligible
+    onTriggered: root.sampleNativePing()
+  }
+  Component {
+    id: nativePingComponent
+    Process {
+      id: process
+      property var context
+      onStarted: {
+        if (root.nativePingCurrent(context)) write(context.host + "\n")
+        stdinEnabled = false
+      }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      property Timer watchdog: Timer { interval: 6000; running: process.running; onTriggered: process.running = false }
+      onExited: function(code) {
+        root._nativePingRead = null
+        try { root.finishNativePing(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
   property bool pingMonitoring: false
   // device -> {rx, tx, at, rxRate, txRate}. The raw counters double as
   // session totals come from Mihomo's TUN interface.
@@ -515,6 +1388,8 @@ Item {
   property var txHistory: []
   readonly property int historyMaxPoints: 30
   readonly property string barThroughput: {
+    if (nativeOwner) return nativeTrafficFresh && nativeTrafficSample.rated
+      ? "↓" + fmtBytes(nativeTrafficSample.rxRate) + " ↑" + fmtBytes(nativeTrafficSample.txRate) : ""
     var t = trafficOf(primaryDevice)
     if (!trafficLive(t) || !t.rated) return ""
     return "↓" + fmtBytes(t.rxRate) + " ↑" + fmtBytes(t.txRate)
@@ -634,7 +1509,7 @@ Item {
     _advancedDiagnosticsRefreshPending = false
     advancedDiagnosticsErrorCode = ""
     advancedDiagnosticsError = ""
-    if (diagnosticsPageVisible) {
+    if (diagnosticsPageVisible || nativeOwner) {
       loadedRules = []
       loadedRuleTotal = 0
       loadedRulesTruncated = false
@@ -642,7 +1517,7 @@ Item {
       loadedRuleProviderTotal = 0
       loadedRuleProvidersTruncated = false
       advancedDiagnosticsLoadedAt = 0
-      refreshAdvancedDiagnostics()
+      if (diagnosticsPageVisible) refreshAdvancedDiagnostics()
     }
   }
 
@@ -735,7 +1610,7 @@ Item {
   }
 
   function refreshAdvancedDiagnostics() {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return refreshNativeDiagnostics()
     if (!diagnosticsPageVisible) return false
     if (advancedDiagnosticsProcess.running) {
       // A re-open must get a fresh answer after the request from the previous
@@ -755,11 +1630,75 @@ Item {
 
   function refreshAdvancedDiagnosticsAfterChange() {
     if (!diagnosticsPageVisible) return false
-    if (advancedDiagnosticsProcess.running) {
+    if (advancedDiagnosticsLoading) {
       _advancedDiagnosticsRefreshPending = true
       return false
     }
     return refreshAdvancedDiagnostics()
+  }
+
+  function clearNativeDiagnosticsSample() {
+    loadedRules = []; loadedRuleTotal = 0; loadedRulesTruncated = false
+    loadedRuleProviders = []; loadedRuleProviderTotal = 0; loadedRuleProvidersTruncated = false
+    advancedDiagnosticsLoadedAt = 0
+  }
+
+  function invalidateNativeDiagnosticsIdentity() {
+    var owner = nativeOwner
+    var instance = owner && nativeSnapshot ? nativeSnapshot.instanceId : ""
+    if (_nativeDiagnosticsOwner === owner && _nativeDiagnosticsInstance === instance) return false
+    _nativeDiagnosticsOwner = owner
+    _nativeDiagnosticsInstance = instance
+    _advancedDiagnosticsGeneration++
+    _advancedDiagnosticsRefreshPending = false
+    clearNativeDiagnosticsSample()
+    advancedDiagnosticsErrorCode = ""
+    advancedDiagnosticsError = ""
+    // Local identity changes invalidate samples; ordinary revision updates do
+    // not poll. This still does not authenticate the identity of a response.
+    if (owner && instance !== "" && diagnosticsPageVisible) refreshNativeDiagnostics()
+    return true
+  }
+
+  function refreshNativeDiagnostics() {
+    if (!nativeOwner || !diagnosticsPageVisible) return false
+    if (_nativeDiagnosticsProcess !== null) {
+      if (_nativeDiagnosticsRequestGeneration !== _advancedDiagnosticsGeneration)
+        _advancedDiagnosticsRefreshPending = true
+      return false
+    }
+    // This is an independent sample, not a same-daemon/health assertion.
+    advancedDiagnosticsErrorCode = ""
+    advancedDiagnosticsError = ""
+    _nativeDiagnosticsRequestGeneration = _advancedDiagnosticsGeneration
+    _nativeDiagnosticsProcess = nativeDiagnosticsComponent.createObject(root, {
+      command:["bash", backendPath, "native-diagnostics-summary"],
+      generation:_advancedDiagnosticsGeneration, instance:nativeSnapshot ? nativeSnapshot.instanceId : ""})
+    if (!_nativeDiagnosticsProcess) {
+      clearNativeDiagnosticsSample()
+      advancedDiagnosticsErrorCode = "unavailable"
+      advancedDiagnosticsError = "Diagnostic sample is unavailable"
+      return false
+    }
+    _nativeDiagnosticsProcess.running = true
+    return true
+  }
+
+  function finishNativeDiagnostics(generation, instance, code, output) {
+    var stale = !nativeOwner || !diagnosticsPageVisible || generation !== _advancedDiagnosticsGeneration
+      || !nativeSnapshot || instance !== nativeSnapshot.instanceId
+    if (!stale) {
+      var value = code === 0 ? NativeSnapshot.parseDiagnosticsSummary(output) : null
+      if (!value || !applyAdvancedDiagnostics(JSON.stringify(value))) {
+        clearNativeDiagnosticsSample()
+        advancedDiagnosticsErrorCode = "unavailable"
+        advancedDiagnosticsError = "Diagnostic sample is unavailable"
+      }
+    }
+    if (_advancedDiagnosticsRefreshPending && diagnosticsPageVisible) {
+      _advancedDiagnosticsRefreshPending = false
+      Qt.callLater(refreshAdvancedDiagnostics)
+    }
   }
 
   function applyAdvancedDiagnostics(raw) {
@@ -1088,6 +2027,20 @@ Item {
   // profile model evolves.
   function resolveTarget(target) {
     var value = String(target || "")
+    if (nativeOwner) {
+      // Native metadata never populates the legacy profiles array. Resolve
+      // explicit desktop actions from the same validated snapshot as the UI.
+      // Do not echo unknown targets or enumerate IDs in public errors.
+      if (!nativeCanAct || !nativeSnapshot || value.length === 0 || value.length > 160)
+        return {profile:null, error:"native profile unavailable"}
+      var exact = nativeSnapshot.profiles.find(function(p) { return p.id === value })
+      var matches = exact ? [exact] : nativeSnapshot.profiles.filter(function(p) { return p.name === value })
+      if (matches.length !== 1)
+        return {profile:null, error:matches.length > 1 ? "ambiguous profile name; select by record ID" : "no such profile"}
+      var nativeProfile = matches[0]
+      return {profile:{uuid:nativeProfile.id, name:nativeProfile.name, favorite:nativeProfile.favorite,
+        managed:nativeProfile.subscriptionId !== ""}, error:""}
+    }
     var profile = findByUuid(value)
     if (profile) return { profile: profile, error: "" }
     var count = countByName(value)
@@ -1103,6 +2056,7 @@ Item {
 
   function countByName(name) {
     var value = String(name || "")
+    if (nativeOwner) return nativeSnapshot ? nativeSnapshot.profiles.filter(function(p) { return p.name === value }).length : 0
     var n = 0
     for (var i = 0; i < profiles.length; i++) {
       if ((profiles[i].rawName || profiles[i].name) === value) n++
@@ -1448,7 +2402,10 @@ Item {
   }
 
   function useRoutingPreset(profile, keepMode) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) {
+      if (!routingPresetById(String(profile || ""))) { nativeRoutingErrorCode = "error.invalid_argument"; return false }
+      return requestNativeRoutingAction("routing-preset", profile + "\n" + (keepMode ? "on" : "off"))
+    }
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     var value = String(profile || "")
     if (!routingPresetById(value)) return rejectAction("unsupported routing preset")
@@ -1470,7 +2427,7 @@ Item {
   }
 
   function configureStartup(enabled, target, profileUuid, mode) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return requestNativeStartup(enabled, target, profileUuid, mode)
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     var wantedTarget = String(target || "")
     var wantedProfile = String(profileUuid || "")
@@ -1491,7 +2448,7 @@ Item {
   }
 
   function completeOnboarding() {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return requestNativeAction("onboarding-complete", "", "")
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     actionRejection = ""
     actionStatus = "Finishing setup…"
@@ -1500,7 +2457,7 @@ Item {
   }
 
   function loadCustomRules() {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return startNativeRoutingRead("rules", "")
     if (customRulesProcess.running) return false
     routingToolError = ""
     customRulesProcess.command = ["bash", backendPath, "custom-rules"]
@@ -1509,7 +2466,14 @@ Item {
   }
 
   function addCustomRule(kind, action, value) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) {
+      var input = String(value || "").trim()
+      if (["domain", "suffix", "ipcidr"].indexOf(kind) < 0 || ["proxy", "direct", "reject"].indexOf(action) < 0
+          || !NativeSnapshot.text(input, 1024, false) || !NativeSnapshot.editorText(input, 1024)) {
+        nativeRoutingErrorCode = "error.invalid_argument"; return false
+      }
+      return requestNativeRoutingAction("custom-rule-add", kind + "\n" + action + "\n" + input)
+    }
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     var matchKind = String(kind || "")
     var routeAction = String(action || "")
@@ -1527,7 +2491,12 @@ Item {
   }
 
   function deleteCustomRule(rule) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) {
+      if (!rule || !nativeRoutingCurrent(_nativeRulesFence) || !customRules.some(function(r) { return r.id === rule.id })) {
+        nativeRoutingErrorCode = "error.conflict"; return false
+      }
+      return requestNativeRoutingAction("custom-rule-delete", rule.id)
+    }
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     if (!rule || !rule.id) return rejectAction("no such custom routing rule")
     routingToolError = ""
@@ -1537,7 +2506,7 @@ Item {
   }
 
   function refreshRuleProviders() {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return startNativeBatch("providers")
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     routingToolError = ""
     routingToolStatus = "Refreshing remote rule data…"
@@ -1546,7 +2515,13 @@ Item {
   }
 
   function checkRoute(value) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) {
+      var input = String(value || "").trim()
+      if (!NativeSnapshot.text(input, 1024, false) || !NativeSnapshot.editorText(input, 1024)) {
+        nativeRoutingErrorCode = "error.invalid_argument"; return false
+      }
+      return startNativeRoutingRead("check", input)
+    }
     if (routeCheckProcess.running) return false
     var query = String(value || "").trim()
     if (query === "" || query.length > 1024) {
@@ -1611,11 +2586,13 @@ Item {
       return
     }
     var next = {}
-    for (var i = 0; i < profiles.length; i++) {
-      var profile = profiles[i]
-      if (profile.subscriptionUuid === target) continue
-      var result = profileProbes[profile.uuid]
-      if (result !== undefined) next[profile.uuid] = result
+    var members = nativeOwner && nativeSnapshot ? nativeSnapshot.profiles : profiles
+    for (var i = 0; i < members.length; i++) {
+      var profile = members[i]
+      var profileId = nativeOwner ? profile.id : profile.uuid
+      if ((nativeOwner ? profile.subscriptionId : profile.subscriptionUuid) === target) continue
+      var result = profileProbes[profileId]
+      if (result !== undefined) next[profileId] = result
     }
     profileProbes = next
     var nextTimes = {}
@@ -1626,7 +2603,7 @@ Item {
   }
 
   function probeSubscription(subscription) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return subscription ? startNativeBatch("probe", subscription.id || subscription.uuid) : false
     if (!subscription || !subscription.uuid) {
       subscriptionError = "No such subscription"
       return false
@@ -1666,6 +2643,7 @@ Item {
   }
 
   function applyProbeEvent(raw, expectedSubscriptionUuid) {
+    if (nativeOwner) return false
     var payload
     try {
       payload = JSON.parse(String(raw || ""))
@@ -1744,6 +2722,7 @@ Item {
   }
 
   function applyProbeResults(raw, expectedSubscriptionUuid) {
+    if (nativeOwner) return null
     var payload
     try {
       payload = JSON.parse(String(raw || ""))
@@ -1832,7 +2811,7 @@ Item {
   }
 
   function refreshAllSubscriptions() {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return startNativeBatch("subscriptions")
     if (busy) return rejectAction("another OmaVLESS operation is already running")
     if (probingProfiles) return rejectSubscriptionAction("Wait for the latency test to finish")
     if (subscriptions.length === 0) return rejectAction("no subscriptions to update")
@@ -1981,6 +2960,96 @@ Item {
     return true
   }
 
+  property string nativeSupportStatus: ""
+  property var nativeDesktopCapabilities: null
+  property bool nativeDesktopLoading: false
+  property int _nativeDesktopGeneration: 0
+  property var _nativeDesktopRead: null
+
+  function refreshNativeDesktopCapabilities() {
+    if (!nativeOwner || !panelVisible || nativeDesktopLoading) return false
+    nativeDesktopCapabilities = null
+    nativeDesktopLoading = true
+    _nativeDesktopRead = nativeDesktopComponent.createObject(root, {
+      command:["bash", backendPath, "native-desktop-capabilities"], generation:++_nativeDesktopGeneration})
+    if (!_nativeDesktopRead) { nativeDesktopLoading = false; return false }
+    _nativeDesktopRead.running = true
+    return true
+  }
+
+  function finishNativeDesktopCapabilities(generation, code, output) {
+    if (generation !== _nativeDesktopGeneration) return false
+    nativeDesktopLoading = false
+    nativeDesktopCapabilities = nativeOwner && panelVisible && code === 0 ? NativeSnapshot.desktopCapabilities(output) : null
+    return nativeDesktopCapabilities !== null
+  }
+
+  function completeNativeDesktopRead(process, generation, code, output) {
+    // A retired process must never clear a newer read's busy state or handle.
+    if (_nativeDesktopRead !== process) return false
+    _nativeDesktopRead = null
+    nativeDesktopLoading = false
+    return finishNativeDesktopCapabilities(generation, code, output)
+  }
+
+  Component {
+    id: nativeDesktopComponent
+    Process {
+      id: process
+      property int generation
+      property bool timedOut: false
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      property Timer timeout: Timer { interval: 10000; running: process.running; onTriggered: { process.timedOut = true; process.running = false } }
+      onExited: function(code) {
+        try { root.completeNativeDesktopRead(process, generation, timedOut ? -1 : code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
+  property var _nativeSupportRead: null
+  property bool _nativeSupportCopy: false
+  property int _nativeSupportGeneration: 0
+  readonly property bool nativeSupportBusy: _nativeSupportRead !== null || _nativeSupportCopy
+
+  function copyNativeConfigurationReport() {
+    if (!nativeFactsCurrent || !panelVisible || nativeSupportBusy || copying) return false
+    nativeSupportStatus = "loading"
+    _nativeSupportRead = nativeSupportComponent.createObject(root, {
+      command:["bash", backendPath, "native-support-report"],
+      instance:nativeSnapshot.instanceId, revision:nativeSnapshot.revision, generation:_nativeSupportGeneration})
+    if (!_nativeSupportRead) { nativeSupportStatus = "failed"; return false }
+    _nativeSupportRead.running = true
+    return true
+  }
+
+  function finishNativeConfigurationReport(instance, revision, generation, code, output) {
+    if (generation !== _nativeSupportGeneration) return false
+    if (!nativeFactsCurrent || !panelVisible || nativeSnapshot.instanceId !== instance || nativeSnapshot.revision !== revision) {
+      nativeSupportStatus = "failed"; return false
+    }
+    var report = code === 0 ? NativeSnapshot.configurationReport(output, revision) : null
+    if (report === null || !copyText(report)) { nativeSupportStatus = "failed"; return false }
+    _nativeSupportCopy = true
+    return true
+  }
+
+  Component {
+    id: nativeSupportComponent
+    Process {
+      id: process
+      property string instance
+      property double revision
+      property int generation
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      property Timer timeout: Timer { interval: 15000; running: process.running; onTriggered: process.running = false }
+      onExited: function(code) {
+        root._nativeSupportRead = null
+        try { root.finishNativeConfigurationReport(instance, revision, generation, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
+
   function copyText(value) {
     var text = String(value || "")
     if (text === "" || text === "--") return false
@@ -2011,7 +3080,7 @@ Item {
   signal editFinished()
 
   function editConfig(profile, seedText) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return startNativeEditor(profile)
     if (!profile || !profile.uuid) return rejectAction("no such profile")
     if (pickerProcess.running) return rejectAction("close the file picker before editing")
     if (clipboardProcess.running) return rejectAction("clipboard import is still running")
@@ -2049,10 +3118,33 @@ Item {
   property string _nativeQrInput: ""
   property var nativeQrExportProcess: null
   property var nativeQrRenderProcess: null
-  onNativeOwnerChanged: { if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr() }
-  onNativeSnapshotChanged: { if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr() }
+  onNativeOwnerChanged: {
+    clearProbeResults("")
+    _nativeProbeCacheFence = null
+    clearNativeRouting()
+    if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr()
+    invalidateNativeDiagnosticsIdentity()
+  }
+  onNativeSnapshotChanged: {
+    if (_nativeProbeCacheFence && (!nativeSnapshot || nativeSnapshot.instanceId !== _nativeProbeCacheFence.instanceId || nativeSnapshot.revision !== _nativeProbeCacheFence.revision)) { clearProbeResults(""); _nativeProbeCacheFence = null }
+    if (nativeTestFence && (!nativeSnapshot || nativeSnapshot.instanceId !== nativeTestFence.instanceId || nativeSnapshot.revision !== nativeTestFence.revision)) clearNativeTest()
+    if (_nativeDetailsContext !== null && !nativeProfileDetailsCurrent(_nativeDetailsContext)) clearNativeProfileDetails()
+    if (_nativePingFence && !nativePingCurrent(_nativePingFence)) clearNativePing()
+    if (_nativeTrafficFence && !nativeTrafficCurrent(_nativeTrafficFence)) clearNativeTraffic()
+    if ((_nativeRulesFence && !nativeRoutingCurrent(_nativeRulesFence)) || (_nativeRouteFence && !nativeRoutingCurrent(_nativeRouteFence))) clearNativeRouting()
+    if (nativeOwner && nativeRoutingToolsVisible && nativeFactsCurrent && !_nativeRulesFence && !nativeRoutingBusy) loadCustomRules()
+    if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr()
+    invalidateNativeDiagnosticsIdentity()
+  }
   onNativeSnapshotFailedChanged: { if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr() }
-  onNativePendingChanged: { if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr() }
+  onNativeFactsCurrentChanged: {
+    if (!nativeFactsCurrent) clearNativeRouting()
+    else if (nativeRoutingToolsVisible && !_nativeRulesFence && !nativeRoutingBusy) loadCustomRules()
+  }
+  onNativePendingChanged: {
+    if (_nativeDetailsContext !== null && !nativeProfileDetailsCurrent(_nativeDetailsContext)) clearNativeProfileDetails()
+    if (_nativeQrContext !== null && !nativeQrCurrent(_nativeQrContext)) closeQr()
+  }
   property string qrName: ""
   // The QR window is the only surface a QR request reports through — the
   // panel closes the moment one starts, so a render failure has to be
@@ -2120,7 +3212,7 @@ Item {
   }
 
   function exportToPath(profile, path) {
-    if (nativeOwner) return rejectNativeAction()
+    if (nativeOwner) return startNativeFileExport(profile, path)
     if (!profile || !profile.uuid) return rejectAction("no such profile")
     if (exportProcess.running) return rejectAction("an export is already running")
     var dest = String(path || "")
@@ -2132,6 +3224,99 @@ Item {
     exportProcess.command = ["bash", backendPath, "export-file", "--", profile.uuid, dest]
     exportProcess.running = true
     return true
+  }
+
+  property var nativeFileExportContext: null
+  property var nativeFileExportProcess: null
+  property string nativeFileExportStatus: ""
+  property string nativeFileExportKind: "profile"
+  signal nativeExportPickerFinished()
+  function startNativeExportPicker(profile, locale) {
+    if (!nativeCanAct || nativeFileExportProcess !== null
+        || (profile && !nativeSnapshot.profiles.some(function(p) { return p.id === profile.uuid }))) return false
+    var context = {kind:profile ? "profile" : "report", id:profile ? profile.uuid : "",
+      instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision}
+    nativeFileExportContext = context
+    nativeFileExportKind = context.kind
+    nativeFileExportStatus = ""
+    nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
+      picking:true, stdinEnabled:true, privateInput:locale === "ru" ? "ru" : "en",
+      command:["bash", backendPath, "native-pick-" + context.kind + "-export"]})
+    if (nativeFileExportProcess === null) { nativeFileExportContext = null; nativeFileExportStatus = "failed"; return false }
+    nativeFileExportProcess.context = context
+    nativeFileExportProcess.running = true
+    return true
+  }
+  function validNativeExportPath(path) {
+    return typeof path === "string" && path[0] === "/" && path.length <= 4096
+      && !/[\u0000-\u001f\u007f]/.test(path) && NativeSnapshot.editorText(path, 4096)
+  }
+  function nativeFileExportCurrent(context) {
+    return context !== null && context === nativeFileExportContext && nativeCanAct
+      && nativeSnapshot.instanceId === context.instanceId && nativeSnapshot.revision === context.revision
+      && (context.kind === "report" || nativeSnapshot.profiles.some(function(p) { return p.id === context.id }))
+  }
+  function startNativeReportFileExport(path) {
+    if (!nativeCanAct || nativeFileExportProcess !== null || !validNativeExportPath(path)) return false
+    var context = {kind:"report", instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision, path:path}
+    nativeFileExportContext = context
+    nativeFileExportKind = "report"
+    nativeFileExportStatus = "pending"
+    nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
+      command:["bash", backendPath, "native-support-report"]})
+    if (nativeFileExportProcess === null) { nativeFileExportContext = null; nativeFileExportStatus = "failed"; return false }
+    // createObject's initial-property map copies JS objects through QVariant.
+    // Assign afterward to preserve the exact operation identity fence.
+    nativeFileExportProcess.context = context
+    nativeFileExportProcess.running = true
+    return true
+  }
+  function startNativeFileExport(profile, path) {
+    if (!nativeCanAct || nativeFileExportProcess !== null || !profile || !validNativeExportPath(path)
+        || !nativeSnapshot.profiles.some(function(p) { return p.id === profile.uuid })) return false
+    var context = {id:profile.uuid, instanceId:nativeSnapshot.instanceId, revision:nativeSnapshot.revision, path:path}
+    nativeFileExportContext = context
+    nativeFileExportKind = "profile"
+    nativeFileExportStatus = "pending"
+    nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
+      command:["bash", backendPath, "native-profile-file", profile.uuid]})
+    if (nativeFileExportProcess === null) { nativeFileExportContext = null; nativeFileExportStatus = "failed"; return false }
+    nativeFileExportProcess.context = context
+    nativeFileExportProcess.running = true
+    return true
+  }
+  function finishNativeFileExport(process, code, output, error) {
+    var context = process.context
+    nativeFileExportProcess = null
+    try {
+      if (process.picking) {
+        var accepted = nativeFileExportCurrent(context) && code === 0 && validNativeExportPath(output)
+        nativeFileExportContext = null
+        if (accepted) {
+          if (context.kind === "report") startNativeReportFileExport(output)
+          else startNativeFileExport({uuid:context.id}, output)
+        } else if (code !== 3) {
+          nativeFileExportStatus = error === "File picker unavailable: install zenity, kdialog or yad\n"
+            ? "pickerUnavailable" : error === "Invalid desktop helper command\n" ? "helperUnavailable" : "failed"
+        }
+        nativeExportPickerFinished()
+        return
+      }
+      if (process.writing) {
+        nativeFileExportStatus = code === 0 && process.writeAdmitted ? "saved" : "failed"
+        nativeFileExportContext = null
+        return
+      }
+      var content = nativeFileExportCurrent(context) && code === 0
+        ? (context.kind === "report" ? NativeSnapshot.configurationReport(output, context.revision) : NativeSnapshot.parseQrExport(output, context.revision)) : null
+      if (content === null) { nativeFileExportStatus = "failed"; nativeFileExportContext = null; return }
+      nativeFileExportProcess = nativeFileExportComponent.createObject(root, {
+        writing:true, privateInput:context.path + "\n" + content,
+        stdinEnabled:true, command:["bash", backendPath, "native-export-write"]})
+      if (nativeFileExportProcess === null) { nativeFileExportStatus = "failed"; nativeFileExportContext = null; return }
+      nativeFileExportProcess.context = context
+      nativeFileExportProcess.running = true
+    } finally { process.destroy() }
   }
 
   // Returns "" when a code is on its way, or why nothing will appear.
@@ -2202,7 +3387,12 @@ Item {
     // Omarchy has no uninstall hook: `plugin remove` first unloads this QML,
     // then deletes the checkout. The detached guard waits through hot reloads
     // but cleans runtime units after an explicit disable or checkout removal.
-    Quickshell.execDetached(["bash", backendPath, "watch-plugin-removal"])
+    // Discovery may not have completed before unload. This fixed OS wrapper
+    // survives checkout removal, is quiet without the optional package, and
+    // the Rust command independently checks committed ownership before effects.
+    Quickshell.execDetached(["/bin/sh", "-c", "if [ -x /usr/bin/omavless ]; then exec /usr/bin/omavless plugin watch-removal; fi"])
+    if (!nativeOwner)
+      Quickshell.execDetached(["bash", backendPath, "watch-plugin-removal"])
   }
   // SIGKILL and a hard shell crash cannot run the destruction handler. The
   // backend identifies PNGs by this shell's parent PID, so startup safely
@@ -2573,6 +3763,20 @@ Item {
     }
   }
 
+  Component {
+    id: nativeSubscriptionReadComponent
+    Process {
+      id: process
+      property var context
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) {
+        root.nativeSubscriptionReadProcess = null
+        try { root.finishNativeSubscriptionRead(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
+
   Process {
     id: nativeActionProcess
     running: false
@@ -2584,7 +3788,10 @@ Item {
     stdout: StdioCollector { id: nativeActionStdout; waitForEnd: true }
     // Raw errors never enter visible state or the shared legacy error channel.
     onExited: function(exitCode) {
-      var result = NativeSnapshot.parseAction(nativeActionStdout.text, root.nativePending)
+      var result = NativeSnapshot.parseActionExit(nativeActionStdout.text, root.nativePending, exitCode)
+      root.finishNativeEditorAction(result, !result || exitCode === 73 || (!result.ok && result.code === "daemon_restarting"))
+      root.finishNativeSubscriptionAction(result, !result || exitCode === 73 || (!result.ok && result.code === "daemon_restarting"))
+      root.finishNativeRoutingAction(result, !result || exitCode === 73 || (!result.ok && result.code === "daemon_restarting"))
       if (!result || exitCode === 73) {
         root.nativeOutcomeUnknown = true
         root.nativeActionCode = ""
@@ -2598,6 +3805,60 @@ Item {
       }
       root.nativeObservation = null
       root.refreshAfterChange()
+    }
+  }
+
+  Component {
+    id: nativeRoutingReadComponent
+    Process {
+      id: process
+      property var context
+      property string input: ""
+      onStarted: { if (stdinEnabled) write(input); input = ""; stdinEnabled = false }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) {
+        root._nativeRoutingRead = null
+        var stale = !root.nativeRoutingCurrent(context)
+        try { root.finishNativeRoutingRead(context, code, output.text) } finally { process.destroy() }
+        // A page reopen or a newer snapshot may have waited for this reader.
+        // Retry only stale reads, never a genuine backend/parser failure.
+        if (stale && root.nativeRoutingToolsVisible && root.nativeFactsCurrent && !root.nativeRoutingBusy && !root._nativeRulesFence)
+          Qt.callLater(root.loadCustomRules)
+      }
+    }
+  }
+
+  Component {
+    id: nativeEditorReadComponent
+    Process {
+      id: process
+      property var context
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) {
+        root.nativeEditorReadProcess = null
+        try { root.finishNativeEditorRead(context, code, output.text) } finally { process.destroy() }
+      }
+    }
+  }
+
+  Component {
+    id: nativeEditorComponent
+    Process {
+      id: process
+      property var context
+      onStarted: {
+        if (root.nativeEditorContextCurrent(context)) write(root._nativeEditorSeed)
+        root._nativeEditorSeed = ""
+        stdinEnabled = false
+      }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { id: error; waitForEnd: true }
+      onExited: function(code) {
+        root.nativeEditorProcess = null
+        try { root.finishNativeEditor(context, code, output.text, error.text) } finally { process.destroy() }
+      }
     }
   }
 
@@ -2639,6 +3900,15 @@ Item {
     id: nativeImportSource
     running: false
     command: []
+    onStarted: {
+      var context = root._nativeSourceContext
+      if (context) {
+        var path = context.path
+        context.path = ""
+        if (path && root.nativeImportCurrent(context)) write(path)
+      }
+      stdinEnabled = false
+    }
     stdout: StdioCollector { id: nativeImportSourceOut; waitForEnd: true }
     stderr: StdioCollector { id: nativeImportSourceError; waitForEnd: true }
     onExited: function(code) { root.finishNativeImportSource(code, nativeImportSourceOut.text, nativeImportSourceError.text) }
@@ -2877,6 +4147,22 @@ Item {
     }
   }
 
+  Component {
+    id: nativeDiagnosticsComponent
+    Process {
+      id: sample
+      property int generation
+      property string instance
+      stdout: StdioCollector { id: sampleOutput; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) {
+        root._nativeDiagnosticsProcess = null
+        try { root.finishNativeDiagnostics(generation, instance, code, sampleOutput.text) }
+        finally { sample.destroy() }
+      }
+    }
+  }
+
   Process {
     id: advancedDiagnosticsProcess
     running: false
@@ -2889,7 +4175,7 @@ Item {
     // never echo controller/configuration details from stderr.
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(exitCode) {
-      var stale = !root.diagnosticsPageVisible
+      var stale = root.nativeOwner || !root.diagnosticsPageVisible
         || root._advancedDiagnosticsRequestGeneration !== root._advancedDiagnosticsGeneration
       if (!stale) {
         if (exitCode === 0
@@ -2961,7 +4247,7 @@ Item {
   Process {
     id: copyProcess
     running: false
-    command: ["wl-copy"]
+    command: root.nativeOwner ? ["bash", root.backendPath, "native-clipboard-copy"] : ["wl-copy"]
     stdinEnabled: false
     onStarted: {
       write(root._copyText)
@@ -2969,6 +4255,11 @@ Item {
       stdinEnabled = false
     }
     onExited: function(exitCode) {
+      if (root._nativeSupportCopy) {
+        root._nativeSupportCopy = false
+        root.nativeSupportStatus = exitCode === 0 ? "copied" : "failed"
+        return
+      }
       if (exitCode === 0) root.showTransientStatus("Copied to clipboard")
       else {
         root.actionStatus = ""
@@ -2987,6 +4278,61 @@ Item {
       onExited: function(code) {
         root.disposeNativeQrProcess("export", process, code, output.text, "")
       }
+    }
+  }
+
+  Component {
+    id: nativeFileExportComponent
+    Process {
+      id: process
+      property var context: null
+      property bool picking: false
+      property bool writing: false
+      property bool writeAdmitted: false
+      property string privateInput: ""
+      running: false
+      onStarted: {
+        if (picking) {
+          write(privateInput)
+          privateInput = ""
+          stdinEnabled = false
+        } else if (writing) {
+          writeAdmitted = root.nativeFileExportCurrent(context)
+          if (writeAdmitted) write(privateInput)
+          privateInput = ""
+          stdinEnabled = false
+        }
+      }
+      // Interactive selection has no artificial human-response deadline.
+      property Timer watchdog: Timer { interval: 15000; running: process.running && !process.picking; onTriggered: process.signal(9) }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { id: pickerError; waitForEnd: true }
+      onExited: function(code) { privateInput = ""; root.finishNativeFileExport(process, code, output.text, pickerError.text) }
+    }
+  }
+
+  Component {
+    id: nativeCoreSetupComponent
+    Process {
+      id: process
+      property int generation: 0
+      running: false
+      property Timer watchdog: Timer { interval: 8000; running: process.running; onTriggered: process.signal(9) }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) { root.finishNativeCoreSetup(process, code, output.text) }
+    }
+  }
+  Component {
+    id: nativeProfileDetailsComponent
+    Process {
+      id: process
+      property var context: null
+      running: false
+      property Timer watchdog: Timer { interval: 8000; running: process.running; onTriggered: process.signal(9) }
+      stdout: StdioCollector { id: output; waitForEnd: true }
+      stderr: StdioCollector { waitForEnd: true }
+      onExited: function(code) { root.finishNativeProfileDetails(process, code, output.text) }
     }
   }
 
@@ -3185,6 +4531,7 @@ Item {
       root._probeStartedAt = 0
       root._probeCancelRequested = false
       root._probeName = ""
+      if (root.nativeOwner) return
       if (cancelled) {
         root.subscriptionError = ""
         root.subscriptionStatus = "Server test cancelled"

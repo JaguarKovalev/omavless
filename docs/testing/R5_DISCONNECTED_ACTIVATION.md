@@ -30,9 +30,12 @@ deadline and 64-KiB output limit; a descendant retaining stdout cannot extend it
 Under the shared migration lease, activation requires legacy ownership,
 repeated strict process/TUN inventories, both fixed services inactive with zero
 MainPID, and absent legacy/native controllers and native control socket. Any
-unavailable inventory refuses. Both units must report disabled startup, no
+unavailable inventory refuses. Loaded units must report disabled startup, no
 drop-ins and no pending daemon reload; the runtime fragment must be the fixed
-packaged path. This operation never enables or disables a unit.
+packaged path. The later local
+[absent-legacy checkpoint](R6_ABSENT_LEGACY_ACTIVATION.md) additionally accepts
+strictly proven missing legacy installation, never an absent native unit or a
+failed observation. This operation never enables or disables a unit.
 
 The complete private store must validate, have explicitly configured disabled
 startup, and require no compatibility-pointer repair or missing-profile pruning

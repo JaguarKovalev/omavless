@@ -1,6 +1,19 @@
 # OmaVLESS development delivery roadmap
 
-Status: active delivery ledger, updated 2026-09-03.
+Status: active delivery ledger; local native checkpoint updated 2026-09-13.
+
+Owner-approved update, 2026-09-13: **R6 native-path retirement is closed
+with explicit deferrals**. Start with [current delivery status](docs/roadmap/CURRENT_STATUS.md)
+for the integrated tree; GitHub records its actual publication state. See
+[exact closure and evidence](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
+Optional enabled Last/pinned login validation moves to
+[AUTO-1](docs/roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md); startup Off remains default.
+DNS/provider investigation and V0 fixture limits remain open. Historical stage
+entries below keep their original evidence boundaries.
+
+The [publication candidate](docs/testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md)
+indexes the final local checks, outstanding Draft PR reconciliation and the
+owner-controlled publication step. No remote publication is implied.
 
 This file is the compact source of truth for **what happens next**, dependency
 order and acceptance state. Detailed contracts live under `docs/roadmap/`.
@@ -97,6 +110,105 @@ WireGuard/AmneziaWG now has its own private-fixture, installed-core, security
 and host acceptance ledger. P4 remains unavailable to users until that ledger
 and the Rust compatibility/runtime bridge are complete.
 
+### Local-only continuation — pending acceptance, 2026-09-10
+
+For the consolidated current R6 remainder and the 2026-09-12 automatic-test
+checkpoint, start with the [R6 closure ledger](docs/testing/R6_CLOSURE_LEDGER_2026-09-12.md).
+R6 is not closed: installed-binary no-Python conformance and the resumed full
+workspace pass. An earlier intermittent post-drain mutation test failure remains
+unexplained, and declared installed-host gates remain distinct. No main
+publication occurred.
+
+Latest local continuation: compatible native-package downgrade/upgrade/removal/
+recovery is exercised; the installed no-Python Full VPN lifecycle and guarded
+Disconnect/cleanup pass. Its HTTPS probe still times out and remains a separate
+open network finding, not an overall live-network PASS. The remaining host
+migration gate is genuine Last/pinned fresh login plus disconnected same-epoch
+restart. Last/Routing is prepared for the next real login; current desired state
+remains disconnected. Settings keyboard-scroll polish is installed and visually
+checked. See the ledger for exact runtime/frontend identities and restoration.
+
+The local Rust candidate has advanced beyond the historical checkpoints below;
+it is not merged or a new marketplace release. Native subscription probes and
+their exact installed evidence are recorded in
+[`R5_NATIVE_SUBSCRIPTION_PROBES.md`](docs/testing/R5_NATIVE_SUBSCRIPTION_PROBES.md).
+The owner explicitly allows other migration work to continue while the following
+DNS/network investigation remains open:
+
+- [ ] Check the affected existing fixture through an independent client/network
+  or verify its server/port with the owner/provider, keeping all private data
+  out of shareable output. Current evidence does not distinguish outage, stale
+  fixture, ISP/provider filtering or destination-specific VM/host behavior.
+- [ ] Repeat a complete connected subscription-latency batch with a usable
+  fixture and configured DoH path, retaining exact-head, cleanup and privacy
+  evidence. A different imported fixture already passed Full VPN HTTPS and
+  configured DoH in the same VM, but that is not a completed connected batch.
+- [ ] Record the classified outcome in the linked report before closing this
+  DNS acceptance gap. Routing's `current_route_https` result alone does not
+  prove proxy/TUN egress. No universal VM failure, generic Rust DNS defect or
+  RKN blocking has been established; do not change DNS/TLS policy to manufacture
+  a passing result.
+
+The Settings **Full Quit** contract is also newly authorized for local work:
+confirmed disconnect with verified owned core/TUN cleanup, then native runtime
+stop and plugin disable, preserving installation and private settings. Ordinary
+UI close/reload remains tunnel-neutral. See
+[CONTROL_PLANE.md section 9](docs/roadmap/CONTROL_PLANE.md#9-close-quit-disable-remove-and-stop).
+The local implementation, deterministic failure/concurrency coverage and
+installed CLI/Service connected/disconnected exit gates now pass; see
+[Full Quit evidence](docs/testing/R5_NATIVE_FULL_QUIT.md). Human keyboard and
+authorization-rejection checks remain open. Direct plugin-disable/remove now
+has a separate local native observer, reusing that verified shutdown sequence;
+see [disable/remove checkpoint](docs/testing/R5_NATIVE_PLUGIN_REMOVAL.md) for
+its exact installed gate and deliberate shell/runtime race boundaries. Legacy
+uninstall/purge refuses Rust-owned state; native package removal is not claimed.
+- [ ] Resolve the intermittent ordinary-Disconnect cleanup failure recorded in
+  that checkpoint: desired disconnected and zero core/TUN were observed, but
+  the coordinator remained in manual recovery until explicit reconciliation.
+  Capture the failing cleanup phase before changing lifecycle/security policy.
+  The [local process-exit correction](docs/testing/R5_NATIVE_DISCONNECT_PROCESS_EXIT.md)
+  now distinguishes proven procfs task disappearance and adds safe phase
+  evidence. Its automatic batch exposed unresolved host authorization; that
+  result is not full host acceptance. Use the
+  [per-action human barrier](docs/testing/HOST_AUTHORIZATION_ACCEPTANCE.md),
+  never unattended repeated transitions or a PAM/polkit bypass.
+Neither this checkpoint nor the probe evidence completes R5/R6 or V0;
+Python retirement still requires the full installed Python-unavailable gate.
+
+The [2026-09-11 local R6 audit](docs/testing/R6_PYTHON_DEPENDENCY_AUDIT.md)
+separates retained legacy/oracle code from actual native dependencies. Local
+no-sudo work adds 51-alias launcher conformance, 45 actual Rust executable
+tests with Python masked in isolated namespaces, cached shell IPC reads and
+native-aware installer picker reporting. These are local candidates, not
+published/installed frontend acceptance. Remaining concrete work includes a
+Python-free first-install composition, final native frontend distribution,
+headless file-import/support boundaries and real login/package/authorization/
+Python-unavailable gates. Do not describe this remainder as merely deleting
+`backend.py`, and do not start TUI production before R6.
+
+Later local checkpoints supersede parts of that audit: the
+[IPC file-import/export pass](docs/testing/R6_NATIVE_IPC_FILE_IMPORT.md) and
+[native-only frontend installation](docs/testing/R6_NATIVE_ONLY_FRONTEND.md)
+have actual Try Omarchy UI evidence. The
+[fresh-config preparation CLI](docs/testing/R6_FRESH_CONFIG_PREPARATION.md)
+adds create-only defaults; it does **not** activate ownership. The subsequent
+[absent-legacy activation composition](docs/testing/R6_ABSENT_LEGACY_ACTIVATION.md)
+adds strict missing-unit admission and safe default state parents. The later
+[real packaged fresh-user gate](docs/testing/R6_FRESH_PACKAGE_ACTIVATION_2026-09-11.md)
+PASSed initialize/activate/retry refusal with no legacy service on Try Omarchy
+ARM64; the main UI mode controls/profile frame were restored and inspected too.
+The [installed Python-unavailable Off/login gate](docs/testing/R6_INSTALLED_NO_PYTHON_LOGIN_OFF_2026-09-11.md)
+then PASSed with the actual packaged daemon in a disposable real user-manager
+namespace: fresh setup/cutover, full session teardown/new epoch, and same-session
+disconnected restart. Last/pinned, graphical/live and package recovery are not
+covered by that empty-user gate.
+The subsequent [native support composition](docs/testing/R6_NATIVE_SUPPORT_COMPOSITION.md)
+adds fenced fresh local facts to the private-data-free support report, without
+claiming DNS/routes/login or complete legacy doctor coverage. Complete
+onboarding/login/package recovery, remaining host-support coverage and controlled DNS/auth/
+full installed Python-absence remain open. These are local-only checkpoints,
+not published `main` or a completed R6 release.
+
 ## 3. The new global sequence
 
 Development now has two active lanes which intentionally converge.
@@ -170,6 +282,12 @@ These QML/i18n slices can merge independently of R0/R1 when their exact-head
 visual/contract gates pass.
 
 ### P-U1 — plugin interaction and visual consistency
+
+For UI implementation/review, follow the
+[UI/UX contract](docs/roadmap/UI_UX_CONTRACT.md) and the repository-local skill
+linked from `AGENTS.md`. The contract records the local owner-approved main
+layout separately from the historical delivery state below; it does not claim
+a main merge or complete product acceptance.
 
 State: **source-audited; rendered review and implementation pending**.
 
@@ -483,8 +601,13 @@ owns the target runtime.
 
 ### R5 / T1 — Rust shared runtime / daemon foundation
 
-State: **in progress; bounded disconnected ownership transition executed on
-Try Omarchy ARM64 for the combined installed candidate; R5/R6 remain open**.
+State: **native ownership and required frontend integration accepted in the
+R6 checkpoint; enabled login validation remains AUTO-1**.
+
+The checkpoint narrative below is historical. The
+[current status](docs/roadmap/CURRENT_STATUS.md) and
+[R6 closure](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md) supersede its older
+remaining-work statements without changing any recorded test outcome.
 
 The [2026-09-09 installed activation report](docs/testing/R5_DISCONNECTED_ACTIVATION.md#try-omarchy-arm64-installed-acceptance--2026-09-09)
 records combined exact source `ffcf4d2654b74c0fb746664eb73545eb9028fbc6`,
@@ -894,7 +1017,13 @@ Nix support is not inferred from Arch/Try Omarchy evidence.
 
 ### R6 — Python runtime retirement
 
-State: **hard prerequisite for T2**.
+State: **closed for the accepted native path under owner-revised scope, 2026-09-13**.
+
+The [closure record](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md) reconciles the
+requirements below for the native package/frontend. Enabled Last/pinned
+fresh-login validation is explicitly deferred to AUTO-1; it is not a passing
+test. Default Off and no-Python startup/lifecycle evidence remain required and
+recorded. Compatibility/reference Python is not the native product path.
 
 R6 is complete only when:
 
@@ -909,8 +1038,11 @@ R6 is complete only when:
 - language-neutral regression corpora survive removal of the Python oracle;
 - final removal does not weaken current plugin functionality.
 
-Python can remain in repository history or narrowly scoped developer tooling only
-when there is a concrete reason, but it is not a product runtime dependency.
+Python is not a dependency of the accepted native product path. Reference tests
+and the explicitly separate legacy compatibility payload remain in this local
+checkout for existing distribution/rollback history; their removal or a change
+to the default installer is separate publication work, not silently implied by
+native R6 closure.
 
 ## 9. TUI / application track
 
@@ -1085,8 +1217,8 @@ separately and one host never proves another.
 
 ## 14. Current priority in one sentence
 
-**Complete the remaining frontend, lifecycle/recovery and login gates after the
-bounded combined-candidate Try Omarchy cutover, preserving exact-head evidence
-and the production transaction's fail-closed boundary. Keep V0 / PR #30 Draft and
-fixture-constrained, retire the Python runtime only at R6, and begin the
-Ratatui TUI only after that gate.**
+**Preserve the locally closed native R6 candidate and accepted UI, reconcile and
+review it before any owner-authorized main publication, and track AUTO-1 and
+DNS/provider follow-ups without relabelling their unrun/failed checks. V0 remains
+Draft and fixture-constrained. T2 can be scoped after this local migration gate;
+no implementation or release starts merely because the ledger changed.**

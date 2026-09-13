@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """TEST ONLY: a fake core whose helper retains an inherited flock after exit.
 
-Materialize this file as an executable and invoke it with Mihomo's fixed
+Invoke this checked-in executable with Mihomo's fixed
 ``-d PRIVATE_DIRECTORY -f CONFIG`` arguments. CONFIG is a <=1024-byte JSON
 object with exactly these fields (there are no defaults):
 
@@ -22,6 +22,8 @@ Files below PRIVATE_DIRECTORY:
   helper-ready   JSON with synthetic helper pid and pgid, published after setup
 
 There is no controller, TUN, network, credential, store or system-service work.
+The Rust unit test executes this existing file without rewriting/chmodding a
+temporary executable while other test threads may be forking children.
 All processes expire after ten seconds even if the caller crashes. The cleanup
 marker is independent of TERM handling and group membership. Callers must use
 a private fresh directory per case and remove keep-running in a finally/Drop

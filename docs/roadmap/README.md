@@ -1,6 +1,13 @@
 # OmaVLESS roadmap map
 
-Status: design and delivery index, updated 2026-08-30.
+Status: design and delivery index, local checkpoint updated 2026-09-13.
+
+The native installed path has completed scoped local R6 acceptance. Start with
+the [current delivery status](CURRENT_STATUS.md),
+the [closure](../testing/R6_LOCAL_CLOSURE_2026-09-13.md) and
+[publication candidate](../testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md), not the
+historical migration sequence below. Main publication is still owner-controlled;
+enabled login autoconnect remains [AUTO-1](LOGIN_AUTOCONNECT_FOLLOWUP.md).
 
 OmaVLESS keeps the operational delivery ledger at repository root and longer
 contracts under this directory. The roadmap now separates four concerns which
@@ -141,7 +148,7 @@ Do not force every future app feature into the bar merely to call the plugin
 
 ### Rust migration lane
 
-Begin immediately:
+The dependency sequence (not a list of still-unimplemented stages) is:
 
 ```text
 R0 Cargo workspace + parity infrastructure
@@ -227,18 +234,16 @@ Keep those statuses explicit in PR bodies and handoffs.
 
 ## Current priority
 
-The practical order is:
+For the locally accepted native candidate:
 
-1. keep bounded current plugin/QML work moving;
-2. start R0/R1 now;
-3. move existing protocol/domain semantics through R2;
-4. develop P4 Rust-first after R2, then expose it only after P4-specific gates;
-5. complete R3/R4 while the plugin remains usable;
-6. perform R5/T1 ownership cutover;
-7. prove R6 with Python unavailable;
-8. only then implement the Ratatui TUI;
-9. add deeper app/security/backend features on the Rust runtime rather than
-   expanding a backend scheduled for deletion.
+1. publish the reviewed integration only after owner authorization and a fresh
+   remote-head check; distinguish main integration from marketplace release;
+2. complete the user-facing native distribution/release presentation separately;
+3. investigate the preserved network/DNS failure and AUTO-1 under their own
+   reproducible host gates, without relabeling them PASS;
+4. start a bounded T2 client slice only when separately authorized; it must use
+   the existing Rust runtime, never become another tunnel owner;
+5. keep V0/P4 maturity and Arch/NixOS acceptance tied to their own evidence.
 
-This order is intended to finish the plugin-era product without spending the
-next development cycle building large Python subsystems twice.
+Do not repeat completed R0–R6 work from an older checkpoint or build new
+application features in the retired native Python path.

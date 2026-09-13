@@ -480,6 +480,9 @@ pub fn parse_trojan(input: &str) -> Result<TrojanProfile, TrojanError> {
 }
 
 impl TrojanProfile {
+    pub(crate) fn private_endpoint(&self) -> &str {
+        &self.server
+    }
     #[must_use]
     pub fn facts(&self) -> TrojanFacts {
         TrojanFacts {

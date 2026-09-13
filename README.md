@@ -20,6 +20,14 @@ Add and enable the plugin:
 omarchy plugin add https://github.com/k-kostin/omavless --enable
 ```
 
+Testing a reviewed local Rust candidate? Use the separate
+[native installation guide](docs/user/NATIVE_INSTALL.md). The marketplace command
+above does not install the native package or migrate ownership; native setup,
+updates and removal differ from the legacy-compatible instructions below.
+The native path has a separate, scoped
+[local R6 acceptance record](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
+That acceptance is not a marketplace release or automatic migration.
+
 OmaVLESS uses an installed [Mihomo](https://github.com/MetaCubeX/mihomo)
 binary. The simplest Omarchy-native installation is:
 

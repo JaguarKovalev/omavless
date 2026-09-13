@@ -34,6 +34,285 @@ fn private_invoke(
 }
 
 #[test]
+fn onboarding_cli_has_fixed_envelope_admission_and_unknown_outcome() {
+    let base = test_temp::directory("onboarding-cli").unwrap();
+    let directory = base.join("omavless");
+    fs::create_dir(&directory).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    let socket = directory.join("control.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let rejected = private_invoke(&base, "onboarding-complete", b"", &["private-token"]);
+    assert_eq!(rejected.status.code(), Some(74));
+    assert!(rejected.stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&rejected.stderr).contains("private-token"));
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    listener.set_nonblocking(false).unwrap();
+    let worker = thread::spawn(move || {
+        for reply in [true, false] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request =
+                decode_request(&read_unary_frame(&mut stream, FrameKind::Request).unwrap())
+                    .unwrap();
+            assert_eq!(request["method"], "plugin.action");
+            assert_eq!(
+                request["params"],
+                json!({"action":"onboarding-complete","instanceId":"instance-1","expectedRevision":3,"operationId":"operation-1"})
+            );
+            if reply {
+                let response = success_response(request["id"].as_str().unwrap(),4,json!({"schemaVersion":1,"instanceId":"instance-1","operationId":"operation-1","action":"onboarding-complete","applied":true})).unwrap();
+                stream
+                    .write_all(&encode_response(&response).unwrap())
+                    .unwrap();
+            }
+        }
+    });
+    assert!(
+        private_invoke(&base, "onboarding-complete", b"", &[])
+            .status
+            .success()
+    );
+    let unknown = private_invoke(&base, "onboarding-complete", b"", &[]);
+    assert_eq!(unknown.status.code(), Some(73));
+    assert!(unknown.stdout.is_empty());
+    worker.join().unwrap();
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn routing_cli_local_rejection_is_not_submitted_and_private() {
+    let base = test_temp::directory("routing-admission").unwrap();
+    let directory = base.join("omavless");
+    fs::create_dir(&directory).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    let socket = directory.join("control.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    for (action, input) in [
+        ("routing-preset", "unknown\non".into()),
+        (
+            "custom-rule-add",
+            "domain\ndirect\nhttps://private.invalid/token".into(),
+        ),
+        ("custom-rule-delete", "private-token".into()),
+        ("custom-rule-add", "x".repeat(1100)),
+    ] {
+        let output = private_invoke(&base, action, input.as_bytes(), &[]);
+        assert_eq!(output.status.code(), Some(74));
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            "OmaVLESS action was not submitted; review the input before retrying\n"
+        );
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn private_subscription_cli_maps_fixed_actions_without_echo() {
+    let base = test_temp::directory("private-subscription-cli").unwrap();
+    let directory = base.join("omavless");
+    fs::create_dir(&directory).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    let socket = directory.join("control.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+    let id = "10000000-0000-4000-8000-000000000001";
+    let admission_probe = listener.try_clone().unwrap();
+    let worker = thread::spawn(move || {
+        for (action, extra) in [
+            (
+                "subscription-add",
+                json!({"name":"Private source","url":"https://private.example/token"}),
+            ),
+            (
+                "subscription-update",
+                json!({"subscriptionId":id,"name":"Private source","url":"https://private.example/token"}),
+            ),
+            ("subscription-delete", json!({"subscriptionId":id})),
+            ("subscription-refresh", json!({"subscriptionId":id})),
+        ] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request =
+                decode_request(&read_unary_frame(&mut stream, FrameKind::Request).unwrap())
+                    .unwrap();
+            let mut expected = json!({"action":action,"instanceId":"instance-1","operationId":"operation-1","expectedRevision":3});
+            expected
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            assert_eq!(request["params"], expected);
+            assert_eq!(request["method"], "plugin.action");
+            if action == "subscription-refresh" {
+                continue;
+            }
+            let response = success_response(request["id"].as_str().unwrap(), 4, json!({"schemaVersion":1,"instanceId":"instance-1","operationId":"operation-1","action":action,"applied":true})).unwrap();
+            stream
+                .write_all(&encode_response(&response).unwrap())
+                .unwrap();
+        }
+    });
+    for (action, input) in [
+        (
+            "subscription-add",
+            "Private source\nhttps://private.example/token".into(),
+        ),
+        (
+            "subscription-update",
+            format!("{id}\nPrivate source\nhttps://private.example/token"),
+        ),
+        ("subscription-delete", id.to_owned()),
+        ("subscription-refresh", id.to_owned()),
+    ] {
+        let output = private_invoke(&base, action, input.as_bytes(), &[]);
+        assert_eq!(
+            output.status.code(),
+            Some(if action == "subscription-refresh" {
+                73
+            } else {
+                0
+            })
+        );
+        for bytes in [&output.stdout, &output.stderr] {
+            let text = String::from_utf8_lossy(bytes);
+            for private in [id, "Private source", "private.example", "token"] {
+                assert!(!text.contains(private));
+            }
+        }
+    }
+    worker.join().unwrap();
+    admission_probe.set_nonblocking(true).unwrap();
+    for (action, input, extra) in [
+        (
+            "subscription-add",
+            b"Private source\nnot-url".to_vec(),
+            vec![],
+        ),
+        ("subscription-update", vec![0xff], vec![]),
+        (
+            "subscription-update",
+            format!("{id}\nPrivate source\nnot-url").into_bytes(),
+            vec![],
+        ),
+        ("subscription-refresh", b"private-token".to_vec(), vec![]),
+        ("subscription-delete", Vec::new(), vec![]),
+        ("subscription-add", vec![b'x'; 9000], vec![]),
+        (
+            "subscription-delete",
+            id.as_bytes().to_vec(),
+            vec!["private-token"],
+        ),
+    ] {
+        let output = private_invoke(&base, action, &input, &extra);
+        assert_eq!(output.status.code(), Some(74));
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("private-token"));
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            "OmaVLESS action was not submitted; review the input before retrying\n"
+        );
+        assert_eq!(
+            admission_probe.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn private_replace_cli_maps_exact_stdin_and_lost_reply_without_echo() {
+    let base = test_temp::directory("private-replace-cli").unwrap();
+    let directory = base.join("omavless");
+    fs::create_dir(&directory).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    let socket = directory.join("control.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+    let id = "00000000-0000-4000-8000-000000000001";
+    let link = "trojan://synthetic-password@203.0.113.1:443\n";
+    let admission_probe = listener.try_clone().unwrap();
+    let worker = thread::spawn(move || {
+        for lost in [false, true] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request =
+                decode_request(&read_unary_frame(&mut stream, FrameKind::Request).unwrap())
+                    .unwrap();
+            assert_eq!(request["method"], "plugin.action");
+            assert_eq!(
+                request["params"],
+                json!({"action":"profile-replace","instanceId":"instance-1","expectedRevision":3,"operationId":"operation-1","profileId":id,"name":"Private replacement label","input":link})
+            );
+            if lost {
+                continue;
+            }
+            let response = success_response(request["id"].as_str().unwrap(), 4, json!({"schemaVersion":1,"instanceId":"instance-1","operationId":"operation-1","action":"profile-replace","applied":true})).unwrap();
+            stream
+                .write_all(&encode_response(&response).unwrap())
+                .unwrap();
+        }
+    });
+    let input = format!("{id}\nPrivate replacement label\n{link}");
+    for code in [0, 73] {
+        let output = private_invoke(&base, "profile-replace", input.as_bytes(), &[]);
+        assert_eq!(output.status.code(), Some(code));
+        for bytes in [&output.stdout, &output.stderr] {
+            let text = String::from_utf8_lossy(bytes);
+            for private in [
+                id,
+                "Private replacement label",
+                "synthetic-password",
+                "203.0.113.1",
+            ] {
+                assert!(!text.contains(private));
+            }
+        }
+    }
+    worker.join().unwrap();
+    admission_probe.set_nonblocking(true).unwrap();
+    for (input, extra) in [
+        (Vec::new(), vec![]),
+        (vec![0xff], vec![]),
+        (format!("{id}\nName").into_bytes(), vec![]),
+        (
+            format!("{id}\nName\nprivate-invalid-source").into_bytes(),
+            vec![],
+        ),
+        (
+            format!("{id}\nName\nhttps://private.example/subscription-token").into_bytes(),
+            vec![],
+        ),
+        (
+            format!("{id}\nName\n{}", "x".repeat(32769)).into_bytes(),
+            vec![],
+        ),
+        (input.into_bytes(), vec!["private-token"]),
+    ] {
+        let output = private_invoke(&base, "profile-replace", &input, &extra);
+        assert_eq!(output.status.code(), Some(74));
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("private-token"));
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            "OmaVLESS action was not submitted; review the input before retrying\n"
+        );
+        assert_eq!(
+            admission_probe.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
 fn private_import_cli_preserves_input_and_rejects_invalid_requests_locally() {
     let base = test_temp::directory("private-import-cli").unwrap();
     let directory = base.join("omavless");

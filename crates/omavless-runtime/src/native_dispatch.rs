@@ -222,6 +222,17 @@ pub(crate) fn respond_to_runtime_observation<H: LifecycleHost>(
     }
 }
 
+pub(crate) fn respond_to_traffic<H: LifecycleHost>(
+    owner: &mut OfflineNativeCoordinator<H>,
+    request: &Value,
+) -> Result<Value, ProtocolError> {
+    let id = request["id"].as_str().unwrap_or("invalid");
+    match owner.traffic(request) {
+        Ok(value) => success_response(id, owner.revision(), value),
+        Err(error) => owner_error_response(id, owner.revision(), error),
+    }
+}
+
 /// Sensitive success payload, never an ordinary read projection.
 pub(crate) fn respond_to_profile_export<H: LifecycleHost>(
     owner: &mut OfflineNativeCoordinator<H>,
@@ -245,6 +256,17 @@ fn profile_export_response(id: &str, revision: u64, uri: &str) -> Result<Value, 
         );
     }
     success_response(id, revision, json!({"format":"uri", "content":uri}))
+}
+
+pub(crate) fn respond_to_profile_details<H: LifecycleHost>(
+    owner: &mut OfflineNativeCoordinator<H>,
+    request: &Value,
+) -> Result<Value, ProtocolError> {
+    let id = request["id"].as_str().unwrap_or("invalid");
+    match owner.profile_details(request) {
+        Ok(details) => success_response(id, owner.revision(), details.into_private_ui_value()),
+        Err(error) => owner_error_response(id, owner.revision(), error),
+    }
 }
 
 /// Explicit private standalone editor payload; never ordinary status data.
@@ -364,6 +386,8 @@ where
         }
     } else if method == "onboarding.complete" {
         owner.execute_onboarding(request)
+    } else if method == "startup.configure" {
+        owner.execute_startup(request)
     } else if method == "profiles.import" {
         owner.execute_profile_import(request, next_record_id)
     } else if method == "routing.set_preset" {

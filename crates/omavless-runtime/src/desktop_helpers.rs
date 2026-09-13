@@ -12,7 +12,7 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,6 +70,12 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Clone, Copy)]
+pub enum ExportKind {
+    Report,
+    Profile,
+}
+
 /// Helper names and preference are fixed; relative/empty PATH entries are ignored.
 pub struct DesktopHelpers {
     search: Vec<PathBuf>,
@@ -107,6 +113,71 @@ impl DesktopHelpers {
             "configEditorAvailable": self.find("zenity").is_some(),
             "qrEncoderAvailable": self.find("qrencode").is_some(),
             "gtk4FallbackAvailable": false,
+        })
+    }
+
+    /// Read-only desktop-context facts, deliberately not proof that the service
+    /// can create a TUN. No profile/store/controller access or setup commands.
+    pub fn core_readiness(&self) -> serde_json::Value {
+        let home = env::var_os("HOME").map(PathBuf::from);
+        let core = home
+            .as_deref()
+            .filter(|home| home.is_absolute())
+            .and_then(|home| {
+                omavless_mihomo::discover_core(home, self.find("mihomo").as_deref()).ok()
+            });
+        self.core_readiness_for(core.as_deref(), Path::new("/dev/net/tun"))
+    }
+
+    fn core_readiness_for(&self, core: Option<&Path>, tun: &Path) -> serde_json::Value {
+        let version = core.and_then(|core| {
+            execute(
+                core,
+                &["-v".into()],
+                &[],
+                4096,
+                Some(Duration::from_secs(2)),
+                false,
+            )
+            .ok()
+            .and_then(|bytes| public_core_version(&bytes))
+        });
+        let file_capabilities = match (core, self.find("getcap")) {
+            (None, _) => "not_applicable",
+            (Some(core), Some(tool)) => execute(
+                &tool,
+                &[core.as_os_str().to_owned()],
+                &[],
+                8192,
+                Some(Duration::from_secs(2)),
+                false,
+            )
+            .ok()
+            .map_or("unknown", |output| file_network_capabilities(&output)),
+            _ => "unknown",
+        };
+        let tun_device = match fs::symlink_metadata(tun) {
+            Ok(metadata)
+                if metadata.file_type().is_char_device()
+                    && nix::sys::stat::major(metadata.rdev()) == 10
+                    && nix::sys::stat::minor(metadata.rdev()) == 200 =>
+            {
+                "present"
+            }
+            Ok(_) => "unavailable",
+            Err(error) if error.kind() == io::ErrorKind::NotFound => "unavailable",
+            Err(_) => "unknown",
+        };
+        serde_json::json!({
+            "schemaVersion":1,
+            "scope":"desktop_setup_facts",
+            "installed":core.is_some(),
+            "version":version,
+            "tunDevice":tun_device,
+            "fileNetworkCapabilities":file_capabilities,
+            "servicePermissionReadiness":"not_verified",
+            "coverage":{"serviceContextVerified":false,"tunCreationVerified":false,"controllerQueried":false},
+            "remediation":if core.is_none() {"install_core_using_host_setup"} else {"verify_native_host_setup"},
         })
     }
 
@@ -184,6 +255,56 @@ impl DesktopHelpers {
         read_import_file(selected.as_bytes())
     }
 
+    /// Destination selection only, in an isolated desktop process. The existing
+    /// export-file writer must still validate ownership/permissions at write time.
+    pub fn pick_export(&self, kind: ExportKind, locale: &str) -> Result<Vec<u8>> {
+        if !matches!(locale, "en" | "ru") {
+            return Err(Error::InvalidInput);
+        }
+        let (name, title) = match (kind, locale) {
+            (ExportKind::Report, "ru") => ("omavless-report.json", "Сохранить отчёт для поддержки"),
+            (ExportKind::Report, _) => ("omavless-report.json", "Save support report"),
+            (ExportKind::Profile, "ru") => (
+                "omavless-profile.conf",
+                "Сохранить профиль — содержит данные доступа",
+            ),
+            (ExportKind::Profile, _) => (
+                "omavless-profile.conf",
+                "Save profile — contains connection credentials",
+            ),
+        };
+        let (provider, tool) = self.picker().ok_or(Error::MissingPicker)?;
+        let args: Vec<OsString> = match provider {
+            "kdialog" => ["--getsavefilename", name, "*", "--title", title]
+                .map(Into::into)
+                .to_vec(),
+            _ => [
+                if provider == "zenity" {
+                    "--file-selection"
+                } else {
+                    "--file"
+                }
+                .to_owned(),
+                "--save".into(),
+                "--confirm-overwrite".into(),
+                format!("--filename={name}"),
+                format!("--title={title}"),
+            ]
+            .map(Into::into)
+            .to_vec(),
+        };
+        let selected = execute(&tool, &args, &[], MAX_PATH_BYTES + 2, None, true)?;
+        let selected = std::str::from_utf8(&selected).map_err(|_| Error::InvalidInput)?;
+        // Remove only the tool's one line terminator; reject extra selections.
+        let selected = selected.strip_suffix('\n').unwrap_or(selected);
+        let selected = selected.strip_suffix('\r').unwrap_or(selected);
+        if selected.is_empty() {
+            return Err(Error::Cancelled);
+        }
+        selected_path(selected.as_bytes())?;
+        Ok(selected.as_bytes().to_vec())
+    }
+
     /// The caller supplies the explicit editor seed; no store access or confirmation mutation.
     pub fn edit(&self, seed: &[u8], runtime: &Path) -> Result<Vec<u8>> {
         text(seed)?;
@@ -244,6 +365,60 @@ impl DesktopHelpers {
     /// socket access; the existing encoder owns input, process and PNG bounds.
     pub fn qr_data_uri(&self, data: &[u8]) -> Result<String> {
         png_data_uri(&self.qr_png(data)?)
+    }
+}
+
+// Only the canonical numeric release token leaves this boundary. Build labels,
+// paths, architecture suffixes and arbitrary executable output stay private.
+fn public_core_version(output: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(output).ok()?;
+    let mut tokens = text.lines().next()?.split_ascii_whitespace();
+    if tokens.next()? != "Mihomo" || tokens.next()? != "Meta" {
+        return None;
+    }
+    let version = tokens.next()?.strip_prefix('v')?;
+    if version.len() > 32 {
+        return None;
+    }
+    let components: Vec<_> = version.split('.').collect();
+    if components.len() != 3
+        || components.iter().any(|part| {
+            part.is_empty() || part.len() > 8 || !part.bytes().all(|b| b.is_ascii_digit())
+        })
+    {
+        return None;
+    }
+    Some(version.to_owned())
+}
+
+pub(crate) fn file_network_capabilities(output: &[u8]) -> &'static str {
+    let Ok(text) = std::str::from_utf8(output) else {
+        return "unknown";
+    };
+    let text = text.trim();
+    if text.is_empty() {
+        return "missing";
+    }
+    if text.lines().count() != 1 {
+        return "unknown";
+    }
+    let Some(capabilities) = text.split_ascii_whitespace().last() else {
+        return "unknown";
+    };
+    let Some((names, flags)) = capabilities.split_once('=') else {
+        return "unknown";
+    };
+    if !matches!(flags, "ep" | "eip") {
+        return "missing";
+    }
+    let names: Vec<_> = names.split(',').collect();
+    if ["cap_net_admin", "cap_net_raw", "cap_net_bind_service"]
+        .iter()
+        .all(|name| names.contains(name))
+    {
+        "present"
+    } else {
+        "missing"
     }
 }
 
@@ -566,6 +741,119 @@ mod tests {
     }
 
     #[test]
+    fn core_readiness_is_only_bounded_desktop_facts() {
+        let f = Fixture::new();
+        let core = f.tool("mihomo", "test \"$*\" = '-v' || exit 9\nprintf 'Mihomo Meta v1.19.30 linux arm64 build private-token\\n'");
+        f.tool(
+            "getcap",
+            "printf '/private/path cap_net_bind_service,cap_net_admin,cap_net_raw=ep\\n'",
+        );
+        let result = f
+            .helpers()
+            .core_readiness_for(Some(&core), &f.0.join("absent-tun"));
+        assert_eq!(result["installed"], true);
+        assert_eq!(result["version"], "1.19.30");
+        assert_eq!(result["fileNetworkCapabilities"], "present");
+        assert_eq!(result["tunDevice"], "unavailable");
+        assert_eq!(result["servicePermissionReadiness"], "not_verified");
+        assert_eq!(result["coverage"]["tunCreationVerified"], false);
+        assert!(!result.to_string().contains("private"));
+        let missing = f
+            .helpers()
+            .core_readiness_for(None, &f.0.join("absent-tun"));
+        assert_eq!(missing["installed"], false);
+        assert_eq!(missing["version"], serde_json::Value::Null);
+        assert_eq!(missing["fileNetworkCapabilities"], "not_applicable");
+    }
+
+    #[test]
+    fn core_version_and_capability_tokens_are_not_raw_output() {
+        for bytes in [
+            b"private-token".as_slice(),
+            b"Mihomo Meta private-token",
+            b"Mihomo Meta v1.2.secret",
+            b"Mihomo Meta v1.2.3-private",
+            b"Mihomo Meta v1.2",
+            b"\xff",
+        ] {
+            assert_eq!(public_core_version(bytes), None);
+        }
+        for output in [
+            b"".as_slice(),
+            b"/path cap_net_admin=ep",
+            b"/path cap_net_admin,cap_net_raw,cap_net_bind_service=p",
+            b"/path cap_net_admin_suffix,cap_net_raw,cap_net_bind_service=ep",
+        ] {
+            assert_eq!(file_network_capabilities(output), "missing");
+        }
+        assert_eq!(
+            file_network_capabilities(b"/path unknown\n/private second"),
+            "unknown"
+        );
+        assert_eq!(file_network_capabilities(b"\xff"), "unknown");
+    }
+
+    #[test]
+    fn core_version_output_and_time_are_bounded() {
+        let f = Fixture::new();
+        let core = f.tool("mihomo", "printf '%5000s' ''");
+        let result = f
+            .helpers()
+            .core_readiness_for(Some(&core), &f.0.join("absent"));
+        assert_eq!(result["version"], serde_json::Value::Null);
+        let core = f.tool("mihomo", "exec /bin/sleep 10");
+        let started = Instant::now();
+        let result = f
+            .helpers()
+            .core_readiness_for(Some(&core), &f.0.join("absent"));
+        assert!(started.elapsed() < Duration::from_secs(4));
+        assert_eq!(result["version"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn core_probe_failure_never_fabricates_setup_readiness() {
+        let f = Fixture::new();
+        let core = f.tool("mihomo", "printf 'private-token'; exit 2");
+        let device = f.0.join("tun");
+        fs::write(&device, b"not a character device").unwrap();
+        let result = f.helpers().core_readiness_for(Some(&core), &device);
+        assert_eq!(result["installed"], true);
+        assert_eq!(result["version"], serde_json::Value::Null);
+        assert_eq!(result["fileNetworkCapabilities"], "unknown");
+        assert_eq!(result["tunDevice"], "unavailable");
+        assert_eq!(result["coverage"]["serviceContextVerified"], false);
+        assert!(!result.to_string().contains("private-token"));
+    }
+
+    #[test]
+    fn core_capability_inventory_matches_actual_python_reference_without_readiness_claim() {
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/core_setup_parity.py");
+        let output = Command::new("python3").arg(script).output().unwrap();
+        assert!(output.status.success(), "Core setup oracle failed");
+        let oracle: Vec<bool> = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(oracle.len(), 8);
+        let names = ["cap_net_admin", "cap_net_raw", "cap_net_bind_service"];
+        for (mask, expected) in oracle.iter().enumerate() {
+            let caps = names
+                .iter()
+                .enumerate()
+                .filter(|(bit, _)| mask & (1 << bit) != 0)
+                .map(|(_, name)| *name)
+                .collect::<Vec<_>>()
+                .join(",");
+            let raw = if caps.is_empty() {
+                String::new()
+            } else {
+                format!("/synthetic/mihomo {caps}=ep")
+            };
+            assert_eq!(
+                file_network_capabilities(raw.as_bytes()) == "present",
+                *expected
+            );
+        }
+    }
+
+    #[test]
     fn discovery_is_fixed_and_clipboard_independent() {
         let f = Fixture::new();
         assert_eq!(
@@ -672,6 +960,92 @@ mod tests {
         assert_eq!(f.helpers().pick_import(), Err(Error::Cancelled));
         f.tool("zenity", "printf '/tmp/a\\n/tmp/b\\n'");
         assert_eq!(f.helpers().pick_import(), Err(Error::InvalidInput));
+    }
+
+    #[test]
+    fn save_chooser_defaults_overwrite_flags_and_preference_are_fixed() {
+        let f = Fixture::new();
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "en"),
+            Err(Error::MissingPicker)
+        );
+        for name in ["yad", "kdialog", "zenity"] {
+            let script = if name == "kdialog" {
+                "test \"$1\" = --getsavefilename && test \"$2\" = omavless-report.json && test \"$4\" = --title && test \"$5\" = 'Save support report' || exit 9\nprintf '/tmp/report $(false);name.json\\n'"
+            } else if name == "zenity" {
+                "test \"$1\" = --file-selection && test \"$2\" = --save && test \"$3\" = --confirm-overwrite && test \"$4\" = --filename=omavless-report.json && test \"$5\" = '--title=Save support report' || exit 9\nprintf '/tmp/report $(false);name.json\\n'"
+            } else {
+                "test \"$1\" = --file && test \"$2\" = --save && test \"$3\" = --confirm-overwrite && test \"$4\" = --filename=omavless-report.json || exit 9\nprintf '/tmp/report $(false);name.json\\n'"
+            };
+            f.tool(name, script);
+            assert_eq!(
+                f.helpers().pick_export(ExportKind::Report, "en").unwrap(),
+                b"/tmp/report $(false);name.json"
+            );
+            // Previously preferred tools now fail, so the next iteration also
+            // proves deterministic preference, not merely equivalent output.
+            f.tool(name, "exit 9");
+        }
+        f.tool("zenity", "test \"$4\" = --filename=omavless-profile.conf && test \"$5\" = '--title=Сохранить профиль — содержит данные доступа' || exit 9\nprintf '/tmp/profile.conf\\n'");
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Profile, "ru").unwrap(),
+            b"/tmp/profile.conf"
+        );
+        assert_eq!(fs::read_dir(&f.0).unwrap().count(), 3);
+    }
+
+    #[test]
+    fn save_chooser_refuses_ambiguous_unsafe_and_oversized_output() {
+        let f = Fixture::new();
+        for script in [
+            "printf relative",
+            "printf '/tmp/a\\n/tmp/b\\n'",
+            "printf '/tmp/a\\n\\n'",
+            "printf '/tmp/../a'",
+            "printf '/tmp/\\377'",
+            "printf '/tmp/\\000a'",
+        ] {
+            f.tool("zenity", script);
+            assert_eq!(
+                f.helpers().pick_export(ExportKind::Report, "en"),
+                Err(Error::InvalidInput)
+            );
+        }
+        f.tool(
+            "zenity",
+            &format!("printf '/{}\\n'", "a".repeat(MAX_PATH_BYTES)),
+        );
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "en"),
+            Err(Error::TooLarge)
+        );
+        f.tool(
+            "zenity",
+            &format!("printf '/{}\\n'", "a".repeat(MAX_PATH_BYTES - 1)),
+        );
+        assert_eq!(
+            f.helpers()
+                .pick_export(ExportKind::Report, "en")
+                .unwrap()
+                .len(),
+            MAX_PATH_BYTES
+        );
+        for script in ["exit 0", "exit 1", "printf private-partial; exit 1"] {
+            f.tool("zenity", script);
+            assert_eq!(
+                f.helpers().pick_export(ExportKind::Report, "en"),
+                Err(Error::Cancelled)
+            );
+        }
+        f.tool("zenity", "printf private-partial; exit 9");
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "en"),
+            Err(Error::Unavailable)
+        );
+        assert_eq!(
+            f.helpers().pick_export(ExportKind::Report, "private-token"),
+            Err(Error::InvalidInput)
+        );
     }
 
     #[test]

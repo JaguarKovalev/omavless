@@ -27,6 +27,16 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
         .and_then(Value::as_str)
         .ok_or(InvalidArgument)?;
     let fields: &[&str] = match action {
+        "startup-configure" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "enabled",
+            "target",
+            "profileId",
+            "mode",
+        ],
         "connect" => &[
             "instanceId",
             "expectedRevision",
@@ -35,7 +45,9 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
             "profileId",
             "mode",
         ],
-        "disconnect" => &["instanceId", "expectedRevision", "operationId", "action"],
+        "disconnect" | "onboarding-complete" => {
+            &["instanceId", "expectedRevision", "operationId", "action"]
+        }
         "mode" => &[
             "instanceId",
             "expectedRevision",
@@ -66,6 +78,15 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
             "action",
             "profileId",
         ],
+        "profile-replace" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "profileId",
+            "name",
+            "input",
+        ],
         "profile-import" => &[
             "instanceId",
             "expectedRevision",
@@ -73,6 +94,54 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
             "action",
             "name",
             "input",
+        ],
+        "subscription-add" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "name",
+            "url",
+        ],
+        "subscription-update" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "subscriptionId",
+            "name",
+            "url",
+        ],
+        "subscription-delete" | "subscription-refresh" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "subscriptionId",
+        ],
+        "routing-preset" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "preset",
+            "keepMode",
+        ],
+        "custom-rule-add" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "kind",
+            "routeAction",
+            "value",
+        ],
+        "custom-rule-delete" => &[
+            "instanceId",
+            "expectedRevision",
+            "operationId",
+            "action",
+            "ruleId",
         ],
         _ => return Err(InvalidArgument),
     };
@@ -91,17 +160,43 @@ pub(crate) fn parse(request: &Value) -> Result<Action, MutationProtocolError> {
     canonical["method"] = json!(match action {
         "connect" => "connection.connect",
         "disconnect" => "connection.disconnect",
+        "onboarding-complete" => "onboarding.complete",
+        "startup-configure" => "startup.configure",
         "mode" => "routing.set_mode",
         "profile-rename" => "profiles.rename",
         "profile-favorite" => "profiles.favorite",
         "profile-delete" => "profiles.delete",
+        "profile-replace" => "profiles.replace",
         "profile-import" => "profiles.import",
+        "subscription-add" => "subscriptions.add",
+        "subscription-update" => "subscriptions.update",
+        "subscription-delete" => "subscriptions.delete",
+        "subscription-refresh" => "subscriptions.refresh",
+        "routing-preset" => "routing.set_preset",
+        "custom-rule-add" => "routing.custom_rules.add",
+        "custom-rule-delete" => "routing.custom_rules.delete",
         _ => return Err(InvalidArgument),
     });
     let mapped = canonical["params"].as_object_mut().ok_or(InvalidArgument)?;
     mapped.remove("instanceId");
     mapped.remove("action");
-    if action == "profile-import" {
+    if action == "custom-rule-add" {
+        let policy = mapped.remove("routeAction").ok_or(InvalidArgument)?;
+        mapped.insert("action".into(), policy);
+    }
+    if action == "startup-configure" {
+        crate::startup_protocol::parse_startup_request(&canonical)?;
+    } else if action == "onboarding-complete" {
+        crate::onboarding_protocol::parse(&canonical)?;
+    } else if action == "routing-preset" {
+        crate::routing_preset::parse(&canonical)?;
+    } else if action.starts_with("custom-rule-") {
+        crate::custom_rule_protocol::parse(&canonical)?;
+    } else if action == "subscription-refresh" {
+        crate::subscription_refresh_protocol::parse_subscription_refresh_request(&canonical)?;
+    } else if action.starts_with("subscription-") {
+        crate::subscription_mutation_protocol::parse_subscription_mutation_request(&canonical)?;
+    } else if action == "profile-import" {
         crate::profile_import_protocol::parse_profile_import_request(&canonical)?;
     } else if action.starts_with("profile-") {
         crate::profile_mutation_protocol::parse_profile_mutation_request(&canonical)?;
@@ -126,12 +221,22 @@ pub fn cli_input_limit(arguments: &[OsString]) -> Option<usize> {
         return None;
     }
     match arguments[1].to_str()? {
+        "startup-configure" => Some(64),
         "profile-rename" => {
             Some(36 + 1 + crate::profile_mutation_protocol::MAX_PROFILE_NAME_INPUT_BYTES + 1)
         }
         "profile-favorite" => Some(36 + 1 + 3 + 1),
         "profile-delete" => Some(36 + 1),
+        "profile-replace" => Some(36 + 1 + crate::semantic_cli::MAX_PROFILE_IMPORT_STDIN_BYTES),
         "profile-import" => Some(crate::semantic_cli::MAX_PROFILE_IMPORT_STDIN_BYTES),
+        "subscription-add" => Some(crate::semantic_cli::MAX_SUBSCRIPTION_STDIN_BYTES),
+        "subscription-update" => Some(37 + crate::semantic_cli::MAX_SUBSCRIPTION_STDIN_BYTES),
+        "subscription-delete" | "subscription-refresh" => Some(37),
+        "routing-preset" => Some(64 + 1 + 3 + 1),
+        "custom-rule-add" => {
+            Some(6 + 1 + 6 + 1 + omavless_domain::routing::MAX_CUSTOM_RULE_VALUE_BYTES)
+        }
+        "custom-rule-delete" => Some(37),
         _ => None,
     }
 }
@@ -148,11 +253,21 @@ pub fn cli_params(
             ![
                 "connect",
                 "disconnect",
+                "onboarding-complete",
+                "startup-configure",
                 "mode",
                 "profile-rename",
                 "profile-favorite",
                 "profile-delete",
+                "profile-replace",
                 "profile-import",
+                "subscription-add",
+                "subscription-update",
+                "subscription-delete",
+                "subscription-refresh",
+                "routing-preset",
+                "custom-rule-add",
+                "custom-rule-delete",
             ]
             .iter()
             .any(|v| arg == v)
@@ -181,15 +296,31 @@ pub fn cli_params(
             Some(*profile),
             Some(*mode),
         ),
-        ["plugin", "disconnect", instance, revision, operation] => {
-            ("disconnect", *instance, *revision, *operation, None, None)
-        }
+        [
+            "plugin",
+            action @ ("disconnect" | "onboarding-complete"),
+            instance,
+            revision,
+            operation,
+        ] => (*action, *instance, *revision, *operation, None, None),
         ["plugin", "mode", instance, revision, operation, mode] => {
             ("mode", *instance, *revision, *operation, None, Some(*mode))
         }
         [
             "plugin",
-            action @ ("profile-rename" | "profile-favorite" | "profile-delete" | "profile-import"),
+            action @ ("profile-rename"
+            | "profile-favorite"
+            | "profile-delete"
+            | "profile-import"
+            | "profile-replace"
+            | "subscription-add"
+            | "subscription-update"
+            | "subscription-delete"
+            | "subscription-refresh"
+            | "routing-preset"
+            | "custom-rule-add"
+            | "custom-rule-delete"
+            | "startup-configure"),
             instance,
             revision,
             operation,
@@ -207,7 +338,128 @@ pub fn cli_params(
     if let Some(mode) = mode {
         params["mode"] = json!(mode);
     }
-    if action == "profile-import" {
+    if action == "startup-configure" {
+        let input = private_stdin.ok_or(crate::semantic_cli::SemanticCliError::MissingInput)?;
+        if input.len() > 64 {
+            return Err(crate::semantic_cli::SemanticCliError::InputTooLarge);
+        }
+        let lines: Vec<_> = input
+            .strip_suffix('\n')
+            .unwrap_or(input)
+            .split('\n')
+            .collect();
+        let [enabled, target, profile, mode] = lines.as_slice() else {
+            return Err(InvalidArgument);
+        };
+        params["enabled"] = json!(match *enabled {
+            "on" => true,
+            "off" => false,
+            _ => return Err(InvalidArgument),
+        });
+        params["target"] = json!(target);
+        params["profileId"] = json!(profile);
+        params["mode"] = json!(mode);
+    } else if matches!(
+        action,
+        "routing-preset" | "custom-rule-add" | "custom-rule-delete"
+    ) {
+        let input = private_stdin.ok_or(crate::semantic_cli::SemanticCliError::MissingInput)?;
+        if input.len() > cli_input_limit(arguments).ok_or(InvalidArgument)? {
+            return Err(crate::semantic_cli::SemanticCliError::InputTooLarge);
+        }
+        let (args, value) = match action {
+            "routing-preset" => {
+                let (preset, keep) = input
+                    .strip_suffix('\n')
+                    .unwrap_or(input)
+                    .split_once('\n')
+                    .ok_or(InvalidArgument)?;
+                let mut args = vec!["routing".into(), "preset".into(), OsString::from(preset)];
+                match keep {
+                    "on" => args.push("keep-mode".into()),
+                    "off" => (),
+                    _ => return Err(InvalidArgument),
+                }
+                (args, None)
+            }
+            "custom-rule-add" => {
+                let (kind, rest) = input.split_once('\n').ok_or(InvalidArgument)?;
+                let (policy, value) = rest.split_once('\n').ok_or(InvalidArgument)?;
+                (
+                    vec![
+                        "routing".into(),
+                        "rule-add".into(),
+                        kind.into(),
+                        policy.into(),
+                    ],
+                    Some(value),
+                )
+            }
+            _ => (
+                vec![
+                    "routing".into(),
+                    "rule-delete".into(),
+                    input.strip_suffix('\n').unwrap_or(input).into(),
+                ],
+                None,
+            ),
+        };
+        let (_, mut mapped) =
+            crate::semantic_cli::parse_semantic_mutation(&args, value)?.into_parts();
+        if action == "custom-rule-add" {
+            let policy = mapped
+                .as_object_mut()
+                .ok_or(InvalidArgument)?
+                .remove("action")
+                .ok_or(InvalidArgument)?;
+            mapped["routeAction"] = policy;
+        }
+        params
+            .as_object_mut()
+            .ok_or(InvalidArgument)?
+            .extend(mapped.as_object().ok_or(InvalidArgument)?.clone());
+    } else if action.starts_with("subscription-") {
+        let input = private_stdin.ok_or(crate::semantic_cli::SemanticCliError::MissingInput)?;
+        if input.len() > cli_input_limit(arguments).ok_or(InvalidArgument)? {
+            return Err(crate::semantic_cli::SemanticCliError::InputTooLarge);
+        }
+        let command = action
+            .strip_prefix("subscription-")
+            .ok_or(InvalidArgument)?;
+        let (id, body) = match command {
+            "add" => (None, Some(input)),
+            "update" => {
+                let (id, body) = input.split_once('\n').ok_or(InvalidArgument)?;
+                (Some(id), Some(body))
+            }
+            _ => (Some(input.strip_suffix('\n').unwrap_or(input)), None),
+        };
+        let mut canonical_args = vec![OsString::from("subscription"), OsString::from(command)];
+        if let Some(id) = id {
+            canonical_args.push(id.into());
+        }
+        let (_, mapped) =
+            crate::semantic_cli::parse_semantic_mutation(&canonical_args, body)?.into_parts();
+        params
+            .as_object_mut()
+            .ok_or(InvalidArgument)?
+            .extend(mapped.as_object().ok_or(InvalidArgument)?.clone());
+    } else if action == "profile-replace" {
+        let input = private_stdin.ok_or(crate::semantic_cli::SemanticCliError::MissingInput)?;
+        if input.len() > cli_input_limit(arguments).ok_or(InvalidArgument)? {
+            return Err(crate::semantic_cli::SemanticCliError::InputTooLarge);
+        }
+        let (id, replacement) = input.split_once('\n').ok_or(InvalidArgument)?;
+        let (_, replaced) = crate::semantic_cli::parse_semantic_profile_replace(
+            &["profile".into(), "replace".into(), id.into()],
+            Some(replacement),
+        )?
+        .into_parts();
+        params
+            .as_object_mut()
+            .ok_or(InvalidArgument)?
+            .extend(replaced.as_object().ok_or(InvalidArgument)?.clone());
+    } else if action == "profile-import" {
         let (_, imported) = crate::semantic_cli::parse_semantic_profile_import(
             &["profile".into(), "import".into()],
             private_stdin,
@@ -258,10 +510,223 @@ pub fn cli_params(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_plugin_bridge_reuses_exact_policy_validation_and_private_stdin() {
+        let args: Vec<OsString> = ["plugin", "startup-configure", "instance", "7", "operation"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        assert_eq!(cli_input_limit(&args), Some(64));
+        let record = "00000000-0000-4000-8000-000000000001";
+        for input in [
+            "off\nlast\n\nrule".to_owned(),
+            format!("on\nprofile\n{record}\nglobal\n"),
+        ] {
+            let params = cli_params(&args, Some(&input)).unwrap().unwrap();
+            let request = json!({"api":"omavless.control","version":1,"id":"test","method":"plugin.action","params":params});
+            let parsed = parse(&request).unwrap();
+            assert_eq!(parsed.canonical["method"], "startup.configure");
+            assert_eq!(parsed.canonical["params"]["expectedRevision"], 7);
+            assert_eq!(parsed.canonical["params"]["operationId"], "operation");
+            crate::startup_protocol::parse_startup_request(&parsed.canonical).unwrap();
+            let mut bad = request.clone();
+            bad["params"]["command"] = json!("private-input");
+            assert!(parse(&bad).is_err());
+        }
+        for input in [
+            "",
+            "on\nlast\n\ndirect",
+            "true\nlast\n\nrule",
+            "off\nlast\n\nrule\n\n",
+            "off\nprofile\nprivate-input\nrule",
+            "off\nlast\n\nrule\r",
+            "https://private-input.invalid/key",
+        ] {
+            let error = cli_params(&args, Some(input)).unwrap_err();
+            assert!(!format!("{error:?} {error}").contains("private-input"));
+        }
+        assert!(cli_params(&args, Some(&"x".repeat(65))).is_err());
+        assert!(cli_params(&args, None).is_err());
+        let mut extra = args.clone();
+        extra.push("unexpected".into());
+        assert!(cli_params(&extra, Some("off\nlast\n\nrule")).is_err());
+    }
     fn request(params: Value) -> Value {
         // Invalid cases must reach the parser rather than the checked builder.
         json!({"api":"omavless.control","version":1,"id":"test","method":"plugin.action","params":params})
     }
+    #[test]
+    fn onboarding_cli_is_exact_fenced_and_has_no_private_input_or_setup_flags() {
+        let args: Vec<_> = [
+            "plugin",
+            "onboarding-complete",
+            "instance",
+            "7",
+            "operation",
+        ]
+        .map(OsString::from)
+        .into();
+        let params = cli_params(&args, None).unwrap().unwrap();
+        assert_eq!(cli_input_limit(&args), None);
+        assert_eq!(
+            params,
+            json!({"action":"onboarding-complete","instanceId":"instance","expectedRevision":7,"operationId":"operation"})
+        );
+        let mapped = parse(&request(params.clone())).unwrap();
+        assert_eq!(mapped.canonical["method"], "onboarding.complete");
+        assert_eq!(
+            mapped.canonical["params"],
+            json!({"expectedRevision":7,"operationId":"operation"})
+        );
+        for key in params.as_object().unwrap().keys() {
+            let mut missing = params.clone();
+            missing.as_object_mut().unwrap().remove(key);
+            assert!(parse(&request(missing)).is_err());
+        }
+        for (key, value) in [
+            ("enabled", json!(true)),
+            ("path", json!("private-token")),
+            ("instanceId", json!("")),
+            ("expectedRevision", json!(null)),
+            ("expectedRevision", json!(-1)),
+            ("operationId", json!("")),
+        ] {
+            let mut invalid = params.clone();
+            invalid[key] = value;
+            assert!(parse(&request(invalid)).is_err());
+        }
+        assert!(cli_params(&args, Some("private-token")).is_err());
+        let mut extra = args.clone();
+        extra.push("private-token".into());
+        assert!(cli_params(&extra, None).is_err());
+        let mut invalid = args.clone();
+        invalid[3] = "+7".into();
+        assert!(cli_params(&invalid, None).is_err());
+        // Startup configuration has its own bounded stdin, not onboarding's
+        // no-input shape. Daemon capability admission is checked separately.
+        let mut startup = args;
+        startup[1] = "startup-configure".into();
+        assert!(cli_params(&startup, None).is_err());
+    }
+    #[test]
+    fn routing_actions_reuse_canonical_parsers_and_disambiguate_policy_action() {
+        for (action, input, method, expected) in [
+            (
+                "routing-preset",
+                "china-cn-direct\non",
+                "routing.set_preset",
+                json!({"preset":"china-cn-direct","keepMode":true}),
+            ),
+            (
+                "routing-preset",
+                "iran-ir-direct\noff\n",
+                "routing.set_preset",
+                json!({"preset":"iran-ir-direct","keepMode":false}),
+            ),
+            (
+                "custom-rule-add",
+                "suffix\nproxy\nexample.invalid",
+                "routing.custom_rules.add",
+                json!({"kind":"suffix","action":"proxy","value":"example.invalid"}),
+            ),
+            (
+                "custom-rule-delete",
+                "00000000-0000-4000-8000-000000000001\n",
+                "routing.custom_rules.delete",
+                json!({"ruleId":"00000000-0000-4000-8000-000000000001"}),
+            ),
+        ] {
+            let args: Vec<_> = ["plugin", action, "instance", "7", "operation"]
+                .map(OsString::from)
+                .into();
+            let params = cli_params(&args, Some(input)).unwrap().unwrap();
+            assert_eq!(params["action"], action);
+            let canonical = parse(&request(params.clone())).unwrap().canonical;
+            assert_eq!(canonical["method"], method);
+            for (key, value) in expected.as_object().unwrap() {
+                assert_eq!(canonical["params"][key], *value);
+            }
+            for key in params.as_object().unwrap().keys() {
+                let mut changed = params.clone();
+                changed.as_object_mut().unwrap().remove(key);
+                assert!(parse(&request(changed)).is_err());
+            }
+            assert!(cli_params(&args, None).is_err());
+            for invalid in [String::new(), "private-token".into(), "x".repeat(1100)] {
+                assert!(cli_params(&args, Some(&invalid)).is_err());
+            }
+            let mut extra = args.clone();
+            extra.push("private-token".into());
+            assert!(cli_params(&extra, Some(input)).is_err());
+        }
+        let args: Vec<_> = ["plugin", "custom-rule-add", "instance", "7", "operation"]
+            .map(OsString::from)
+            .into();
+        for input in [
+            "unknown\nproxy\nexample.invalid",
+            "domain\nexecute\nexample.invalid",
+            "domain\nproxy\nhttps://private.invalid/token",
+            "domain\nproxy\nexample.invalid\nextra",
+        ] {
+            assert!(cli_params(&args, Some(input)).is_err());
+        }
+    }
+
+    #[test]
+    fn subscription_actions_have_exact_private_stdin_and_canonical_parsers() {
+        let id = "10000000-0000-4000-8000-000000000001";
+        for (action, input, method) in [
+            (
+                "subscription-add",
+                "Private source\nhttps://private.example/token".to_owned(),
+                "subscriptions.add",
+            ),
+            (
+                "subscription-update",
+                format!("{id}\nPrivate source\nhttps://private.example/token"),
+                "subscriptions.update",
+            ),
+            ("subscription-delete", id.to_owned(), "subscriptions.delete"),
+            (
+                "subscription-refresh",
+                id.to_owned(),
+                "subscriptions.refresh",
+            ),
+        ] {
+            let args: Vec<_> = ["plugin", action, "instance", "7", "operation"]
+                .map(OsString::from)
+                .into();
+            let params = cli_params(&args, Some(&input)).unwrap().unwrap();
+            assert_eq!(
+                parse(&request(params.clone())).unwrap().canonical["method"],
+                method
+            );
+            for key in params.as_object().unwrap().keys() {
+                let mut changed = params.clone();
+                changed.as_object_mut().unwrap().remove(key);
+                assert!(parse(&request(changed)).is_err());
+            }
+            for invalid in [
+                String::new(),
+                "private-token".into(),
+                format!("{input}\nextra"),
+                "x".repeat(9000),
+            ] {
+                assert!(cli_params(&args, Some(&invalid)).is_err());
+            }
+            assert!(cli_params(&args, None).is_err());
+            let mut extra = args.clone();
+            extra.push("private-token".into());
+            assert!(cli_params(&extra, Some(&input)).is_err());
+            for key in ["path", "command", "fetchResult"] {
+                let mut changed = params.clone();
+                changed[key] = json!("private-token");
+                assert!(parse(&request(changed)).is_err());
+            }
+        }
+    }
+
     #[test]
     fn exact_actions_reuse_canonical_validation() {
         for (action, method, extra) in [
@@ -272,6 +737,11 @@ mod tests {
             ),
             ("disconnect", "connection.disconnect", json!({})),
             ("mode", "routing.set_mode", json!({"mode":"global"})),
+            (
+                "profile-replace",
+                "profiles.replace",
+                json!({"profileId":"00000000-0000-4000-8000-000000000001","name":"Replaced","input":"trojan://synthetic-password@203.0.113.1:443"}),
+            ),
             (
                 "profile-import",
                 "profiles.import",
@@ -404,6 +874,42 @@ mod tests {
             .into();
         for value in ["true", "false", "1", "ON", "off "] {
             assert!(cli_params(&args, Some(&format!("{id}\n{value}"))).is_err());
+        }
+    }
+
+    #[test]
+    fn replacement_cli_reuses_canonical_framing_and_bounds() {
+        let args: Vec<_> = ["plugin", "profile-replace", "instance", "7", "operation"]
+            .map(OsString::from)
+            .into();
+        let id = "00000000-0000-4000-8000-000000000001";
+        let link = "trojan://synthetic-password@203.0.113.1:443";
+        let input = format!("{id}\nPrivate label\n{link}\n");
+        let params = cli_params(&args, Some(&input)).unwrap().unwrap();
+        assert_eq!(params["profileId"], id);
+        assert_eq!(params["name"], "Private label");
+        assert_eq!(params["input"], format!("{link}\n"));
+        assert_eq!(cli_input_limit(&args), Some(33126));
+        assert!(cli_params(&args, None).is_err());
+        for invalid in [
+            String::new(),
+            id.into(),
+            format!("{id}\nName"),
+            format!("{id}\n\n{link}"),
+            format!("bad-id\nName\n{link}"),
+            format!("{id}\n{}\n{link}", "x".repeat(321)),
+            format!("{id}\nName\n{}", "x".repeat(32769)),
+        ] {
+            assert!(cli_params(&args, Some(&invalid)).is_err());
+        }
+        let mut extra = args;
+        extra.push("private-token".into());
+        assert_eq!(cli_input_limit(&extra), None);
+        assert!(cli_params(&extra, Some(&input)).is_err());
+        for key in ["path", "oldId", "enabled", "command"] {
+            let mut changed = params.clone();
+            changed[key] = json!("private-token");
+            assert!(parse(&request(changed)).is_err());
         }
     }
 

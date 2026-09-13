@@ -2,7 +2,8 @@
 
 //! Create-only bootstrap for the canonical private profile store.
 //!
-//! This module has no CLI, IPC, daemon, or UI registration. It accepts no
+//! This primitive has no IPC, daemon, or UI registration; explicit fresh setup
+//! reuses it under a wider migration lease. It accepts no
 //! client path or payload: callers construct the fixed
 //! `~/.config/omavless/profiles.json` location from a trusted home directory,
 //! and the payload is the exact credential-free Python `empty_store()`
@@ -21,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 pub const PRIVATE_STORE_NAME: &str = "profiles.json";
 
-const EMPTY_STORE_PAYLOAD: &[u8] = br#"{
+pub(crate) const EMPTY_STORE_PAYLOAD: &[u8] = br#"{
   "version": 3,
   "activeId": "",
   "lastId": "",
@@ -169,7 +170,20 @@ pub fn bootstrap_private_store(
     uid: u32,
 ) -> Result<PrivateStoreBootstrapOutcome, PrivateStoreBootstrapError> {
     validate_config_directory(&paths.config_directory, uid)?;
-    let _lock = MigrationLock::acquire(cutover_paths, uid).map_err(map_lock_error)?;
+    let lock = MigrationLock::acquire(cutover_paths, uid).map_err(map_lock_error)?;
+    bootstrap_private_store_locked(paths, cutover_paths, uid, &lock)
+}
+
+/// Reuse the exact create-only primitive inside a wider preparation lease.
+pub(crate) fn bootstrap_private_store_locked(
+    paths: &PrivateStoreBootstrapPaths,
+    cutover_paths: &CutoverPaths,
+    uid: u32,
+    lock: &MigrationLock,
+) -> Result<PrivateStoreBootstrapOutcome, PrivateStoreBootstrapError> {
+    if !lock.authorizes(cutover_paths, uid) {
+        return Err(PrivateStoreBootstrapError::LockIo);
+    }
     // Repeat after acquiring the lease so a cooperating migration cannot have
     // changed the directory between admission and publication.
     validate_config_directory(&paths.config_directory, uid)?;
@@ -308,6 +322,20 @@ mod tests {
         assert!(output.status.success());
         assert_eq!(output.stdout, EMPTY_STORE_PAYLOAD);
         assert!(output.stderr.is_empty());
+    }
+
+    #[test]
+    fn wider_preparation_cannot_reuse_an_unrelated_migration_lease() {
+        let first = TestRoot::new();
+        let second = TestRoot::new();
+        let (_, first_cutover) = first.paths();
+        let (store, cutover) = second.paths();
+        let lock = MigrationLock::acquire(&first_cutover, first.uid).unwrap();
+        assert_eq!(
+            bootstrap_private_store_locked(&store, &cutover, second.uid, &lock),
+            Err(PrivateStoreBootstrapError::LockIo)
+        );
+        assert!(!store.store_path().exists());
     }
 
     #[test]
