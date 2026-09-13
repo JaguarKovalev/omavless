@@ -62,6 +62,37 @@ coverage passes. Installed Mihomo is Meta v1.19.30, linux arm64, Go 1.26.6,
 `with_gvisor`. Synthetic core configuration checks do not prove provider or
 live-tunnel interoperability. No new GitHub Actions run was requested.
 
+## Publication-session CI correction
+
+Integration PR #238's initial run at `da941b0` failed before the owned-helper
+resource test reached readiness:
+`core::tests::helper_resources_are_drained_even_after_leader_exit_or_term_spawn`
+returned `SpawnFailed` at its freshly written executable fixture. See
+[the original failed run](https://github.com/k-kostin/omavless/actions/runs/34746388452).
+The fixed public error did not retain the OS errno; ETXTBSY/publication timing
+is a plausible explanation, not a proven errno diagnosis.
+
+The correction executes the same checked-in helper as an executable instead of
+rewriting/chmodding a temporary executable during concurrent process spawning.
+The Rust change is exclusively inside `#[cfg(test)]`; the production supervisor
+prefix is byte-identical. The helper remains test-only and is not installed by
+the native package. No spawn retry, production deadline, cleanup assertion,
+private fixture or installed VPN behavior changed.
+
+The focused helper test passes. The complete local two-thread gate again passes
+957 Rust tests / 0 failures / 10 ignored, fmt, Clippy and R0 parity. The full
+Python suite again runs 460 tests / 4 skips, with all JS/QML checks passing.
+
+An additional four-thread VM run did **not** pass: the helper test succeeded,
+but `auxiliary_core::tests::revoke_during_chunk_cleanup_never_reopens_stale_lease`
+returned `Cleanup` while finishing the successor lease (runtime library: 637
+passed / 1 failed / 6 ignored). The same unchanged auxiliary test passes alone
+and in the standard two-thread gate; a later VM observation showed load average
+17.50 on eight vCPUs. This is unresolved load-sensitive evidence, not proof of
+its precise internal cause. Preserve it alongside earlier auxiliary timing
+observations; no cleanup boundary was relaxed to obtain a pass. Cloud acceptance
+must still pass on the corrected exact head before merging.
+
 ## Remote Draft reconciliation
 
 Open PR metadata and remote refs were inspected, not modified. A later repeated
