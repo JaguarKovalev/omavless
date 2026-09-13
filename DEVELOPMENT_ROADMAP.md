@@ -2,8 +2,9 @@
 
 Status: active delivery ledger; local native checkpoint updated 2026-09-13.
 
-Local owner-approved update, 2026-09-13: **R6 native-path retirement is closed
-locally with explicit deferrals**, not merged/published. See
+Owner-approved update, 2026-09-13: **R6 native-path retirement is closed
+with explicit deferrals**. Start with [current delivery status](docs/roadmap/CURRENT_STATUS.md)
+for the integrated tree; GitHub records its actual publication state. See
 [exact closure and evidence](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
 Optional enabled Last/pinned login validation moves to
 [AUTO-1](docs/roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md); startup Off remains default.
@@ -600,8 +601,13 @@ owns the target runtime.
 
 ### R5 / T1 — Rust shared runtime / daemon foundation
 
-State: **in progress; bounded disconnected ownership transition executed on
-Try Omarchy ARM64 for the combined installed candidate; R5/R6 remain open**.
+State: **native ownership and required frontend integration accepted in the
+R6 checkpoint; enabled login validation remains AUTO-1**.
+
+The checkpoint narrative below is historical. The
+[current status](docs/roadmap/CURRENT_STATUS.md) and
+[R6 closure](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md) supersede its older
+remaining-work statements without changing any recorded test outcome.
 
 The [2026-09-09 installed activation report](docs/testing/R5_DISCONNECTED_ACTIVATION.md#try-omarchy-arm64-installed-acceptance--2026-09-09)
 records combined exact source `ffcf4d2654b74c0fb746664eb73545eb9028fbc6`,
@@ -1011,7 +1017,7 @@ Nix support is not inferred from Arch/Try Omarchy evidence.
 
 ### R6 — Python runtime retirement
 
-State: **locally closed under owner-revised scope, 2026-09-13; publication pending**.
+State: **closed for the accepted native path under owner-revised scope, 2026-09-13**.
 
 The [closure record](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md) reconciles the
 requirements below for the native package/frontend. Enabled Last/pinned

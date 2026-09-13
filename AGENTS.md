@@ -89,12 +89,13 @@ semantic runtime. GPUI is not a dependency of the daemon/CLI/TUI path.
 
 ## Current delivery strategy
 
-Local native checkpoint, 2026-09-13: R6 is closed under the explicitly revised
+Native checkpoint, 2026-09-13: R6 is closed under the explicitly revised
 owner scope in [the local closure](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
 Enabled Last/pinned login acceptance remains [AUTO-1](docs/roadmap/LOGIN_AUTOCONNECT_FOLLOWUP.md),
 not PASS. The installed default/manual path is Rust-only; legacy/reference
-sources and the published marketplace snapshot remain separate. This local
-decision is not a main merge, release or authorization to publish/start TUI work.
+sources and the published marketplace snapshot remain separate. Read
+[current delivery status](docs/roadmap/CURRENT_STATUS.md) before allocating work.
+Acceptance is not a marketplace release or blanket authorization to start TUI work.
 Interpret older R6-open checkpoint prose through that evidence, not as a reason
 to repeat completed migration work or hide deferred failures.
 
@@ -103,8 +104,9 @@ Two lanes may proceed in parallel:
 1. **Plugin completion lane** — finish bounded current plugin/QML work such as
    localization batches, bug fixes, accessibility/navigation, existing
    diagnostic presentation and opportunistic V0 fixture validation.
-2. **Rust migration lane** — begin immediately with R0/R1 and then migrate
-   deterministic backend layers according to `RUST_MIGRATION.md`.
+2. **Native application lane** — maintain the accepted Rust owner and advance
+   separately scoped application/host follow-ups. R0–R6 is not a fresh work
+   queue; the retained migration contract explains the accepted boundaries.
 
 Do not freeze the current plugin merely because Rust work has started. Equally,
 do not expand large Python backend surfaces that are about to be migrated.

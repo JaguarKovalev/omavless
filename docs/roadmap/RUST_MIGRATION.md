@@ -11,8 +11,10 @@ Python/Rust parity gates. It complements [`CONTROL_PLANE.md`](CONTROL_PLANE.md),
 Current local decision, 2026-09-13: [R6 native-path retirement is locally closed](../testing/R6_LOCAL_CLOSURE_2026-09-13.md)
 under the owner's explicit enabled-autoconnect deferral to
 [AUTO-1](LOGIN_AUTOCONNECT_FOLLOWUP.md). Default Off/Python-absence evidence is
-retained; network failures are not relabelled PASS. This is not published main
-acceptance, blanket Python-source deletion or permission to start new work.
+retained; network failures are not relabelled PASS. See
+[current delivery status](CURRENT_STATUS.md) for the integrated tree and use
+GitHub for actual publication state. This is not blanket Python-source deletion
+or permission to start unrelated work.
 
 Historical local-only R6 continuity, 2026-09-11: native config preparation and
 [strict absent-legacy activation composition](../testing/R6_ABSENT_LEGACY_ACTIVATION.md)
@@ -501,7 +503,9 @@ to widen concurrency or retry semantics beyond the existing contract.
 
 Goal: make `omavless daemon` the one canonical owner.
 
-Implementation status: **foundations accepted; ownership cutover pending**.
+Implementation status: **native ownership accepted under the scoped R6 checkpoint**.
+The incremental history below records what each earlier slice did, not the
+current installed owner or remaining-work list. See [current status](CURRENT_STATUS.md).
 PRs #96-#100, #102, #104, #106-#108, #110, #111, #113, #117-#121 and
 #125-#134 and #136 provide the private control
 socket/owner lock, desired-state and reconciliation model, package-unit

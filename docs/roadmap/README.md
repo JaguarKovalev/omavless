@@ -3,6 +3,7 @@
 Status: design and delivery index, local checkpoint updated 2026-09-13.
 
 The native installed path has completed scoped local R6 acceptance. Start with
+the [current delivery status](CURRENT_STATUS.md),
 the [closure](../testing/R6_LOCAL_CLOSURE_2026-09-13.md) and
 [publication candidate](../testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md), not the
 historical migration sequence below. Main publication is still owner-controlled;

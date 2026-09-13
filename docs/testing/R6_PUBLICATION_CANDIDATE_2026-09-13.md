@@ -1,6 +1,10 @@
 # Native R6 integration — local publication candidate
 
-Status: **local checks green; publication withheld for the owner**.
+Historical preparation status: **local checks green; publication withheld at
+the time of this report**. The owner subsequently authorized publication on
+2026-09-13. Use [current delivery status](../roadmap/CURRENT_STATUS.md) and the
+actual integration PR state for delivery; the snapshot below preserves the
+pre-publication evidence and cleanup plan.
 This is the final preparation checkpoint, not a merge, tag or marketplace
 release. The [scoped R6 closure](R6_LOCAL_CLOSURE_2026-09-13.md) remains the
 acceptance authority. No VPN transition or authorization request was made in

@@ -13,6 +13,8 @@ are different installation paths; do not mix their recovery commands.
 
 Read [AGENTS.md](../AGENTS.md), the [delivery roadmap](../DEVELOPMENT_ROADMAP.md)
 and the [architecture/roadmap index](roadmap/README.md).
+The [current delivery status](roadmap/CURRENT_STATUS.md) separates the accepted
+native application, published marketplace snapshot and remaining follow-ups.
 Reusable project workflows live in [`skills/`](../skills/omavless-ui-review/SKILL.md),
 not in the installed frontend payload.
 
