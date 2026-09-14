@@ -1,6 +1,6 @@
 # OmaVLESS development delivery roadmap
 
-Status: active delivery ledger; local native checkpoint updated 2026-09-13.
+Status: active delivery ledger; main/status synchronization updated 2026-09-14.
 
 Owner-approved update, 2026-09-13: **R6 native-path retirement is closed
 with explicit deferrals**. Start with [current delivery status](docs/roadmap/CURRENT_STATUS.md)
@@ -11,9 +11,12 @@ Optional enabled Last/pinned login validation moves to
 DNS/provider investigation and V0 fixture limits remain open. Historical stage
 entries below keep their original evidence boundaries.
 
-The [publication candidate](docs/testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md)
-indexes the final local checks, outstanding Draft PR reconciliation and the
-owner-controlled publication step. No remote publication is implied.
+Native integration #238 is merged; its included Drafts are reconciled. The
+[publication candidate](docs/testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md)
+preserves the pre-merge checks and reconciliation mapping, not an outstanding
+integration task. Main also contains #240's accepted subscription-row refresh.
+Separate [#239](https://github.com/k-kostin/omavless/pull/239) prepares native
+0.8.0 RC artifacts; no stable release or marketplace update has occurred.
 
 This file is the compact source of truth for **what happens next**, dependency
 order and acceptance state. Detailed contracts live under `docs/roadmap/`.
@@ -43,8 +46,9 @@ Canonical references:
 
 Where an older document still describes Python versus compiled runtime as an
 open choice, `RUST_MIGRATION.md` is authoritative: **Rust is selected for the
-future runtime/domain/CLI/TUI; Python is the current plugin reference and
-migration oracle.** Where older wording says Arch/AUR is the only future host,
+native runtime/domain/CLI; the later TUI is also Rust. Python is the separate
+legacy implementation and migration oracle, not the activated native owner.**
+Where older wording says Arch/AUR is the only future host,
 `PLATFORM.md` is authoritative: Arch and NixOS are the initial host families.
 
 ## 1. Delivery principles
@@ -70,9 +74,9 @@ Do not collapse these axes into one "done" label.
 
 ### No big-bang rewrite
 
-The current Python backend remains the reference production behavior until a
-bounded Rust slice passes its parity and host gates. Rust replaces Python
-incrementally. Do not create a permanent dual implementation.
+The migration used bounded Rust slices with parity and host gates. That native
+path is now accepted; retain Python only for the distinct legacy distribution
+and reference tests. Do not create a permanent dual native implementation.
 
 ### No premature TUI
 
@@ -110,7 +114,12 @@ WireGuard/AmneziaWG now has its own private-fixture, installed-core, security
 and host acceptance ledger. P4 remains unavailable to users until that ledger
 and the Rust compatibility/runtime bridge are complete.
 
-### Local-only continuation — pending acceptance, 2026-09-10
+### Historical local continuation — 2026-09-10 through 2026-09-12
+
+The following dated narrative is preserved for evidence continuity. Its
+"not closed", "not merged" and remaining-gate statements describe those dates;
+the 2026-09-13 closure and subsequent #238 merge supersede that task list.
+Use the current status above for actual follow-ups; negative evidence remains intact.
 
 For the consolidated current R6 remainder and the 2026-09-12 automatic-test
 checkpoint, start with the [R6 closure ledger](docs/testing/R6_CLOSURE_LEDGER_2026-09-12.md).
@@ -233,7 +242,7 @@ runtime/application tracks.
 
 ### Lane R — migrate backend/runtime to Rust
 
-Start now and continue in bounded parity-gated slices:
+The accepted migration followed this dependency order; R0–R6 is not a new queue:
 
 ```text
 R0 workspace/parity harness
@@ -246,7 +255,7 @@ R0 workspace/parity harness
  -> T2 Ratatui TUI
 ```
 
-R0/R1 can run while plugin QML work continues and while V0 fixtures are missing.
+Missing V0 fixtures did not block these migration gates and do not reopen them.
 
 ### Features deliberately moved behind Rust runtime
 
@@ -289,14 +298,14 @@ linked from `AGENTS.md`. The contract records the local owner-approved main
 layout separately from the historical delivery state below; it does not claim
 a main merge or complete product acceptance.
 
-State: **source-audited; rendered review and implementation pending**.
+State: **accepted native layout and UI corrections integrated; narrow follow-ups only**.
 
 The [2026-09-04 audit](docs/testing/CLOUD_UI_ROADMAP_AUDIT_2026-09-04.md)
-records a reproducible hidden-search-filter bug, inconsistent control/gutter
-policies, and modal/focus risks requiring Omarchy reproduction. Fix the search
-behavior narrowly; establish shared button role/state/size and scrollbar rules
-using existing shell tokens before migrating presentation. Keep #135's mode
-confirmation fix and its acceptance gates separate.
+records the earlier hidden-search-filter, control/gutter and modal/focus risks.
+It is a historical audit, not a request to recreate the now accepted UI.
+#238 integrates the corrected native layout and evidence; #240 adds the
+requested subscription server-list refresh without redesign. Keep #135's
+mode-confirmation fix and its acceptance gates separate.
 
 This plugin lane is independent of R5. Exit requires exact-head English/Russian
 review of pointer/keyboard/disabled states, scrolling and constrained-height
@@ -1048,7 +1057,7 @@ native R6 closure.
 
 ### T2 — Rust + Ratatui TUI MVP
 
-State: **planned only after R6**.
+State: **planned; native R6 prerequisite satisfied, separate client scope required**.
 
 The first full application UI is Rust + Ratatui, using a reviewed terminal
 backend such as Crossterm. It is a client of the already accepted Rust runtime;
@@ -1139,8 +1148,8 @@ NixOS provisioning remain separate host implementations.
 
 ### K1 — Full VPN fail-closed kill switch
 
-State: **implementation-ready by design, but implementation waits for Rust
-canonical runtime**.
+State: **design accepted; Rust ownership prerequisite satisfied, separate
+privileged implementation and host acceptance still required**.
 
 Initial scope remains opt-in Full VPN only. Protection follows desired tunnel
 state through core/runtime failure; explicit disconnect disarms it. Deliver as
@@ -1217,8 +1226,8 @@ separately and one host never proves another.
 
 ## 14. Current priority in one sentence
 
-**Preserve the locally closed native R6 candidate and accepted UI, reconcile and
-review it before any owner-authorized main publication, and track AUTO-1 and
-DNS/provider follow-ups without relabelling their unrun/failed checks. V0 remains
-Draft and fixture-constrained. T2 can be scoped after this local migration gate;
+**Preserve the integrated native R6 implementation and accepted UI; finish the
+separate native release/package delivery gates with owner-controlled marketplace
+publication. Track AUTO-1 and DNS/provider follow-ups without relabelling their
+unrun/failed checks. V0 remains Draft and fixture-constrained. Scope T2 separately;
 no implementation or release starts merely because the ledger changed.**

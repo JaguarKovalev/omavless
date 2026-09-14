@@ -4,7 +4,8 @@
 
 Start with the [project README](../README.md). User instructions live in
 [`user/`](user/INSTALL.md): [installation](user/INSTALL.md),
-[native candidate installation](user/NATIVE_INSTALL.md), [usage](user/USAGE.md),
+[native candidate installation](user/NATIVE_INSTALL.md),
+[native everyday use](user/NATIVE_USAGE.md), [legacy usage](user/USAGE.md),
 [troubleshooting](user/TROUBLESHOOTING.md) and [security](user/SECURITY.md).
 The published marketplace version and the locally accepted native candidate
 are different installation paths; do not mix their recovery commands.

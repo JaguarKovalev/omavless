@@ -8,7 +8,8 @@ reviewed local Rust candidate, use the separate [native installation guide](NATI
 native package setup, ownership activation and `--native-only` frontend
 installation are distinct steps. The Python/GTK fallback and legacy purge
 instructions below do not apply to a committed native owner. This distinction
-does not announce a new marketplace release or completed R6 acceptance.
+does not announce a new marketplace release. Scoped native R6 acceptance is
+recorded separately in the [closure report](../testing/R6_LOCAL_CLOSURE_2026-09-13.md).
 
 ## Requirements
 

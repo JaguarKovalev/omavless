@@ -12,6 +12,9 @@ Cargo at runtime. Its Omarchy frontend is still QML. Python source retained in
 the repository supports the separate legacy path and migration/reference tests;
 it is not a hidden fallback for an activated native owner.
 
+Already installed? See [native everyday use](NATIVE_USAGE.md) for connection
+selection, subscription refresh, language, diagnostics and Quit.
+
 ## Before installation
 
 Use a trusted, reviewed prebuilt `omavless` archive for the host architecture

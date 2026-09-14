@@ -1,163 +1,94 @@
 # OmaVLESS
 
-OmaVLESS is an Omarchy bar plugin for importing, subscribing to and switching
-secure proxy profiles through a dedicated Mihomo TUN service.
+A compact, terminal-style VPN control panel for the Omarchy bar, powered by
+[Mihomo](https://github.com/MetaCubeX/mihomo).
 
-It supports VLESS and experimental Trojan, Hysteria2 and TUIC v5 profiles,
-with Full VPN, country-based Routing and Direct modes. Profiles and provider
-URLs stay in a private local store, and import review hides complete
-credentials and keys.
+Import profiles and subscriptions, choose a connection mode, and manage your
+VPN without leaving the desktop. English and Russian interfaces are available.
 
-OmaVLESS is a community project maintained by
-[kdk](https://github.com/k-kostin). It is not affiliated with Omarchy,
-MetaCubeX or any VPN provider.
+## Choose your installation
 
-## Install on Omarchy
+There are two distinct paths. Installing the plugin alone does not install the
+Rust runtime or migrate an existing installation.
 
-Add and enable the plugin:
+| Path | What to expect |
+| --- | --- |
+| [Omarchy plugin](docs/user/INSTALL.md) | Legacy-compatible installation; the published marketplace snapshot is still **0.7.0**. Adding the GitHub repository directly uses repository code, not necessarily that reviewed snapshot. |
+| [Native Rust application + plugin](docs/user/NATIVE_INSTALL.md) | Reviewed Arch/Omarchy candidate: prebuilt runtime package, explicit activation, matching QML frontend. No Python runtime required. |
 
-```bash
-omarchy plugin add https://github.com/k-kostin/omavless --enable
-```
+The native implementation is integrated into `main`; it is not yet a stable
+0.8.0 release. [Release preparation](https://github.com/k-kostin/omavless/pull/239)
+is separate from marketplace publication. Existing users are not automatically
+migrated.
 
-Testing a reviewed local Rust candidate? Use the separate
-[native installation guide](docs/user/NATIVE_INSTALL.md). The marketplace command
-above does not install the native package or migrate ownership; native setup,
-updates and removal differ from the legacy-compatible instructions below.
-The native path has a separate, scoped
-[local R6 acceptance record](docs/testing/R6_LOCAL_CLOSURE_2026-09-13.md).
-That acceptance is not a marketplace release or automatic migration.
+Both paths need Mihomo and TUN permissions. Desktop helpers provide clipboard,
+file selection, profile editing and QR functions. The installation guides
+explain the dependencies and explicit setup commands; OmaVLESS does not silently
+install packages or grant privileges.
 
-OmaVLESS uses an installed [Mihomo](https://github.com/MetaCubeX/mihomo)
-binary. The simplest Omarchy-native installation is:
+## Everyday use
 
-```bash
-omarchy pkg aur add mihomo-bin
-mihomo_bin="$(command -v mihomo)"
-"$mihomo_bin" -v
-```
+1. Import a profile link or subscription URL from the clipboard or a file.
+   Review the preview before saving.
+2. Choose **Full VPN**, **Routing** or **Direct**.
+3. Press **Connect** beside the profile you want. Selecting a profile for
+   management is not the same as connecting it.
 
-Mihomo needs permission to create and manage the TUN interface. Review the
-binary path, then grant the required capabilities:
+On the native main screen, expand a subscription to browse its profiles. Press
+**↻** beside the subscription's server count to download its updated server
+list. Profile management stays in the separate action bar below the list.
 
-```bash
-sudo setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+ep "$mihomo_bin"
-getcap "$mihomo_bin"
-```
+- **Full VPN** sends traffic through the connected profile.
+- **Routing** uses the selected country policy and your domain/IP rules.
+- **Direct** keeps the TUN running while bypassing the proxy.
 
-Package updates can replace the Mihomo binary and remove its capabilities. If
-TUN creation stops working after an update, repeat the capability commands.
+Settings contains language selection, routing tools, diagnostics, subscription
+management and shutdown controls. Changing the UI language does not restart
+the VPN. Login autoconnect is Off by default; the native candidate's optional
+Last/pinned fresh-login validation remains incomplete.
 
-Open OmaVLESS from the bar. The first-run guide checks Mihomo readiness,
-offers an optional country Routing preset and opens the private import flow.
-It shows host-changing commands for you to run explicitly; the plugin never
-silently invokes `sudo` or `pkexec`.
-
-For complete installation, dependency and update guidance, see the
-[installation guide](docs/user/INSTALL.md).
-
-## Use OmaVLESS
-
-Import a supported profile link from the clipboard or a file, or add an HTTPS
-subscription from the same top-level import actions. OmaVLESS always previews
-whether the input is one server or a subscription before saving it.
-
-Choose a connection mode:
-
-- **Full VPN** sends traffic through the selected profile.
-- **Routing** applies the selected Russia, China or Iran policy plus your
-  custom domain/IP rules.
-- **Direct** keeps the TUN service available while bypassing the proxy.
-
-Settings provide login autoconnect, subscription management, routing tools,
-safe Mihomo diagnostics, language selection, traffic display and plugin
-shutdown controls.
-
-See the [usage guide](docs/user/USAGE.md) for subscriptions, controls, routing,
-autoconnect and files/services.
+See [native controls and everyday use](docs/user/NATIVE_USAGE.md), or the
+[legacy-compatible usage guide](docs/user/USAGE.md).
 
 ## Supported inputs
 
-| Family | Status | Common supported forms |
-| --- | --- | --- |
-| VLESS | Supported | TCP, WebSocket, HTTP, H2, gRPC, XHTTP; TLS and REALITY |
-| Trojan | Experimental | TCP, WebSocket and gRPC with TLS or supported REALITY fields |
-| Hysteria2 | Experimental | `hysteria2://` and `hy2://` |
-| TUIC | Experimental | TUIC v5 `tuic://` |
-| Subscriptions | Supported | HTTPS raw or base64 lists of supported links |
+| Family | Status |
+| --- | --- |
+| VLESS | Supported; includes TCP, WebSocket, HTTP, H2, gRPC and XHTTP, with TLS/REALITY where compatible |
+| Trojan, Hysteria2, TUIC v5 | Experimental; real-server coverage is incomplete |
+| Subscriptions | HTTPS raw/base64 lists of supported profile links |
 
-WireGuard, native AmneziaWG and AmneziaVPN `vpn://` keys are not supported yet.
-They will not be accepted until bounded import, private storage, compatibility
-and real-server gates are complete.
+Advanced VLESS Encryption/REALITY PQ and XHTTP combinations retain their
+experimental evidence limits. WireGuard, AmneziaWG and `vpn://` are **not
+product-enabled**; parser work is not a claim of usable VPN support.
 
-A Rust-first parser/model foundation is under development, but it is not wired
-into the current plugin runtime and does not change the supported-input list.
+See [protocol support and limitations](docs/user/PROTOCOLS.md).
 
-See [supported protocols](docs/user/PROTOCOLS.md) for detailed boundaries and
-known exclusions.
+## Privacy and help
 
-## Privacy and security
+Profiles and subscription URLs stay in a private local store. Mihomo control
+uses a private Unix socket, not a TCP external controller. Imports accept
+bounded supported fields, not arbitrary provider-supplied YAML or executable
+configuration.
 
-- Profiles, subscription URLs and generated configuration are stored under
-  `~/.config/omavless/` with private permissions.
-- Credentials are passed over stdin or private files, not command arguments.
-- Import previews and shareable diagnostics omit complete UUIDs, passwords,
-  keys and subscription URLs.
-- Mihomo control uses a private Unix socket; OmaVLESS does not expose a TCP
-  external controller.
-- The plugin does not install packages, create administrator policy, weaken OS
-  security or download executable code.
-- Imported profile links are parsed into bounded supported fields; arbitrary
-  remote YAML is not accepted as a profile or subscription.
-- OmaVLESS refuses to compete with another detected Mihomo full-tunnel service
-  and never terminates another VPN automatically.
+For support, use **Copy report** or **Save report** in Settings. Do not post
+profile files, subscription URLs, private configuration or unredacted screenshots.
 
-The complete boundary is documented in the
-[security and privacy guide](docs/user/SECURITY.md).
+- [Troubleshooting](docs/user/TROUBLESHOOTING.md)
+- [Security and privacy](docs/user/SECURITY.md)
+- [Native updates, Quit and removal](docs/user/NATIVE_INSTALL.md#updates-close-quit-and-removal)
+- [Release notes](CHANGELOG.md)
 
-## Help
-
-Start with:
-
-```bash
-omarchy-shell kdk.omavless status
-systemctl --user status omavless.service --no-pager
-```
-
-The plugin can export a bounded support snapshot from Settings without profile
-links, credentials, provider names or subscription URLs.
-
-See [troubleshooting](docs/user/TROUBLESHOOTING.md) for Mihomo readiness, file
-and clipboard import, subscription, routing, service and recovery guidance.
-
-## Remove
-
-```bash
-omarchy plugin remove kdk.omavless
-```
-
-Removal stops the plugin-owned tunnel and services while preserving private
-profiles for a later reinstall. Use the bundled `uninstall.sh --purge` before
-removing the plugin only when you intentionally want to delete private data as
-well.
-
-## Release status
-
-OmaVLESS 0.7.0 is
-[published and maintainer-verified](https://omarchyplugins.com/plugin.html?id=kdk.omavless)
-at exact marketplace commit `69fe05b03129a23664fff3f8289821a7b7f80095`.
-Experimental labels describe protocol evidence, independently of whether an
-implementation has merged.
-
-Release notes are in [CHANGELOG.md](CHANGELOG.md).
+The published [marketplace 0.7.0 snapshot](https://omarchyplugins.com/plugin.html?id=kdk.omavless)
+remains commit `69fe05b03129a23664fff3f8289821a7b7f80095`.
 
 ## Credits and license
 
-The interface builds on
-[Omarchy VPN](https://omarchyplugins.com/plugin.html?id=jkoestinger.vpn) by
-Justin Köstinger ([source](https://github.com/jkoestinger/omarchy-vpn)). Routing
-policies use maintained data from RoscomVPN, MetaCubeX and Chocolate4U. Full
-attribution and third-party terms are in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Maintained by [kdk](https://github.com/k-kostin). Community project; not
+affiliated with Omarchy, MetaCubeX or a VPN provider.
 
-OmaVLESS is licensed under the [MIT License](LICENSE).
+The interface builds on [Omarchy VPN](https://github.com/jkoestinger/omarchy-vpn)
+by Justin Köstinger. Routing data comes from RoscomVPN, MetaCubeX and
+Chocolate4U. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+[MIT License](LICENSE).
