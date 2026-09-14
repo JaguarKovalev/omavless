@@ -1,10 +1,14 @@
-# OmaVLESS 0.8.0 release candidate — native frontend
+# OmaVLESS 0.8.0 final candidate — native frontend
 
 This is an **unpublished candidate**, not a marketplace update. It contains the
 Omarchy QML frontend for the matching Rust package; Python is not included.
 Use the accompanying `release-candidate.json` and `SHA256SUMS` to verify the
 pair's source commit, version, architecture and archive integrity. Checksums
 detect a changed download; they are not signatures or independent trust proof.
+
+This QML frontend is common to ARM64 and x86_64. Install the native package
+for your architecture from the same reviewed source/version. A `0.8.0` version
+label alone does not mean this candidate has been published or accepted on both.
 
 ## Installation
 

@@ -72,7 +72,10 @@ PR/main CI results. These are developer-tool tests, not a stable binary gate.
    still refuses stable versions; `--stable` refuses RC input. Schema 3 identifies
    stable package metadata, not an installed-state migration.
 2. Approve one final source/version commit for `0.8.0`, updating Cargo/lock and
-   frontend manifest coherently. Current product remains `0.8.0-rc.1` until then.
+   frontend manifest coherently. The owner subsequently authorized this
+   preparation; follow the [final candidate report](NATIVE_080_FINAL_CANDIDATE_2026-09-14.md)
+   for its exact source/artifacts and actual installed results. Earlier RC
+   artifacts are unchanged, not relabelled.
 3. Build each architecture from that clean source with the pinned locked
    toolchain, retain build provenance and inspect both package/frontend archives.
    Existing RC binary/archive hashes must never be relabelled as stable builds.
@@ -86,6 +89,16 @@ PR/main CI results. These are developer-tool tests, not a stable binary gate.
    must not advertise an automatic seamless migration.
 
 ## Final x86_64 Omarchy pass
+
+ARM64 final preparation is now executed from source
+`b7fd0a99b8b169f0933e5f43ea4389642015193a`: actual final package/frontend
+inspection, installed ELF/unit/frontend identity, data preservation, safe
+support response and separately guarded Full VPN HTTPS/disconnect/restoration
+PASS. See the [final candidate report](NATIVE_080_FINAL_CANDIDATE_2026-09-14.md)
+for hashes, counts and the qualified package-script acknowledgement. Later
+evidence-only commits do not change that artifact source. Do not reopen the VM's
+unchanged onboarding/R6 matrix; build the matching x86_64 package and run the
+host-specific checklist below. Both architectures use the same QML frontend.
 
 Fetch first and select the exact reviewed source and matching x86_64 artifact,
 not a private stale handoff or an ARM64 binary. If testing RC first, record it

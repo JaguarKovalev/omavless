@@ -1,6 +1,7 @@
 # Native 0.8.0 release preparation
 
-Current candidate: **0.8.0-rc.1**. This directory does not publish a GitHub
+Current final candidate: **0.8.0**, unpublished and pending final host gates.
+Use explicit `--stable` for this source. This directory does not publish a GitHub
 release/tag, upload an artifact, update marketplace metadata or install software.
 Marketplace changes require the owner present and explicit approval.
 The [ARM64 preparation report](../../docs/testing/NATIVE_080_RC_PREPARATION_2026-09-13.md)
@@ -9,13 +10,13 @@ installed-release gates. It is not a stable-release acceptance claim.
 
 The build tuple is one reviewed source commit, locked Rust workspace version,
 prebuilt native ELF SHA-256, Arch package and matching native-only frontend.
-`Cargo.toml` supplies the RC version; Cargo workspace members inherit it.
+`Cargo.toml` supplies the product version; Cargo workspace members inherit it.
 Arch spells `0.8.0-rc.1` as `0.8.0rc1` (package release `1`), so it sorts before
 stable `0.8.0`. The candidate frontend manifest gets the exact Cargo spelling.
 This follows Arch's [pkgver restrictions](https://man.archlinux.org/man/PKGBUILD.5.en)
 and [version ordering](https://man.archlinux.org/man/vercmp.8.en); local tests
 also exercise `vercmp` when installed.
-The root `manifest.json` and source installer now describe the same native RC.
+The root `manifest.json` and source installer describe the same native version.
 Plain source `./install.sh` is native-only; `--native-only` remains an alias.
 The historical marketplace snapshot is unchanged.
 
@@ -33,11 +34,13 @@ Cargo may obtain locked build dependencies if they are not already cached; use
 Then create an empty absolute output directory **outside the checkout**, and run:
 
 ```sh
-python3 packaging/release/build-candidate.py /absolute/empty-output /absolute/prebuilt/omavless FULL_SOURCE_COMMIT_SHA
+python3 packaging/release/build-candidate.py /absolute/empty-output /absolute/prebuilt/omavless FULL_SOURCE_COMMIT_SHA --stable
 ```
 
-The assembler requires a clean exact Git head and an RC version. It invokes the
-existing offline Arch packager with `--candidate`, then builds the frontend from
+The assembler requires a clean exact Git head and the matching explicit version
+mode. For current `0.8.0`, it invokes the offline Arch packager with `--stable`;
+historical RC sources use the no-flag assembler and `--candidate` packager.
+It then builds the frontend from
 an allowlist of **committed regular Git blobs**, not a recursive worktree copy.
 No private/untracked file, backend.py, test, agent skill or legacy uninstall
 script is included. The wrapper always calls the accepted installer with
@@ -45,8 +48,8 @@ script is included. The wrapper always calls the accepted installer with
 
 Output:
 
-- `omavless-0.8.0rc1-1-ARCH.pkg.tar.zst`;
-- `omavless-0.8.0-rc.1-frontend.tar.xz`;
+- `omavless-0.8.0-1-ARCH.pkg.tar.zst`;
+- `omavless-0.8.0-frontend.tar.xz`;
 - `release-candidate.json`: full source, version, architecture and binary/archive
   hashes; explicitly caller-supplied prebuilt provenance;
 - `SHA256SUMS`: both archives and the identity record;
@@ -99,7 +102,7 @@ For an already activated native installation, the developer package gate can
 perform only the required update (no downgrade/removal rehearsal):
 
 ```sh
-python3 tests/installed_native_package.py --run --upgrade-only --current-package /absolute/new-rc.pkg.tar.zst --rollback-package /absolute/installed-old.pkg.tar.zst
+python3 tests/installed_native_package.py --run --upgrade-only --current-package /absolute/new-final.pkg.tar.zst --rollback-package /absolute/installed-old.pkg.tar.zst
 ```
 
 Run in a real interactive terminal, after startup Off, verified disconnect and

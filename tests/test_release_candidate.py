@@ -37,6 +37,8 @@ class ReleaseCandidateTests(unittest.TestCase):
             else:
                 shutil.copyfile(source, destination)
         (self.repo / '.gitignore').write_text('private-local.txt\n')
+        # Historical RC assembly remains independently tested after version bumps.
+        (self.repo / 'Cargo.toml').write_text('[workspace.package]\nversion = "0.8.0-rc.1"\n')
         (self.repo / 'private-local.txt').write_text('synthetic-private-canary')
         self.git('init', '-q')
         self.commit()
@@ -58,11 +60,13 @@ class ReleaseCandidateTests(unittest.TestCase):
         return target
 
     def test_native_source_manifest_version_and_lock_are_coherent(self):
-        self.assertEqual(RELEASE.version(ROOT), '0.8.0-rc.1')
+        self.assertEqual(RELEASE.version(ROOT, stable=True), '0.8.0')
         lock = tomllib.loads((ROOT / 'Cargo.lock').read_text())
         versions = {p['version'] for p in lock['package'] if p['name'].startswith('omavless-')}
-        self.assertEqual(versions, {RELEASE.version(ROOT)})
-        self.assertEqual(json.loads((ROOT / 'manifest.json').read_text())['version'], RELEASE.version(ROOT))
+        self.assertEqual(versions, {RELEASE.version(ROOT, stable=True)})
+        self.assertEqual(json.loads((ROOT / 'manifest.json').read_text())['version'], RELEASE.version(ROOT, stable=True))
+        with self.assertRaises(ValueError):
+            RELEASE.version(ROOT)  # Explicit --stable is still required.
         for invalid in ('0.8.0', '0.8.0-rc.0', '0.8.0-rc.1;false', '0.8.0-beta.1'):
             (self.repo / 'Cargo.toml').write_text(f'[workspace.package]\nversion = "{invalid}"\n')
             with self.assertRaises(ValueError):

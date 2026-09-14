@@ -1,7 +1,7 @@
-# Install OmaVLESS — native RC
+# Install OmaVLESS — native candidate
 
-Current main/source installation is **0.8.0-rc.1**, not a stable release or
-marketplace publication. Use the [native installation and recovery guide](NATIVE_INSTALL.md)
+The prepared source version is **0.8.0**, still pending final release acceptance
+and publication. Use the [native installation and recovery guide](NATIVE_INSTALL.md)
 for package installation, first-user setup or legacy migration, explicit
 activation, frontend installation and updates. Python is not a runtime dependency.
 
