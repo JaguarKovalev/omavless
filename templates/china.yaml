@@ -17,6 +17,7 @@ tun:
   stack: system
   device: Meta
   auto-route: true
+  auto-redirect: true
   auto-detect-interface: true
   strict-route: true
   dns-hijack:
