@@ -16,6 +16,11 @@ Item {
   property var coreSetup: ({ installed: false, tunReady: false, path: "" })
   property bool nativeContext: false
   property var nativeCoreFacts: null
+  property var nativeDesktopFacts: null
+  property bool nativeDesktopLoading: false
+  readonly property bool clipboardReady: !nativeContext || (nativeDesktopFacts !== null && nativeDesktopFacts.clipboardReadAvailable === true)
+  readonly property bool pickerReady: nativeContext ? nativeDesktopFacts !== null && !!nativeDesktopFacts.filePicker : filePicker.available
+  readonly property bool commandCopyReady: !nativeContext || (nativeDesktopFacts !== null && nativeDesktopFacts.clipboardWriteAvailable === true)
   property string nativeCoreDescription: ""
   property string nativeStatus: ""
   property bool nativeCanContinue: true
@@ -36,6 +41,7 @@ Item {
 
   signal copyCommand(string command)
   signal refreshRequested()
+  signal setupGuideRequested()
   signal presetChosen(string preset)
   signal pasteRequested()
   signal fileRequested()
@@ -52,6 +58,51 @@ Item {
   }
 
   function dismiss() { visible = false }
+
+  function revealControl(control) {
+    Qt.callLater(function() {
+      if (!wizard.visible || !control || !control.activeFocus) return
+      var top = control.mapToItem(onboardingScroll.contentItem, 0, 0).y
+      var bottom = top + control.height
+      var next = onboardingScroll.contentY
+      if (top < next) next = top
+      else if (bottom > next + onboardingScroll.height)
+        next = bottom - onboardingScroll.height
+      onboardingScroll.contentY = Math.max(0, Math.min(next,
+        Math.max(0, onboardingScroll.contentHeight - onboardingScroll.height)))
+    })
+  }
+
+  component WizardButton: Button {
+    readonly property bool onboardingControl: true
+    focusable: true
+    onActiveFocusChanged: if (activeFocus) wizard.revealControl(this)
+    Keys.onPressed: function(event) { wizard.handleNavigation(event) }
+  }
+
+  function focusControl(direction) {
+    var controls = []
+    function visit(item) {
+      if (!item.visible || !item.enabled) return
+      if (item.onboardingControl === true) controls.push(item)
+      var children = item.children || []
+      for (var i = 0; i < children.length; i++) visit(children[i])
+    }
+    visit(wizard)
+    if (controls.length === 0) return
+    var current = -1
+    for (var i = 0; i < controls.length; i++)
+      if (controls[i].activeFocus) current = i
+    var next = current < 0 ? (direction < 0 ? controls.length - 1 : 0)
+      : (current + direction + controls.length) % controls.length
+    controls[next].forceActiveFocus()
+  }
+
+  function handleNavigation(event) {
+    if (event.key !== Qt.Key_Tab && event.key !== Qt.Key_Backtab) return
+    focusControl((event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Backtab ? -1 : 1)
+    event.accepted = true
+  }
 
   function textFor(key, values) {
     return I18n.translate(key, locale, values || {})
@@ -78,6 +129,7 @@ Item {
   }
 
   Keys.onEscapePressed: canceled()
+  Keys.onPressed: function(event) { wizard.handleNavigation(event) }
 
   Rectangle {
     anchors.fill: parent
@@ -98,6 +150,8 @@ Item {
       MouseArea { anchors.fill: parent; onClicked: {} }
 
       Flickable {
+        id: onboardingScroll
+        objectName: "onboardingScroll"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -213,6 +267,24 @@ Item {
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
             }
+            PlainText {
+              visible: wizard.nativeContext
+              width: parent.width
+              text: wizard.textFor("native.onboarding.setup_help")
+              color: wizard.dim
+              font.family: wizard.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+            WizardButton {
+              objectName: "onboardingSetupGuide"
+              visible: wizard.nativeContext
+              text: wizard.textFor("native.onboarding.setup_guide")
+              bordered: true
+              foreground: wizard.foreground
+              fontFamily: wizard.fontFamily
+              onClicked: wizard.setupGuideRequested()
+            }
           }
 
           Column {
@@ -269,7 +341,7 @@ Item {
                       wrapMode: Text.WordWrap
                     }
                   }
-                  Button {
+                  WizardButton {
                     id: choosePreset
                     text: presetCard.selected
                       ? wizard.textFor("common.selected") : wizard.textFor("common.choose")
@@ -296,7 +368,7 @@ Item {
                 ? wizard.textFor("onboarding.connections_ready", {
                     count: wizard.localizedCount("connection", wizard.profiles.length)
                   })
-                : wizard.textFor("onboarding.import_help")
+                : wizard.textFor(wizard.nativeContext ? "native.onboarding.import_help" : "onboarding.import_help")
               color: wizard.profiles.length > 0 ? Color.accent : wizard.dim
               font.family: wizard.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -304,9 +376,9 @@ Item {
             }
 
             PlainText {
-              visible: !wizard.nativeContext && !wizard.filePicker.available
+              visible: wizard.nativeContext ? wizard.nativeDesktopFacts !== null && !wizard.pickerReady : !wizard.filePicker.available
               width: parent.width
-              text: wizard.textFor("onboarding.file_picker_missing")
+              text: wizard.textFor(wizard.nativeContext ? "native.onboarding.picker_missing" : "onboarding.file_picker_missing")
               color: wizard.urgent
               font.family: wizard.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -314,26 +386,71 @@ Item {
             }
 
             CommandRow {
-              visible: !wizard.nativeContext && !wizard.filePicker.available
+              visible: wizard.nativeContext ? wizard.nativeDesktopFacts !== null && !wizard.pickerReady : !wizard.filePicker.available
               width: parent.width
               label: wizard.textFor("onboarding.install_file_picker")
               command: "omarchy pkg add zenity"
             }
 
+            PlainText {
+              visible: wizard.nativeContext && wizard.nativeDesktopFacts !== null && !wizard.clipboardReady
+              width: parent.width
+              text: wizard.textFor("native.onboarding.clipboard_missing")
+              color: wizard.urgent
+              font.family: wizard.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+            CommandRow {
+              visible: wizard.nativeContext && wizard.nativeDesktopFacts !== null && !wizard.clipboardReady
+              label: wizard.textFor("native.onboarding.install_clipboard")
+              command: "omarchy pkg add wl-clipboard"
+            }
+            PlainText {
+              visible: wizard.nativeContext && wizard.nativeDesktopFacts !== null && !wizard.commandCopyReady && (!wizard.clipboardReady || !wizard.pickerReady)
+              width: parent.width
+              text: wizard.textFor("native.onboarding.copy_unavailable")
+              color: wizard.dim
+              font.family: wizard.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+            PlainText {
+              visible: wizard.nativeContext && wizard.nativeDesktopFacts === null
+              width: parent.width
+              text: wizard.textFor(wizard.nativeDesktopLoading ? "common.loading" : "native.onboarding.helpers_unknown")
+              color: wizard.dim
+              font.family: wizard.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+            WizardButton {
+              objectName: "onboardingHelpersRefresh"
+              visible: wizard.nativeContext && (!wizard.clipboardReady || !wizard.pickerReady)
+              text: wizard.textFor("common.check_again")
+              bordered: true
+              enabled: !wizard.busy && !wizard.nativeDesktopLoading
+              foreground: enabled ? wizard.foreground : wizard.dim
+              fontFamily: wizard.fontFamily
+              onClicked: wizard.refreshRequested()
+            }
+
             Row {
               spacing: Style.space(8)
-              Button {
+              WizardButton {
+                objectName: "onboardingPaste"
                 text: wizard.textFor("onboarding.paste_link")
                 bordered: true
-                enabled: !wizard.busy && (!wizard.nativeContext || wizard.nativeCanContinue)
+                enabled: wizard.clipboardReady && !wizard.busy && (!wizard.nativeContext || wizard.nativeCanContinue)
                 foreground: enabled ? wizard.foreground : wizard.dim
                 fontFamily: wizard.fontFamily
                 onClicked: wizard.pasteRequested()
               }
-              Button {
+              WizardButton {
+                objectName: "onboardingFile"
                 text: wizard.textFor("onboarding.choose_file")
                 bordered: true
-                enabled: (wizard.nativeContext ? wizard.nativeCanContinue : wizard.filePicker.available) && !wizard.busy
+                enabled: wizard.pickerReady && (!wizard.nativeContext || wizard.nativeCanContinue) && !wizard.busy
                 foreground: enabled ? wizard.foreground : wizard.dim
                 fontFamily: wizard.fontFamily
                 onClicked: wizard.fileRequested()
@@ -359,7 +476,7 @@ Item {
               anchors.right: parent.right
               spacing: Style.space(8)
 
-              Button {
+              WizardButton {
                 text: wizard.step === 1
                   ? wizard.textFor("common.close") : wizard.textFor("common.back")
                 bordered: true
@@ -371,7 +488,7 @@ Item {
                 }
               }
 
-              Button {
+              WizardButton {
                 visible: wizard.step === 1
                 text: wizard.textFor("common.check_again")
                 bordered: true
@@ -381,7 +498,7 @@ Item {
                 onClicked: wizard.refreshRequested()
               }
 
-              Button {
+              WizardButton {
                 visible: wizard.step === 1
                 text: wizard.textFor("common.continue")
                 bordered: true
@@ -391,7 +508,7 @@ Item {
                 onClicked: wizard.step = 2
               }
 
-              Button {
+              WizardButton {
                 visible: wizard.step === 2
                 text: wizard.routingPreset === ""
                   ? wizard.textFor("onboarding.skip_for_now") : wizard.textFor("common.continue")
@@ -402,7 +519,8 @@ Item {
                 onClicked: wizard.step = 3
               }
 
-              Button {
+              WizardButton {
+                objectName: "onboardingFinish"
                 visible: wizard.step === 3
                 text: wizard.profiles.length > 0
                   ? wizard.textFor("onboarding.finish") : wizard.textFor("onboarding.finish_later")
@@ -455,12 +573,14 @@ Item {
           elide: Text.ElideMiddle
         }
       }
-      Button {
+      WizardButton {
         id: copyButton
+        objectName: "onboardingCopyCommand"
         text: wizard.textFor("common.copy")
         tooltipText: wizard.textFor("onboarding.copy_command_tooltip")
         bordered: true
-        foreground: wizard.foreground
+        enabled: wizard.commandCopyReady && !wizard.busy
+        foreground: enabled ? wizard.foreground : wizard.dim
         fontFamily: wizard.fontFamily
         onClicked: wizard.copyCommand(commandRow.command)
       }

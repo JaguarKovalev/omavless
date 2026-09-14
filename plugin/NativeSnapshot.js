@@ -15,7 +15,8 @@ function desktopCapabilities(raw) {
         || typeof p.configEditorAvailable !== "boolean" || typeof p.qrEncoderAvailable !== "boolean"
         || p.gtk4FallbackAvailable !== false) return null
     return {filePicker:p.filePicker, configEditorAvailable:p.configEditorAvailable,
-      qrEncoderAvailable:p.qrEncoderAvailable, clipboardWriteAvailable:p.clipboardWriteAvailable}
+      qrEncoderAvailable:p.qrEncoderAvailable, clipboardReadAvailable:p.clipboardReadAvailable,
+      clipboardWriteAvailable:p.clipboardWriteAvailable}
   } catch (_) { return null }
 }
 function parseCoreSetupFacts(raw) {
@@ -562,7 +563,7 @@ function parseAction(raw, pending) {
   try {
     var p = envelope(raw)
     if (!p || !pending || !id(pending.instanceId, false) || !id(pending.operationId, false)
-        || !number(pending.revision, 9007199254740991) || ["connect", "disconnect", "mode", "profile-rename", "profile-favorite", "profile-delete", "profile-import", "profile-replace", "subscription-add", "subscription-update", "subscription-delete", "subscription-refresh", "routing-preset", "custom-rule-add", "custom-rule-delete", "startup-configure"].indexOf(pending.action) < 0) return null
+        || !number(pending.revision, 9007199254740991) || ["connect", "disconnect", "mode", "profile-rename", "profile-favorite", "profile-delete", "profile-import", "profile-replace", "subscription-add", "subscription-update", "subscription-delete", "subscription-refresh", "routing-preset", "custom-rule-add", "custom-rule-delete", "onboarding-complete", "startup-configure"].indexOf(pending.action) < 0) return null
     if (p.ok === true) {
       var r = p.result
       if (!object(p, ["api", "version", "id", "ok", "revision", "result"])
