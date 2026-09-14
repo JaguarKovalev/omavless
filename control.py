@@ -8,14 +8,13 @@ runtime-sensitive pieces: systemd unit generation and Full VPN selector readines
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
 import backend
 
 
-FORK_VERSION = "0.7.2"
+FORK_VERSION = "0.7.3"
 SELECTOR_READY_TIMEOUT_SECONDS = 12.0
 SELECTOR_POLL_SECONDS = 0.10
 
@@ -37,8 +36,8 @@ def _wait_and_select(paths: backend.Paths, selector: str, target: str) -> None:
             current = payload.get("now") if isinstance(payload, dict) else None
 
             # Mihomo can expose /version before selector groups have finished
-            # materialising.  Do not spam rejected PUT requests before the
-            # requested member is actually advertised by the group.
+            # materialising. Do not send a selector PUT until the requested
+            # target is actually advertised by the group.
             if status_code == 200 and isinstance(members, list) and target in members:
                 if current == target:
                     return
@@ -73,7 +72,7 @@ def select_global_proxy(paths: backend.Paths, profile_name: str) -> None:
 
 
 def _unit_condition_path(path: Path) -> str:
-    """ConditionPathExists does not need ExecStart-style quoting for our fixed path."""
+    """Return a systemd ConditionPathExists value without ExecStart-style quotes."""
     value = str(path)
     if any(ch in value for ch in "\n\r\t"):
         raise backend.BackendError("Plugin path contains unsupported characters")
@@ -90,6 +89,10 @@ After=network-online.target
 ConditionPathExists={_unit_condition_path(manifest)}
 
 [Service]
+# Current Arch/Omarchy kernels can reject Mihomo's native nftables
+# auto-redirect transaction with EEXIST ("netlink receive: file exists").
+# sing-tun provides this supported fallback to the iptables backend.
+Environment=DISABLE_NFTABLES=true
 ExecStart={backend.systemd_quote(str(launcher))} run-core {backend.systemd_quote(str(core))}
 Restart=on-failure
 RestartSec=2
@@ -138,8 +141,8 @@ WantedBy=default.target
         backend.systemctl("daemon-reload")
 
 
-# Patch only the lifecycle-sensitive functions. All profile parsing, storage,
-# subscriptions, routing templates and QML-facing CLI remain upstream 0.7 code.
+# Patch only lifecycle-sensitive functions. Profile parsing, storage,
+# subscriptions, routing templates and the QML-facing CLI stay upstream 0.7.
 backend.select_global_proxy = select_global_proxy
 backend.ensure_unit = ensure_unit
 backend.ensure_startup_unit = ensure_startup_unit
