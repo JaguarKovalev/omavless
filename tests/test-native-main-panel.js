@@ -202,6 +202,24 @@ test('detail arrows and Enter act only on selected subscription servers',()=>{
   assert.deepEqual(c.calls.pop(),['connect','managed','rule']);c.openSubscriptions();assert.equal(c.page,'subscriptions');assert.equal(c.nativeSubscriptionId,'');
   c.activateNativeCursor();assert.equal(c.calls.length,0);
 });
+test('main subscription refresh targets its own group without navigation or profile selection',()=>{
+  const from=source.indexOf('id: nativeGroupRefresh\n'),to=source.indexOf('\n                    }',from);
+  const button=source.slice(from,to);
+  assert(from>0&&to>from);
+  assert.match(button,/size: Style.space\(24\)/);
+  assert.match(button,/tooltipText: root.textFor\("subscriptions.refresh_servers"\)/);
+  assert.match(button,/focusable: true/);
+  assert(source.includes(': [nativeGroup, nativeGroupRefresh]'));
+  const enabled=button.match(/enabled: ([^\n]+)/)[1],clicked=button.match(/onClicked: ([^\n]+)/)[1];
+  for(const id of ['sub','sub-two'])for(const available of [true,false])for(const batch of [true,false])for(const leaf of [true,false]){
+    const calls=[],c=vm.createContext({nativeRow:{isProfile:leaf,modelData:{subscription:{id,name:'Same name'}}},
+      vless:{nativeCanAct:available,nativeBatchBusy:batch,requestNativeSubscriptionAction:(...args)=>calls.push(args)},
+      nativeSubscriptionId:'different-detail',nativeSelectedProfile:'unrelated-profile'});
+    c.enabled=vm.runInContext(enabled,c);vm.runInContext(clicked,c);
+    assert.deepEqual(calls,available&&!batch&&!leaf?[['subscription-refresh',id,'','']]:[]);
+    assert.equal(c.nativeSubscriptionId,'different-detail');assert.equal(c.nativeSelectedProfile,'unrelated-profile');
+  }
+});
 test('overview has only open actions and detail owns one refresh edit delete set',()=>{
   const from=source.indexOf('id: nativeSubscriptions\n'),to=source.indexOf('id: nativeSubscriptionRefresh;',from);
   const overview=source.slice(from,source.indexOf('          PlainText {',from));

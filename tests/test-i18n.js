@@ -2,6 +2,8 @@ const assert = require("assert")
 const I18n = require("../plugin/I18n.js")
 assert.strictEqual(I18n.translate("native.probe.dns_failed", "en"), "DNS failed")
 assert.strictEqual(I18n.translate("native.probe.dns_failed", "ru"), "Ошибка DNS")
+assert.strictEqual(I18n.translate("subscriptions.refresh_servers", "en"), "Update server list")
+assert.strictEqual(I18n.translate("subscriptions.refresh_servers", "ru"), "Обновить список серверов")
 
 // Release/migration acceptance belongs in documentation, not product copy.
 const panelSource = require("fs").readFileSync(require("path").join(__dirname, "../plugin/Panel.qml"), "utf8")
