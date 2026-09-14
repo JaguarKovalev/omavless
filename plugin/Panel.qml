@@ -2337,7 +2337,7 @@ Panel {
                   readonly property bool selected: isProfile && root.nativeSelectedProfile === profile.id
                   readonly property var record: isProfile ? root.nativeRecord(profile) : null
                   readonly property bool connected: isProfile && root.nativeView.connected && profile.id === root.nativeView.activeId
-                  property var focusTargets: isProfile ? [nativeChoose, rowConnect, rowDetailsRefresh] : [nativeGroup]
+                  property var focusTargets: isProfile ? [nativeChoose, rowConnect, rowDetailsRefresh] : [nativeGroup, nativeGroupRefresh]
                   Layout.fillWidth: true
                   spacing: Style.space(4)
                   RowLayout {
@@ -2349,6 +2349,17 @@ Panel {
                     }
                     PlainText { text: nativeRow.isProfile ? "" : String(nativeRow.modelData.count); color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.body }
                     PlainText { visible: !nativeRow.isProfile && root.nativeActiveProfile !== null && root.nativeActiveProfile.subscriptionId === nativeRow.modelData.subscription.id; text: root.textFor("native.profile.connected"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                    PanelActionButton {
+                      id: nativeGroupRefresh
+                      size: Style.space(24)
+                      iconText: "󰑓"
+                      tooltipText: root.textFor("subscriptions.refresh_servers")
+                      foreground: root.foreground
+                      hoverColor: Color.accent
+                      focusable: true
+                      enabled: !nativeRow.isProfile && vless.nativeCanAct && !vless.nativeBatchBusy
+                      onClicked: if (enabled) vless.requestNativeSubscriptionAction("subscription-refresh", nativeRow.modelData.subscription.id, "", "")
+                    }
                   }
                   RowLayout {
                     id: nativeProfileIdentityRow

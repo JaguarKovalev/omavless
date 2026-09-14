@@ -9,6 +9,7 @@ var MAX_VALUE_LENGTH = 160
 var CATALOG = {
   "native.probe.dns_failed": {"en":"DNS failed","ru":"Ошибка DNS"},
   "native.batch.subscriptions": {"en":"Subscription update","ru":"Обновление подписок"},
+  "subscriptions.refresh_servers": {"en":"Update server list","ru":"Обновить список серверов"},
   "native.batch.providers": {"en":"Remote rules update","ru":"Обновление удалённых правил"},
   "native.batch.queued": {"en":"Queued","ru":"В очереди"},
   "native.batch.starting": {"en":"Starting","ru":"Запускается"},

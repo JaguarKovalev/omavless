@@ -67,6 +67,19 @@ test('delete and refresh are fixed known-record operations, invalid framing refu
     const c=context();c.startNativeSubscription('','Synthetic',url);assert.equal(c.requestNativeSubscriptionAction('subscription-add','',name,value),false);assert.equal(c.nativePending,null);
   }
 });
+test('refresh uses exact existing subscription id and rejects removed or unavailable targets',()=>{
+  const c=context();c.nativeSnapshot.subscriptions.push({id:'second',name:'Synthetic'});
+  assert(c.requestNativeSubscriptionAction('subscription-refresh','second','',''));
+  assert.equal(c.nativePending.input,'second');
+  assert.equal(c.nativePending.command[2],'native-subscription-refresh');
+  assert.equal(c.nativePending.revision,4);
+  assert.equal(c.nativeSubscriptionDraft,null);assert.equal(c.ready.length,0);
+  for(const [id,available] of [['removed',true],['record',false]]){
+    const d=context();d.nativeCanAct=available;
+    assert.equal(d.requestNativeSubscriptionAction('subscription-refresh',id,'',''),false);
+    assert.equal(d.nativePending,null);assert.equal(d.nativeActionProcess.running,undefined);
+  }
+});
 test('unknown exact retry preserves identity revision bytes; fixed exit74 is known rejection',()=>{
   for(const action of ['subscription-add','subscription-update','subscription-delete','subscription-refresh']){
     const c=context(),id=action==='subscription-add'?'':'record';if(action==='subscription-add'||action==='subscription-update')c.startNativeSubscription(id,'Synthetic',url);
