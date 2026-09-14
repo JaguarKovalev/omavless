@@ -3481,24 +3481,37 @@ def wait_private_controller(paths: Paths, timeout: float = 5.0) -> Path:
 
 
 def select_global_proxy(paths: Paths, profile_name: str) -> None:
-    """Make Full VPN select the active profile through the nested selectors."""
+    """Select the active profile after Mihomo's selector groups become ready."""
     socket_path = wait_private_controller(paths)
 
     for selector, target in (("PROXY", profile_name), ("GLOBAL", "PROXY")):
         endpoint = "/proxies/" + urllib.parse.quote(selector, safe="")
-        status_code, _payload = controller_request(
-            socket_path, "PUT", endpoint, 5, {"name": target}
-        )
-        if status_code != 204:
-            raise BackendError("Mihomo refused the Full VPN outbound selection")
+        deadline = time.monotonic() + 5.0
 
-        status_code, selected = controller_json(socket_path, endpoint, 5)
-        if (
-            status_code != 200
-            or not isinstance(selected, dict)
-            or selected.get("now") != target
-        ):
-            raise BackendError("Mihomo did not retain the Full VPN outbound selection")
+        while time.monotonic() < deadline:
+            try:
+                status_code, _payload = controller_request(
+                    socket_path, "PUT", endpoint, 1, {"name": target}
+                )
+
+                if status_code == 204:
+                    read_status, selected = controller_json(
+                        socket_path, endpoint, 1
+                    )
+                    if (
+                        read_status == 200
+                        and isinstance(selected, dict)
+                        and selected.get("now") == target
+                    ):
+                        break
+            except (BackendError, OSError):
+                pass
+
+            time.sleep(0.05)
+        else:
+            raise BackendError(
+                f"Mihomo Full VPN selector {selector} did not become ready"
+            )
 
 
 def render_config(
