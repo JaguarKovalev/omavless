@@ -11,6 +11,12 @@ history. GitHub's actual main/PR state is authoritative for publication.
   tag or publication. Use the [final candidate report](../testing/NATIVE_080_FINAL_CANDIDATE_2026-09-14.md)
   for actual ARM64 build/update results and outstanding x86_64/owner gates;
   old RC artifacts keep their original identity.
+  Final ARM64 source `b7fd0a99b8b169f0933e5f43ea4389642015193a` now has
+  full static/Rust/CI, real archive inspection, installed final binary/frontend
+  identity, safe report and guarded Full VPN HTTPS/disconnect/restoration PASS.
+  The update script's mistyped final acknowledgement remains qualified in the
+  report; read-only checks prove its installed outcome and unchanged private
+  data. Do not repeat package installation just to replace that transcript.
 
 - Owner-approved [Python reference retirement](LEGACY_RETIREMENT.md) preserves
   the complete pre-retirement tree in frozen `archive/python-legacy` at
@@ -96,7 +102,7 @@ replay, not a supported fallback or second native lifecycle owner.
    scoped R6 evidence. Do not reintroduce the Python runtime or rerun unchanged
    migration gates merely because test/docs cleanup merged.
 2. Follow the [VM-to-x86_64 release checklist](../testing/NATIVE_080_RELEASE_HANDOFF_2026-09-14.md):
-   finish exact stable artifact/version preparation, run the owner's final
+   retain completed ARM64 final artifact/version preparation, run the owner's final
    x86_64 Omarchy pass, then obtain publication approval. Offline stable
    assembly is distinct from changing the current RC version or publishing.
    Do not change the 0.7.0 marketplace identity without separate approval.
