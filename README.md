@@ -1,3 +1,16 @@
+# JaguarKovalev legacy fork
+
+This fork maintains the stable OmaVLESS 0.7 line for Omarchy.
+
+Changes compared with upstream 0.7.0:
+- restored Full VPN lifecycle transitions;
+- fixed GLOBAL -> PROXY -> active profile selection;
+- enabled Mihomo `auto-redirect` for reliable Linux TUN routing.
+
+Upstream project: https://github.com/k-kostin/omavless
+
+---
+
 # OmaVLESS — secure proxy profiles in the Omarchy bar
 
 OmaVLESS is an Omarchy bar plugin for importing, subscribing to, switching and
