@@ -1,5 +1,10 @@
 # Use OmaVLESS
 
+This is the **legacy-compatible** usage reference, including its keyboard
+shortcuts and service paths. For the Rust-owned application, use
+[native everyday use](NATIVE_USAGE.md) and [native installation/recovery](NATIVE_INSTALL.md).
+Shared concepts do not make legacy service or purge commands safe for a native owner.
+
 ## Import profiles and subscriptions
 
 The top-level clipboard and file actions use one strict classifier:

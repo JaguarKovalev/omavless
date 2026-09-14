@@ -1,6 +1,10 @@
 # Acceptance evidence index
 
-## Start here: current local native candidate
+## Start here: accepted native integration
+
+The integration merged in #238; #240 adds the accepted subscription-row
+refresh. See [current status](../roadmap/CURRENT_STATUS.md) for main and open
+release work. Dated reports below retain their original pre-merge wording.
 
 - [R6 local closure](R6_LOCAL_CLOSURE_2026-09-13.md): exact installed identities,
   accepted migration scope and deliberately unclosed product/host evidence.

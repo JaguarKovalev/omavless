@@ -1,13 +1,14 @@
 # OmaVLESS roadmap map
 
-Status: design and delivery index, local checkpoint updated 2026-09-13.
+Status: design and delivery index, updated 2026-09-14.
 
 The native installed path has completed scoped local R6 acceptance. Start with
 the [current delivery status](CURRENT_STATUS.md),
 the [closure](../testing/R6_LOCAL_CLOSURE_2026-09-13.md) and
 [publication candidate](../testing/R6_PUBLICATION_CANDIDATE_2026-09-13.md), not the
-historical migration sequence below. Main publication is still owner-controlled;
-enabled login autoconnect remains [AUTO-1](LOGIN_AUTOCONNECT_FOLLOWUP.md).
+historical migration sequence below. Native integration #238 is merged; release
+and marketplace publication remain separate. Enabled login autoconnect remains
+[AUTO-1](LOGIN_AUTOCONNECT_FOLLOWUP.md).
 
 OmaVLESS keeps the operational delivery ledger at repository root and longer
 contracts under this directory. The roadmap now separates four concerns which
@@ -52,7 +53,8 @@ Every coding agent also reads [`../../AGENTS.md`](../../AGENTS.md), which makes
 When older accepted documents contain wording which predates later decisions:
 
 - **implementation language:** `RUST_MIGRATION.md` wins. Rust is selected for
-  runtime/domain/CLI/TUI; Python is current plugin reference/migration oracle;
+  runtime/domain/CLI/TUI; Python is the separate legacy/reference implementation,
+  not the activated native owner;
 - **host scope:** `PLATFORM.md` wins. Arch and NixOS are initial standalone
   host families;
 - **semantic control API:** `CONTROL_PLANE.md` wins. Language migration does not
@@ -185,10 +187,10 @@ The QML plugin can expose those Rust-owned semantics through the migration/runti
 bridge. This finishes plugin capabilities without creating throwaway backend
 code.
 
-## Features intentionally waiting for Rust ownership
+## Features assigned to the Rust owner
 
-The following are not abandoned; they are moved to the correct architectural
-layer:
+The following remain separately scoped work on the now accepted Rust owner,
+not new Python-plugin subsystems:
 
 - full privacy-aware active connections;
 - App proxy state ownership;
@@ -234,11 +236,12 @@ Keep those statuses explicit in PR bodies and handoffs.
 
 ## Current priority
 
-For the locally accepted native candidate:
+For the integrated native application:
 
-1. publish the reviewed integration only after owner authorization and a fresh
-   remote-head check; distinguish main integration from marketplace release;
-2. complete the user-facing native distribution/release presentation separately;
+1. preserve #238/#240 integration and their exact evidence; do not reopen the
+   completed main-publication/branch-reconciliation task;
+2. complete native distribution/release gates separately; marketplace text,
+   screenshots and publication remain owner-controlled;
 3. investigate the preserved network/DNS failure and AUTO-1 under their own
    reproducible host gates, without relabeling them PASS;
 4. start a bounded T2 client slice only when separately authorized; it must use

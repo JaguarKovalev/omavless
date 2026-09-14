@@ -1,8 +1,28 @@
 # Current delivery status
 
-Updated 2026-09-13. This is the compact current-state entry point; the detailed
+Updated 2026-09-14. This is the compact current-state entry point; the detailed
 [delivery roadmap](../../DEVELOPMENT_ROADMAP.md) preserves the implementation
 history. GitHub's actual main/PR state is authoritative for publication.
+
+## Main and open work
+
+- Native integration [#238](https://github.com/k-kostin/omavless/pull/238)
+  merged at `778647215deb1cb27e66e10e628fd0e78beee1af`. Its PR and main CI
+  passed; #214–#237 are merged or explicitly superseded and their remote
+  source branches were cleaned up. This integration is not still waiting to
+  be published to main.
+- Subscription-row refresh [#240](https://github.com/k-kostin/omavless/pull/240)
+  merged at `3b82c4f66ca624d88a6d28b6bd68ddd96c11155a`, after exact-head CI
+  and Try Omarchy ARM64 UI/live-refresh acceptance. Its compact main-page
+  action reuses the existing Rust operation; VPN ownership is unchanged.
+- Native **0.8.0-rc.1** assembly remains in separate open
+  [#239](https://github.com/k-kostin/omavless/pull/239). Local artifacts and
+  archive checks are recorded there; they are not a stable release, an installed
+  upgrade of this VM, or a marketplace update. The previously built RC frontend
+  predates #240; rebuild and record new artifact identities before shipping it.
+- #30 and #135 remain separate Drafts. Do not merge or discard their evidence
+  as part of repository cleanup. Marketplace text/screenshots and publication
+  remain owner-controlled.
 
 ## Accepted native checkpoint
 
@@ -43,9 +63,8 @@ permission to grow a second native lifecycle owner.
 
 ## Next work, in order
 
-1. Publish/verify this integration through its exact-head PR checks; close the
-   included or demonstrably superseded Drafts only after their integration is
-   present on main. Once that is done, do not repeat it from this checklist.
+1. Validate the 0.8.0 candidate package/frontend pair and its installation path;
+   retain accepted unchanged R6 runtime evidence, without a ceremonial repeat.
 2. Prepare clear native release/package installation and upgrade communication,
    plugin-page screenshots and release metadata without silently changing the
    default install route or the published 0.7.0 identity.

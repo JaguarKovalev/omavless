@@ -4,6 +4,26 @@ All notable changes to OmaVLESS are documented here.
 
 ## Unreleased
 
+### Integrated native application — not a marketplace release
+
+- Native R6 integration merged in #238: Rust owns the accepted application
+  runtime, profile/subscription/routing operations and Mihomo lifecycle. QML
+  is its frontend; Python is retained for the separate legacy/reference path.
+- Restored the compact subscription-row **Update server list** action in #240,
+  with English/Russian tooltips and installed live-refresh evidence.
+- Kept the accepted main layout, fixed profile-management dock and explicit
+  Settings Quit. Main Test/latency sections remain intentionally hidden.
+- Native login autoconnect is Off by default. Optional Last/pinned acceptance,
+  DNS/provider findings and experimental-protocol evidence remain separate
+  follow-ups. No new protocol or host support is implied.
+- Native 0.8.0 RC assembly is tracked separately in #239. There is no stable
+  0.8.0 release or marketplace update yet.
+
+### Historical incremental checkpoints
+
+The entries below preserve earlier implementation boundaries, not current
+native ownership or an outstanding task list.
+
 - Compose native refresh-all workers with the serialized owner: shared operation
   IDs, safe progress/replay, cancellation, ownership/revision rechecks and one
   atomic batch commit. Scheduler and live IPC activation remain pending.
