@@ -13,7 +13,8 @@ polkit.addRule(function(action, subject) {
 
     if (action.id === "org.freedesktop.resolve1.set-domains" ||
         action.id === "org.freedesktop.resolve1.set-default-route" ||
-        action.id === "org.freedesktop.resolve1.set-dns-servers") {
+        action.id === "org.freedesktop.resolve1.set-dns-servers" ||
+        action.id === "org.freedesktop.resolve1.revert") {
         return polkit.Result.YES;
     }
 
@@ -23,4 +24,4 @@ EOF
 
 sudo chmod 0644 "$rule_path"
 echo "Installed $rule_path"
-echo "Mihomo may now set DNS/domain/default-route for TUN links without repeated authentication prompts."
+echo "Mihomo may now set and revert DNS/domain/default-route for TUN links without repeated authentication prompts."
