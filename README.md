@@ -6,9 +6,10 @@ A compact, terminal-style VPN control panel for the Omarchy bar, powered by
 Import profiles and subscriptions, choose a connection mode, and manage your
 VPN without leaving the desktop. English and Russian interfaces are available.
 
-## Installation — native release candidate
+## Installation — native 0.8.0 candidate
 
-Current source is **0.8.0-rc.1**: the Rust application plus its QML frontend.
+Current source is **0.8.0**, prepared for final acceptance but **not published**:
+the Rust application plus its QML frontend.
 Follow the [native installation guide](docs/user/NATIVE_INSTALL.md) to install
 the reviewed package, prepare or migrate your private store, activate once,
 then install the matching frontend. Python is not required at runtime.
@@ -18,9 +19,13 @@ or migrate an existing Python owner. Source `./install.sh` is native-only and
 refuses an absent or unactivated package; there is no Python fallback. Existing
 marketplace users should follow the migration guide before updating to main.
 
-This is not stable 0.8.0 or a marketplace update. The published marketplace
+This version number is not a release announcement or marketplace update. The published marketplace
 snapshot remains 0.7.0; its legacy source/instructions are preserved separately.
-[RC preparation](packaging/release/README.md) does not publish release assets.
+[Release preparation](packaging/release/README.md) does not publish release assets.
+
+The QML plugin is shared across architectures. Only the native runtime package
+differs: `aarch64` for ARM64, `x86_64` for conventional Intel/AMD PCs. Use the
+package matching your system and the frontend from the same reviewed source.
 
 OmaVLESS needs Mihomo and TUN permissions. Desktop helpers provide clipboard,
 file selection, profile editing and QR functions. The installation guides

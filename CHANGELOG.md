@@ -4,11 +4,28 @@ All notable changes to OmaVLESS are documented here.
 
 ## Unreleased
 
+### 0.8.0 final candidate — not yet published
+
+- Prepare coherent `0.8.0` Rust workspace, lockfile and frontend versions;
+  explicit offline final package assembly does not create a tag or marketplace
+  release. ARM64 and x86_64 use the same QML frontend and separate native builds.
+- Correct native onboarding completion, fresh empty-inventory wizard height,
+  keyboard navigation and helper-readiness guidance (#244).
+- Accept bounded RC versions in the native support report (#245).
+- Preserve the compact accepted UI, existing profiles and Rust-only normal
+  operation. The Python reference is frozen in `archive/python-legacy`, not a
+  runtime fallback. Developer/build tests may still use Python.
+- Migration from marketplace 0.7.0 requires the reviewed native package and
+  explicit ownership activation; updating the plugin alone is not migration.
+- Final per-architecture package/host acceptance remains required. Enabled
+  Last/pinned startup (Off by default), DNS/provider findings, experimental
+  protocol fixtures and mode-authorization follow-ups retain their stated gaps.
+
 ### Integrated native application — not a marketplace release
 
 - Native R6 integration merged in #238: Rust owns the accepted application
   runtime, profile/subscription/routing operations and Mihomo lifecycle. QML
-  is its frontend; Python is retained for the separate legacy/reference path.
+  is its frontend; Python is preserved in the frozen legacy/reference archive.
 - Restored the compact subscription-row **Update server list** action in #240,
   with English/Russian tooltips and installed live-refresh evidence.
 - Kept the accepted main layout, fixed profile-management dock and explicit

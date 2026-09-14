@@ -65,6 +65,8 @@ class LocalArchPackageTests(unittest.TestCase):
             target = self.repo / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, target)
+        # Keep RC/development test inputs independent of the current product version.
+        (self.repo / 'Cargo.toml').write_text('[workspace.package]\nversion = "0.8.0-rc.1"\n')
         for args in (("init", "-q"), ("add", "."),
                      ("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid", "commit", "-qm", "fixture")):
             subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)

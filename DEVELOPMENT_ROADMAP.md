@@ -29,6 +29,11 @@ owner-controlled publication; use the
 [release handoff](docs/testing/NATIVE_080_RELEASE_HANDOFF_2026-09-14.md).
 This does not reopen R6 or declare AUTO-1/V0/DNS passed.
 
+The owner subsequently authorized preparing the final `0.8.0` source and ARM64
+package on the VM. [Exact final-candidate evidence](docs/testing/NATIVE_080_FINAL_CANDIDATE_2026-09-14.md)
+keeps build/install results separate from the remaining x86_64 gate, tag and
+marketplace publication. A stable version spelling is not publication.
+
 This file is the compact source of truth for **what happens next**, dependency
 order and acceptance state. Detailed contracts live under `docs/roadmap/`.
 

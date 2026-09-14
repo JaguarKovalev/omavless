@@ -15,11 +15,17 @@ main are developer test/build tools, not source installation or a runtime fallba
 Already installed? See [native everyday use](NATIVE_USAGE.md) for connection
 selection, subscription refresh, language, diagnostics and Quit.
 
-For the prepared **0.8.0-rc.1** artifact pair, verify `SHA256SUMS` and the exact
+For the prepared **0.8.0** artifact pair, verify `SHA256SUMS` and the exact
 source/architecture in `release-candidate.json` before following this guide.
-No RC artifact is a stable 0.8.0 release, and marketplace publication remains
-owner-controlled. Both the source and assembled native frontend carry the RC
-version; the published historical marketplace snapshot remains 0.7.0.
+An unpublished artifact is not a public release; marketplace publication remains
+owner-controlled. Both source and assembled frontend carry the same version;
+the historical marketplace snapshot remains 0.7.0. Earlier `0.8.0-rc.1`
+archives retain their original version and hashes, not the final candidate's.
+
+Use the runtime package for your processor (`aarch64` or `x86_64`). The QML
+frontend and supported features are common to both; its source/version must
+match the reviewed runtime release. Architecture-specific native binaries are
+not separate plugin products.
 
 ## Before installation
 

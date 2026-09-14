@@ -6,12 +6,19 @@ history. GitHub's actual main/PR state is authoritative for publication.
 
 ## Main and open work
 
+- Owner-authorized final `0.8.0` source/package preparation follows the merged
+  #244–#247 fixes and offline release tooling. This version preparation is not a
+  tag or publication. Use the [final candidate report](../testing/NATIVE_080_FINAL_CANDIDATE_2026-09-14.md)
+  for actual ARM64 build/update results and outstanding x86_64/owner gates;
+  old RC artifacts keep their original identity.
+
 - Owner-approved [Python reference retirement](LEGACY_RETIREMENT.md) preserves
   the complete pre-retirement tree in frozen `archive/python-legacy` at
   `aa5873783c019edc303a732e55ea8c85f1f0b090`. Native RC delivery (#239) and
   native-only defaults (#242) are merged. [#243](https://github.com/k-kostin/omavless/pull/243)
   integrates the accepted fixture-backed legacy removal, completing the four-step
-  checkpoint. Leaving RC remains a separate owner decision; use GitHub for the
+  checkpoint. Final-source preparation is now authorized; publication remains
+  a separate owner decision. Use GitHub for the
   final merge SHA, not historical preparation-only status below.
 
 - Native integration [#238](https://github.com/k-kostin/omavless/pull/238)
