@@ -2,25 +2,84 @@
 # SPDX-License-Identifier: MIT
 """Stable control-plane shim for the maintained OmaVLESS 0.7 fork.
 
-This module deliberately keeps the large upstream backend intact and patches only
-runtime-sensitive pieces: systemd unit generation and Full VPN selector readiness.
+The large upstream 0.7 backend remains the source of truth for profiles, routing
+rules and the QML-facing CLI.  This shim owns the Linux-sensitive lifecycle:
+service generation, TUN compatibility/readiness and Full VPN selector readiness.
 """
 
 from __future__ import annotations
 
+import contextlib
 import time
 from pathlib import Path
 
 import backend
 
 
-FORK_VERSION = "0.7.3"
+FORK_VERSION = "0.7.4"
 SELECTOR_READY_TIMEOUT_SECONDS = 12.0
 SELECTOR_POLL_SECONDS = 0.10
+TUN_READY_TIMEOUT_SECONDS = 10.0
 
 # Keep diagnostics and User-Agent aligned with the maintained fork version.
 backend.PLUGIN_VERSION = FORK_VERSION
 backend.USER_AGENT = f"OmaVLESS/{FORK_VERSION}"
+
+
+# Keep references before monkey-patching the backend module.
+_original_private_runtime_config = backend.private_runtime_config
+_original_connect_profile = backend.connect_profile
+_original_startup_connect = backend.startup_connect
+
+
+def _strip_tun_route_excludes(text: str) -> str:
+    """Drop route-exclude-address from the generated TUN config on Linux.
+
+    Recent sing-tun/Mihomo nftables builds can reject the interval-set creation
+    used by route-exclude-address with EEXIST ("netlink receive: file exists").
+    Falling back to DISABLE_NFTABLES makes Mihomo spawn /usr/bin/iptables; that
+    child does not inherit Mihomo's file CAP_NET_ADMIN and therefore fails on a
+    normal user service with "Permission denied (you must be root)".
+
+    OmaVLESS already has routing rules for private destinations.  For this
+    maintained rootless fork, prefer the native in-process nftables auto-redirect
+    path and omit this optional TUN optimisation until the upstream interval-set
+    path is reliable on current Arch/Omarchy kernels.
+    """
+    lines = text.splitlines(keepends=True)
+    output: list[str] = []
+    in_tun = False
+    skipping = False
+
+    for line in lines:
+        raw = line.rstrip("\r\n")
+        stripped = raw.strip()
+        indent = len(raw) - len(raw.lstrip(" "))
+
+        if stripped and not stripped.startswith("#") and indent == 0:
+            in_tun = stripped == "tun:" or stripped.startswith("tun: #")
+            skipping = False
+
+        if in_tun and indent == 2 and stripped.startswith("route-exclude-address:"):
+            skipping = True
+            continue
+
+        if skipping:
+            # List members and comments belong to route-exclude-address.  Stop
+            # once another key at the same (or higher) indentation is reached.
+            if not stripped or stripped.startswith("#") or indent > 2:
+                continue
+            skipping = False
+
+        output.append(line)
+
+    return "".join(output)
+
+
+def private_runtime_config(
+    paths: backend.Paths, text: str, store: dict[str, object]
+) -> str:
+    return _original_private_runtime_config(paths, _strip_tun_route_excludes(text), store)
 
 
 def _wait_and_select(paths: backend.Paths, selector: str, target: str) -> None:
@@ -35,9 +94,8 @@ def _wait_and_select(paths: backend.Paths, selector: str, target: str) -> None:
             members = payload.get("all") if isinstance(payload, dict) else None
             current = payload.get("now") if isinstance(payload, dict) else None
 
-            # Mihomo can expose /version before selector groups have finished
-            # materialising. Do not send a selector PUT until the requested
-            # target is actually advertised by the group.
+            # /version can become available before selector groups have finished
+            # materialising.  Do not PUT until the target is actually advertised.
             if status_code == 200 and isinstance(members, list) and target in members:
                 if current == target:
                     return
@@ -71,6 +129,45 @@ def select_global_proxy(paths: backend.Paths, profile_name: str) -> None:
     _wait_and_select(paths, "GLOBAL", "PROXY")
 
 
+def _tun_ready() -> bool:
+    return (Path("/sys/class/net") / backend.TUN_DEVICE).exists()
+
+
+def _wait_tun_ready(timeout: float = TUN_READY_TIMEOUT_SECONDS) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _tun_ready():
+            return True
+        time.sleep(0.10)
+    return _tun_ready()
+
+
+def connect_profile(paths: backend.Paths, profile_id: str) -> None:
+    """Connect through the upstream transaction, but require a real TUN device."""
+    _original_connect_profile(paths, profile_id)
+    if _wait_tun_ready():
+        return
+
+    # Mihomo can keep its REST/mixed-port service alive even after TUN setup
+    # failed.  Do not report that state as a successful VPN connection.
+    with contextlib.suppress(Exception):
+        backend.stop_service(paths, profile_id)
+    raise backend.BackendError(
+        f"Mihomo started but TUN interface {backend.TUN_DEVICE} did not become ready"
+    )
+
+
+def startup_connect(paths: backend.Paths) -> None:
+    _original_startup_connect(paths)
+    if _wait_tun_ready():
+        return
+    with contextlib.suppress(Exception):
+        backend.stop_service(paths)
+    raise backend.BackendError(
+        f"Mihomo started but TUN interface {backend.TUN_DEVICE} did not become ready"
+    )
+
+
 def _unit_condition_path(path: Path) -> str:
     """Return a systemd ConditionPathExists value without ExecStart-style quotes."""
     value = str(path)
@@ -89,10 +186,8 @@ After=network-online.target
 ConditionPathExists={_unit_condition_path(manifest)}
 
 [Service]
-# Current Arch/Omarchy kernels can reject Mihomo's native nftables
-# auto-redirect transaction with EEXIST ("netlink receive: file exists").
-# sing-tun provides this supported fallback to the iptables backend.
-Environment=DISABLE_NFTABLES=true
+# Keep Mihomo's native nftables auto-redirect path.  The iptables fallback
+# spawns an unprivileged child process and cannot use Mihomo's file capabilities.
 ExecStart={backend.systemd_quote(str(launcher))} run-core {backend.systemd_quote(str(core))}
 Restart=on-failure
 RestartSec=2
@@ -141,11 +236,14 @@ WantedBy=default.target
         backend.systemctl("daemon-reload")
 
 
-# Patch only lifecycle-sensitive functions. Profile parsing, storage,
+# Patch only lifecycle-sensitive functions.  Profile parsing, storage,
 # subscriptions, routing templates and the QML-facing CLI stay upstream 0.7.
+backend.private_runtime_config = private_runtime_config
 backend.select_global_proxy = select_global_proxy
 backend.ensure_unit = ensure_unit
 backend.ensure_startup_unit = ensure_startup_unit
+backend.connect_profile = connect_profile
+backend.startup_connect = startup_connect
 
 
 if __name__ == "__main__":
