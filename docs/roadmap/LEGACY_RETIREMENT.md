@@ -15,17 +15,21 @@ after the scoped R6 closure, not a new runtime migration or stable release.
    [the RC report](../testing/NATIVE_080_RC_PREPARATION_2026-09-13.md).
    Existing native R6 acceptance is retained where unchanged. This is not a
    stable release or broader host claim.
-3. **Default source/frontend installation — accepted locally, #242.** The
+3. **Default source/frontend installation — merged in #242** at
+   `dab6914e2bbff627580f5f3c2858cf474c4a0d80`. The
    ordinary installer and launcher are native-only, with explicit package/setup
    refusal and no Python fallback. The accepted QML layout is unchanged.
    Omarchy's clone-based installation also reaches the native-only launcher;
-   it does not install the package or run install.sh. Legacy subprocess tests
-   invoke backend.py directly as a temporary oracle, not the production launcher.
-4. **Reference/test detachment and removal — pending.** Preserve synthetic
-   language-neutral behavior fixtures with their archived reference provenance;
-   detach differential checks before removing obsolete runtime sources. Do not
-   generate expected answers from the candidate being tested, quietly skip
-   parity tests, or discard security/negative cases to obtain a green suite.
+   it does not install the package or run install.sh.
+4. **Reference/test detachment and removal — accepted in #243** with the
+   exact candidate and integration evidence below.
+   The old backend, Python control-protocol implementation, legacy uninstall,
+   old protocol CLI probe and live Python route oracle are removed. The 43
+   differential adapters now replay 780 independently captured synthetic JSON
+   replies; six support-policy counts have a separate input-hashed fixture.
+   Ordinary tests neither fetch nor execute the archive. Changed inputs fail
+   closed, not silently reuse an answer. Future native features require their
+   own reviewed contract/tests, not extensions to the frozen Python backend.
 
 Useful independent Python developer tests/tools may remain. GitHub language
 percentages are not an acceptance criterion; neither Linguist overrides nor
@@ -58,4 +62,64 @@ Candidate `72ddb467726ef816639a2f52f58f2c06888138b9`, Try Omarchy ARM64:
 - The already accepted RC runtime remains disconnected Routing, zero core/TUN,
   and no manual recovery. No new package transaction or authorization prompt.
 
-Python removal is still step 4, not implied by this installed native-only gate.
+This installed-default gate precedes, and does not by itself prove, step 4.
+
+## Reference retirement evidence
+
+Candidate `57ff130b3c9eb9ac266ff66ea741d873a5184296` is based directly on main
+`dab6914e2bbff627580f5f3c2858cf474c4a0d80`. Moving from the equivalent #242
+source tree to its main squash preserved the whole tree and range-diff `=`.
+[Exact implementation CI](https://github.com/k-kostin/omavless/actions/runs/34833890824)
+PASS. Any later evidence-only commit does not change the tested implementation.
+
+The archive was checked out cleanly at the exact frozen commit. Before deleting
+anything, the existing deterministic Rust suite and 27 Python adapter checks
+ran against that archive to capture its replies, never Rust's candidate output.
+An inline Python support-policy counter was captured separately from the same
+archive for the three checked-in templates and three synthetic YAML shapes.
+Their exact input SHA-256 values remain asserted by the Rust test.
+
+- Recorded corpus: 43 adapter families, 780 replies, 774,984 bytes total,
+  largest reply 41,150 bytes; plus six support-policy cases. These are synthetic
+  expectations, not real local profiles or claims of live interoperability.
+- Replay with backend.py and the Python protocol module absent: Rust workspace
+  **957 PASS, 0 FAIL, 10 ignored**. All existing native differential assertions
+  still execute actual Rust behavior; unknown input hashes fail with a fixed
+  safe error. The optional recorder has a closed oracle allowlist, pinned clean
+  archive/blob checks and atomic no-replacement publication.
+- Developer/installer suite: **228 tests, 226 PASS, 2 existing skips**; JS/QML
+  contracts PASS. This includes 16 new reader/recorder safety tests. The 261
+  tests specific to the deleted Python implementations stay in the archive;
+  they are not counted as current native coverage or silently called migrated.
+- Installed-core opt-in: the Rust route probe exercised actual Mihomo
+  **v1.19.30, linux arm64** against loopback-only synthetic REJECT rules with
+  DNS/TUN disabled and a private Unix controller: **1 PASS**. Its historical
+  Python side-comparison is removed, not replaced by a frozen live PASS.
+- Production Rust/QML behavior, current RC version and package ownership are
+  unchanged. Only Rust test code changed; this is not a new VPN transition or
+  a fresh login/AUTO-1 acceptance. The prior native installed/runtime evidence
+  applies to unchanged code.
+- Cargo fmt/Clippy, Python compile, shell syntax, manifest, diff check, 121
+  relative links in changed Markdown and Omarchy plugin validation PASS.
+  qmllint unavailable (NOT RUN). A normal `./install.sh` from the exact removal
+  candidate also PASSed: all 24 runtime-relevant frontend files match, old
+  Python files are absent, plugin enabled, disconnected Routing, core/TUN zero,
+  no manual recovery. No authorization or VPN transition was required.
+
+An offline locked Rust 1.98.0 ARM64 release build and fresh artifact assembly
+from this exact source PASSed; archive checksums validate. These local artifacts
+are **not installed or published** and are distinct from the attended installed
+pair in step 2. No byte-identity claim is made between the rebuilt and installed
+ELFs; acceptance inheritance is based on the diff being confined to test code.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Rebuilt native ELF | `31022182d6b16983e2428834e4f954800e4386656a3d93f4cc9096108c7e4c3e` |
+| ARM64 RC package | `1f70cf0c1ecbc13ff74c344e743fd077c661c181050cbd7c498ba369ac62445d` |
+| RC frontend archive | `524efbf32d0c6e423ed6201f8d15caf5dff5fee112c98ac43b8a05b4e5cabd3a` |
+
+See [fixture maintenance](../../tests/frozen_reference/README.md) for provenance
+and explicit regeneration. Python remaining on main is developer test/build
+tooling (including fixture replay), not an installed runtime requirement.
+The completion/integration SHA is recorded by [PR #243](https://github.com/k-kostin/omavless/pull/243).
+Even after a green merge, stable publication remains a separate owner decision.
