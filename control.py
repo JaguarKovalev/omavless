@@ -16,7 +16,7 @@ from pathlib import Path
 import backend
 
 
-FORK_VERSION = "0.7.4"
+FORK_VERSION = "0.7.5"
 SELECTOR_READY_TIMEOUT_SECONDS = 12.0
 SELECTOR_POLL_SECONDS = 0.10
 TUN_READY_TIMEOUT_SECONDS = 10.0
@@ -65,7 +65,7 @@ def _strip_tun_route_excludes(text: str) -> str:
             continue
 
         if skipping:
-            # List members and comments belong to route-exclude-address.  Stop
+            # List members and comments belong to route-exclude-address. Stop
             # once another key at the same (or higher) indentation is reached.
             if not stripped or stripped.startswith("#") or indent > 2:
                 continue
@@ -95,7 +95,7 @@ def _wait_and_select(paths: backend.Paths, selector: str, target: str) -> None:
             current = payload.get("now") if isinstance(payload, dict) else None
 
             # /version can become available before selector groups have finished
-            # materialising.  Do not PUT until the target is actually advertised.
+            # materialising. Do not PUT until the target is actually advertised.
             if status_code == 200 and isinstance(members, list) and target in members:
                 if current == target:
                     return
@@ -149,7 +149,7 @@ def connect_profile(paths: backend.Paths, profile_id: str) -> None:
         return
 
     # Mihomo can keep its REST/mixed-port service alive even after TUN setup
-    # failed.  Do not report that state as a successful VPN connection.
+    # failed. Do not report that state as a successful VPN connection.
     with contextlib.suppress(Exception):
         backend.stop_service(paths, profile_id)
     raise backend.BackendError(
@@ -186,7 +186,7 @@ After=network-online.target
 ConditionPathExists={_unit_condition_path(manifest)}
 
 [Service]
-# Keep Mihomo's native nftables auto-redirect path.  The iptables fallback
+# Keep Mihomo's native nftables auto-redirect path. The iptables fallback
 # spawns an unprivileged child process and cannot use Mihomo's file capabilities.
 ExecStart={backend.systemd_quote(str(launcher))} run-core {backend.systemd_quote(str(core))}
 Restart=on-failure
@@ -236,7 +236,7 @@ WantedBy=default.target
         backend.systemctl("daemon-reload")
 
 
-# Patch only lifecycle-sensitive functions.  Profile parsing, storage,
+# Patch only lifecycle-sensitive functions. Profile parsing, storage,
 # subscriptions, routing templates and the QML-facing CLI stay upstream 0.7.
 backend.private_runtime_config = private_runtime_config
 backend.select_global_proxy = select_global_proxy

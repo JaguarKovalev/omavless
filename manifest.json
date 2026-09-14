@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "kdk.omavless",
   "name": "OmaVLESS",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "author": "kdk / JaguarKovalev legacy fork",
   "license": "MIT",
   "description": "Import, subscribe to and switch VLESS plus experimental Trojan, Hysteria2 and TUIC profiles from the Omarchy bar using a dedicated Mihomo TUN service.",
@@ -20,7 +20,7 @@
     "defaultSection": "right",
     "defaults": {
       "refreshIntervalSec": 10,
-      "pingHost": "1.1.1.1",
+      "pingHost": "",
       "showBarThroughput": false,
       "showExitIp": true
     },
@@ -38,7 +38,7 @@
         "key": "pingHost",
         "type": "string",
         "label": "Ping host (empty disables the latency probe)",
-        "defaultValue": "1.1.1.1"
+        "defaultValue": ""
       },
       {
         "key": "showBarThroughput",
