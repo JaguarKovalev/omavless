@@ -6,6 +6,11 @@ history. GitHub's actual main/PR state is authoritative for publication.
 
 ## Main and open work
 
+- Owner-approved [Python reference retirement](LEGACY_RETIREMENT.md) preserves
+  the complete pre-retirement tree in frozen `archive/python-legacy` at
+  `aa5873783c019edc303a732e55ea8c85f1f0b090`. Native RC delivery, native-only
+  defaults and fixture-backed legacy removal must finish before leaving RC.
+
 - Native integration [#238](https://github.com/k-kostin/omavless/pull/238)
   merged at `778647215deb1cb27e66e10e628fd0e78beee1af`. Its PR and main CI
   passed; #214–#237 are merged or explicitly superseded and their remote
@@ -16,10 +21,12 @@ history. GitHub's actual main/PR state is authoritative for publication.
   and Try Omarchy ARM64 UI/live-refresh acceptance. Its compact main-page
   action reuses the existing Rust operation; VPN ownership is unchanged.
 - Native **0.8.0-rc.1** assembly remains in separate open
-  [#239](https://github.com/k-kostin/omavless/pull/239). Local artifacts and
-  archive checks are recorded there; they are not a stable release, an installed
-  upgrade of this VM, or a marketplace update. The previously built RC frontend
-  predates #240; rebuild and record new artifact identities before shipping it.
+  [#239](https://github.com/k-kostin/omavless/pull/239), following the
+  [release assembly guide](../../packaging/release/README.md). Local artifacts and
+  archive checks and the attended ARM64 installed update from source
+  `4549f6921e908a951698617027b4971057278920` are recorded there. The new pair
+  includes #240; earlier archived pairs retain their original identities.
+  This is not a stable release or marketplace update.
 - #30 and #135 remain separate Drafts. Do not merge or discard their evidence
   as part of repository cleanup. Marketplace text/screenshots and publication
   remain owner-controlled.

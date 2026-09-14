@@ -183,6 +183,28 @@ def validate_listing(raw):
                 "archive_member_type")
 
 
+def validate_build_identity(package, raw):
+    schema = key_values(raw, "=", {"schemaVersion"})["schemaVersion"]
+    require(schema in ("1", "2"), "build_identity")
+    keys = {"schemaVersion", "sourceCommit", "binarySha256", "architecture", "provenance"}
+    if schema == "2":
+        keys.add("productVersion")
+    identity = key_values(raw, "=", keys, True)
+    require(identity["architecture"] == package["arch"]
+            and re.fullmatch(r"[0-9a-f]{40}", identity["sourceCommit"])
+            and re.fullmatch(r"[0-9a-f]{64}", identity["binarySha256"])
+            and identity["provenance"] == "caller-supplied-prebuilt", "build_identity")
+    if schema == "1":
+        require(re.fullmatch(r"0\.0\.0\.r[0-9]+\.g[0-9a-f]{12}-[0-9]+", package["pkgver"]),
+                "package_version")
+        require(".g" + identity["sourceCommit"][:12] + "-" in package["pkgver"], "build_identity")
+    else:
+        version = identity["productVersion"]
+        require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*", version), "package_version")
+        require(package["pkgver"] == version.replace("-rc.", "rc") + "-1", "package_version")
+    return identity
+
+
 def inspect_archive(path):
     require(path.name.endswith(".pkg.tar.zst"), "archive_type")
     uid = path.lstat().st_uid
@@ -199,15 +221,7 @@ def inspect_archive(path):
     package = key_values(member(".PKGINFO"), " = ", {"pkgname", "pkgver", "arch"})
     require(package["pkgname"] == "omavless" and package["arch"] == os.uname().machine,
             "package_identity")
-    require(re.fullmatch(r"0\.0\.0\.r[0-9]+\.g[0-9a-f]{12}-[0-9]+", package["pkgver"]),
-            "package_version")
-    identity = key_values(member("usr/share/doc/omavless/build-identity.txt"), "=",
-                          {"schemaVersion", "sourceCommit", "binarySha256", "architecture", "provenance"}, True)
-    require(identity["schemaVersion"] == "1" and identity["architecture"] == package["arch"]
-            and re.fullmatch(r"[0-9a-f]{40}", identity["sourceCommit"])
-            and re.fullmatch(r"[0-9a-f]{64}", identity["binarySha256"])
-            and ".g" + identity["sourceCommit"][:12] + "-" in package["pkgver"],
-            "build_identity")
+    identity = validate_build_identity(package, member("usr/share/doc/omavless/build-identity.txt"))
     require(member("usr/bin/omavless", True) == identity["binarySha256"], "archive_binary_mismatch")
     units = {name: member("usr/lib/systemd/user/" + name, True) for name in UNITS}
     require(fingerprint(path, uid) == mark, "archive_changed")
@@ -371,7 +385,7 @@ class PackageGate:
         self.authorization.step(phase, transaction)
         self.unchanged()
 
-    def run(self):
+    def preflight(self, installed):
         self.authorization.require_terminal()
         require(os.getuid() != 0, "do_not_run_as_root")
         require(os.environ.get("HOME") == str(self.home) and "OMAVLESS_HOME" not in os.environ
@@ -380,7 +394,7 @@ class PackageGate:
                 and os.environ.get("XDG_STATE_HOME", str(self.home / ".local/state")) == str(self.home / ".local/state"),
                 "environment_mismatch")
         self.before = private_snapshot(self.home)
-        self.check_running(self.current)
+        self.check_running(installed)
         enabled = unit("UnitFileState")
         require(enabled == "enabled", "runtime_not_enabled")
         require(self.current["binary"] != self.rollback["binary"]
@@ -389,6 +403,24 @@ class PackageGate:
         emit("preflight", True, current_source=self.current["source"], rollback_source=self.rollback["source"],
              current_archive=self.current["fingerprint"][0], rollback_archive=self.rollback["fingerprint"][0],
              current_binary=self.current["binary"], rollback_binary=self.rollback["binary"])
+        return enabled
+
+    def upgrade(self):
+        """One attended update, not a destructive recovery rehearsal.
+
+        Start on the verified rollback archive, already disconnected. Each
+        effect uses the same human barrier; failure never triggers recovery.
+        """
+        enabled = self.preflight(self.rollback)
+        self.stop(self.rollback)
+        self.pacman(self.current)
+        self.start(self.current)
+        require(unit("UnitFileState") == enabled, "enablement_changed")
+        emit("upgrade_restart", True, private_state_preserved=True, actual_binary=True,
+             disconnected=True, startup_off=True, enabled=True)
+
+    def run(self):
+        enabled = self.preflight(self.current)
         self.stop(self.current)
         self.pacman(self.rollback)
         self.start(self.rollback)
@@ -415,6 +447,8 @@ class PackageGate:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="store_true")
+    parser.add_argument("--upgrade-only", action="store_true",
+                        help="update from the installed rollback archive to current; no removal/downgrade")
     parser.add_argument("--current-package", type=Path, required=True)
     parser.add_argument("--rollback-package", type=Path, required=True)
     args = parser.parse_args()
@@ -425,7 +459,11 @@ def main():
         authorization.require_terminal()
         require(os.getuid() != 0, "do_not_run_as_root")
         current, rollback = inspect_archive(args.current_package), inspect_archive(args.rollback_package)
-        PackageGate(current, rollback, authorization).run()
+        instance = PackageGate(current, rollback, authorization)
+        if args.upgrade_only:
+            instance.upgrade()
+        else:
+            instance.run()
         return 0
     except auth.AuthorizationUnsettled:
         emit("stopped", False, classification="human_authorization_unsettled",
